@@ -1,17 +1,118 @@
 """
 Aplicación principal de FlyPaper.
 
-Este archivo define un honeypot web básico con Flask que simula
-comportamientos y endpoints atractivos para posibles atacantes.
-Por diseño, en esta etapa no se guarda logging; solo se responden
-las rutas con contenido falso.
+Este archivo define un honeypot web con Flask que:
+- Simula endpoints atractivos para atacantes.
+- Clasifica automáticamente cada interacción.
+- Guarda eventos en SQLite para posterior análisis.
 """
 
 from flask import Flask, jsonify, make_response, redirect, render_template, request, url_for
 
+from database import guardar_evento, inicializar_db
+from detector import clasificar_ataque
+
 
 # Creamos la instancia principal de Flask.
 aplicacion = Flask(__name__)
+
+# Inicializamos la base de datos al arrancar la aplicación para asegurar
+# que la tabla `eventos` exista antes de intentar guardar información.
+inicializar_db()
+
+
+def construir_payload_para_registro():
+    """
+    Construye una representación de payload útil para almacenar en la BD.
+
+    Prioridad utilizada:
+    1) Si hay formulario (`request.form`), guardamos ese diccionario.
+    2) Si hay JSON (`request.get_json`), guardamos ese objeto.
+    3) Si hay query string (`request.args`), guardamos esos parámetros.
+    4) Si no hay estructura previa, guardamos el cuerpo en texto bruto.
+
+    Returns:
+        dict | str: Información de entrada enviada por el visitante.
+    """
+    if request.form:
+        return request.form.to_dict(flat=True)
+
+    contenido_json = request.get_json(silent=True)
+    if contenido_json is not None:
+        return contenido_json
+
+    if request.args:
+        return request.args.to_dict(flat=True)
+
+    return request.get_data(as_text=True) or ""
+
+
+def debe_excluirse_del_registro(ruta_solicitada):
+    """
+    Indica si una ruta debe quedar fuera del almacenamiento de eventos.
+
+    Según tu requisito, se excluyen rutas que comiencen por:
+    - /dashboard
+    - /static
+
+    Args:
+        ruta_solicitada (str): Ruta de la petición HTTP.
+
+    Returns:
+        bool: True si debe excluirse, False en caso contrario.
+    """
+    return ruta_solicitada.startswith("/dashboard") or ruta_solicitada.startswith("/static")
+
+
+@aplicacion.after_request
+def registrar_evento_honeypot(respuesta):
+    """
+    Registra cada petición HTTP en la base de datos (con excepciones).
+
+    Flujo del registro:
+    - Identificar IP, ruta, método, payload, user-agent y cabeceras.
+    - Clasificar automáticamente el tipo de ataque.
+    - Guardar el evento en SQLite.
+
+    Nota:
+    Se hace en `after_request` para no interferir con el flujo principal
+    de las rutas ni con la respuesta que recibe el cliente.
+    """
+    ruta_visitada = request.path or ""
+
+    # Omitimos rutas internas/estáticas según tu regla.
+    if debe_excluirse_del_registro(ruta_visitada):
+        return respuesta
+
+    # Obtenemos la IP real si hay proxy; si no, usamos la IP remota directa.
+    ip_visitante = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+
+    # Si hay varias IPs en la cabecera, nos quedamos con la primera (cliente origen).
+    if "," in ip_visitante:
+        ip_visitante = ip_visitante.split(",")[0].strip()
+
+    payload_peticion = construir_payload_para_registro()
+    user_agent_visitante = request.headers.get("User-Agent", "")
+    tipo_ataque_detectado = clasificar_ataque(
+        ruta=ruta_visitada,
+        payload=str(payload_peticion),
+        user_agent=user_agent_visitante,
+    )
+
+    # Convertimos cabeceras a dict plano para serialización JSON en la BD.
+    cabeceras_peticion = dict(request.headers)
+
+    guardar_evento(
+        ip=ip_visitante,
+        ruta=ruta_visitada,
+        metodo=request.method,
+        payload=payload_peticion,
+        user_agent=user_agent_visitante,
+        tipo_ataque=tipo_ataque_detectado,
+        headers=cabeceras_peticion,
+    )
+
+    return respuesta
 
 
 @aplicacion.get("/")
