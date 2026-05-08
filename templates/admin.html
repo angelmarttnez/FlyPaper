@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FlyPaper · Admin Panel</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a1124;
+    color: #e6ecff;
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* Sidebar */
+  aside {
+    width: 240px;
+    background: #0f1933;
+    border-right: 1px solid rgba(120, 160, 255, 0.1);
+    padding: 24px 0;
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px 24px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.1);
+  }
+  .logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #fff;
+    font-size: 14px;
+  }
+  .brand-name { font-size: 18px; font-weight: 600; }
+  nav { padding: 16px 12px; flex: 1; }
+  nav a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    color: #8aa0c8;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 4px;
+    transition: background .15s, color .15s;
+  }
+  nav a:hover { background: rgba(79, 124, 255, 0.1); color: #e6ecff; }
+  nav a.active {
+    background: linear-gradient(135deg, rgba(79,124,255,.2), rgba(37,71,201,.15));
+    color: #fff;
+  }
+  nav a .ico {
+    width: 18px; height: 18px;
+    display: inline-block;
+    background: currentColor;
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    -webkit-mask-position: center; mask-position: center;
+    opacity: .85;
+  }
+
+  /* Main */
+  main { flex: 1; padding: 32px 40px; overflow-x: auto; }
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+  }
+  header.top h1 { font-size: 24px; font-weight: 600; }
+  header.top .user {
+    display: flex; align-items: center; gap: 10px;
+    color: #b8c8e8; font-size: 14px;
+  }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 13px; color: #fff;
+  }
+
+  /* Stat cards */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+    margin-bottom: 32px;
+  }
+  .card {
+    background: linear-gradient(135deg, rgba(20,30,55,.8), rgba(15,25,51,.6));
+    border: 1px solid rgba(120, 160, 255, 0.12);
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  }
+  .card .label {
+    color: #8aa0c8; font-size: 13px;
+    text-transform: uppercase; letter-spacing: .5px;
+    margin-bottom: 10px;
+  }
+  .card .value { font-size: 30px; font-weight: 700; color: #fff; }
+  .card .delta { font-size: 12px; margin-top: 6px; }
+  .delta.up { color: #4ade80; }
+  .delta.warn { color: #fbbf24; }
+  .delta.ok { color: #60a5fa; }
+
+  /* Table */
+  .panel {
+    background: rgba(15, 25, 51, 0.6);
+    border: 1px solid rgba(120, 160, 255, 0.12);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 18px 22px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.1);
+    font-size: 16px; font-weight: 600;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left;
+    padding: 14px 22px;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.06);
+  }
+  th {
+    color: #8aa0c8;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    background: rgba(10, 17, 36, 0.4);
+  }
+  tbody tr:hover { background: rgba(79, 124, 255, 0.05); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+  }
+  .badge.admin { background: rgba(220, 50, 70, 0.15); color: #ff7080; }
+  .badge.user  { background: rgba(79, 124, 255, 0.15); color: #7da3ff; }
+  .badge.root  { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+  .badge.super { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+
+  .user-cell { display: flex; align-items: center; gap: 10px; }
+  .mini-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: #fff;
+  }
+
+  @media (max-width: 768px) {
+    aside { width: 70px; }
+    .brand-name, nav a span:not(.ico) { display: none; }
+    main { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+  <aside>
+    <div class="brand">
+      <div class="logo">FP</div>
+      <div class="brand-name">FlyPaper</div>
+    </div>
+    <nav>
+      <a href="#" class="active"><span>📊</span><span>Dashboard</span></a>
+      <a href="#"><span>👥</span><span>Usuarios</span></a>
+      <a href="#"><span>⚙️</span><span>Configuración</span></a>
+      <a href="#"><span>📈</span><span>Reportes</span></a>
+      <a href="#"><span>🚪</span><span>Logout</span></a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="top">
+      <h1>Dashboard</h1>
+      <div class="user">
+        <span>admin@flypaper.io</span>
+        <div class="avatar">AD</div>
+      </div>
+    </header>
+
+    <section class="stats">
+      <div class="card">
+        <div class="label">Usuarios totales</div>
+        <div class="value">1,247</div>
+        <div class="delta up">▲ 4.2% esta semana</div>
+      </div>
+      <div class="card">
+        <div class="label">Alertas activas</div>
+        <div class="value">3</div>
+        <div class="delta warn">▲ 1 nueva hoy</div>
+      </div>
+      <div class="card">
+        <div class="label">Uptime</div>
+        <div class="value">99.8%</div>
+        <div class="delta ok">● Estable últimos 30 días</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Usuarios recientes</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Email</th>
+            <th>Rol</th>
+            <th>Último acceso</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="user-cell"><div class="mini-avatar">AD</div>admin</div></td>
+            <td>admin@flypaper.io</td>
+            <td><span class="badge admin">Admin</span></td>
+            <td>Hace 2 minutos</td>
+          </tr>
+          <tr>
+            <td><div class="user-cell"><div class="mini-avatar">JD</div>john.doe</div></td>
+            <td>john.doe@flypaper.io</td>
+            <td><span class="badge user">User</span></td>
+            <td>Hace 1 hora</td>
+          </tr>
+          <tr>
+            <td><div class="user-cell"><div class="mini-avatar">MS</div>mary.smith</div></td>
+            <td>mary.smith@flypaper.io</td>
+            <td><span class="badge user">User</span></td>
+            <td>Hace 3 horas</td>
+          </tr>
+          <tr>
+            <td><div class="user-cell"><div class="mini-avatar">RT</div>root</div></td>
+            <td>root@flypaper.io</td>
+            <td><span class="badge root">Root</span></td>
+            <td>Ayer, 22:14</td>
+          </tr>
+          <tr>
+            <td><div class="user-cell"><div class="mini-avatar">SU</div>superuser</div></td>
+            <td>superuser@flypaper.io</td>
+            <td><span class="badge super">Superuser</span></td>
+            <td>Hace 2 días</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

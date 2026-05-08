@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FlyPaper · Búsqueda interna</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a1124;
+    color: #e6ecff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Top bar */
+  header.topbar {
+    background: #0f1933;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.1);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 13px;
+    box-shadow: 0 4px 12px rgba(79, 124, 255, 0.3);
+  }
+  .brand { font-size: 18px; font-weight: 600; letter-spacing: .3px; }
+  .topbar nav {
+    margin-left: auto;
+    display: flex; gap: 22px;
+  }
+  .topbar nav a {
+    color: #8aa0c8;
+    text-decoration: none;
+    font-size: 14px;
+    transition: color .15s;
+  }
+  .topbar nav a:hover { color: #e6ecff; }
+
+  /* Main */
+  main {
+    flex: 1;
+    padding: 40px 32px;
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: #8aa0c8;
+    font-size: 14px;
+    margin-bottom: 28px;
+  }
+
+  /* Search */
+  form.search {
+    display: flex;
+    gap: 10px;
+    background: rgba(15, 25, 51, 0.7);
+    border: 1px solid rgba(120, 160, 255, 0.15);
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 28px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  }
+  form.search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 15px;
+  }
+  form.search input::placeholder { color: #5f7299; }
+  form.search button {
+    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: box-shadow .2s, transform .1s;
+  }
+  form.search button:hover { box-shadow: 0 6px 16px rgba(79, 124, 255, 0.4); }
+  form.search button:active { transform: translateY(1px); }
+
+  /* Results */
+  .results {
+    background: rgba(15, 25, 51, 0.6);
+    border: 1px solid rgba(120, 160, 255, 0.12);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .results-header {
+    padding: 16px 22px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .results-header h2 { font-size: 15px; font-weight: 600; }
+  .results-header .count { color: #8aa0c8; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left;
+    padding: 14px 22px;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.06);
+  }
+  th {
+    color: #8aa0c8;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    background: rgba(10, 17, 36, 0.4);
+  }
+  tbody tr:hover { background: rgba(79, 124, 255, 0.05); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.id { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #7da3ff; font-size: 13px; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(79, 124, 255, 0.12);
+    color: #7da3ff;
+  }
+  .badge.eng { background: rgba(74, 222, 128, 0.12); color: #4ade80; }
+  .badge.ops { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+  .badge.fin { background: rgba(168, 85, 247, 0.12); color: #c084fc; }
+  .badge.mkt { background: rgba(244, 114, 182, 0.12); color: #f472b6; }
+
+  footer {
+    text-align: center;
+    padding: 24px;
+    color: #5f7299;
+    font-size: 12px;
+    border-top: 1px solid rgba(120, 160, 255, 0.08);
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">FP</div>
+    <div class="brand">FlyPaper</div>
+    <nav>
+      <a href="#">Dashboard</a>
+      <a href="#">Usuarios</a>
+      <a href="#">Búsqueda</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Búsqueda interna</h1>
+    <p class="subtitle">Encuentra empleados por nombre, ID o departamento.</p>
+
+    <form class="search" method="GET">
+      <input type="text" name="q" placeholder="Buscar usuario o ID..." />
+      <button type="submit">Buscar</button>
+    </form>
+
+    <section class="results">
+      <div class="results-header">
+        <h2>Resultados</h2>
+        <span class="count">5 coincidencias</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Email</th>
+            <th>Departamento</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="id">FP-00142</td>
+            <td>Laura Méndez</td>
+            <td>laura.mendez@flypaper.io</td>
+            <td><span class="badge eng">Engineering</span></td>
+          </tr>
+          <tr>
+            <td class="id">FP-00187</td>
+            <td>Carlos Iglesias</td>
+            <td>carlos.iglesias@flypaper.io</td>
+            <td><span class="badge ops">Operations</span></td>
+          </tr>
+          <tr>
+            <td class="id">FP-00203</td>
+            <td>Sofía Bramante</td>
+            <td>sofia.bramante@flypaper.io</td>
+            <td><span class="badge fin">Finance</span></td>
+          </tr>
+          <tr>
+            <td class="id">FP-00219</td>
+            <td>Daniel O'Connor</td>
+            <td>daniel.oconnor@flypaper.io</td>
+            <td><span class="badge eng">Engineering</span></td>
+          </tr>
+          <tr>
+            <td class="id">FP-00254</td>
+            <td>Aiko Tanaka</td>
+            <td>aiko.tanaka@flypaper.io</td>
+            <td><span class="badge mkt">Marketing</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>© 2026 FlyPaper. All rights reserved.</footer>
+</body>
+</html>
