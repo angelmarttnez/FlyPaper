@@ -90,7 +90,49 @@
     padding: 18px;
   }
   .table-section h3 { font-size: 14px; margin-bottom: 12px; }
-  .filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-bar { margin-bottom: 14px; }
+  .filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .filtro-ip-input {
+    flex: 1;
+    min-width: 160px;
+    max-width: 280px;
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    color: #e2e8f0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .filtro-ip-input::placeholder { color: #64748b; }
+  .filtro-ip-input:focus { outline: none; border-color: #3b82f6; }
+  .filtro-tiempo-select {
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    color: #e2e8f0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .btn-limpiar-filtros {
+    background: #0a0e1a;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .btn-limpiar-filtros:hover { color: #e2e8f0; border-color: #334155; }
+  .filters { display: flex; gap: 8px; margin-bottom: 0; flex-wrap: wrap; }
   .filter-btn {
     background: #0a0e1a;
     color: #e2e8f0;
@@ -119,6 +161,7 @@
   }
   .badge-sqli, .badge-xss { background: #ef4444; color: #fff; }
   .badge-reconocimiento { background: #f97316; color: #fff; }
+  .badge-scanner { background: #8b5cf6; color: #fff; }
   .badge-fuerza { background: #eab308; color: #111827; }
   .badge-otro { background: #1e293b; color: #e2e8f0; }
 
@@ -231,13 +274,27 @@
   <!-- Tabla -->
   <section class="table-section">
     <h3>Eventos Recientes</h3>
-    <div class="filters" id="filtros">
-      <button class="filter-btn active" data-filtro="Todos">Todos</button>
-      <button class="filter-btn" data-filtro="SQLi">SQLi</button>
-      <button class="filter-btn" data-filtro="XSS">XSS</button>
-      <button class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
-      <button class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
-      <button class="filter-btn" data-filtro="Otro">Otro</button>
+    <div class="filter-bar">
+      <div class="filter-row">
+        <input type="text" id="filtro-ip" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
+        <select id="filtro-tiempo" class="filtro-tiempo-select" aria-label="Filtrar por tiempo">
+          <option value="15m">Últimos 15 minutos</option>
+          <option value="1h">Última hora</option>
+          <option value="6h">Últimas 6 horas</option>
+          <option value="24h">Últimas 24 horas</option>
+          <option value="all" selected>Todos</option>
+        </select>
+        <button type="button" id="btn-limpiar-filtros" class="btn-limpiar-filtros">Limpiar filtros</button>
+      </div>
+      <div class="filters" id="filtros-tipo">
+        <button type="button" class="filter-btn active" data-filtro="Todos">Todos</button>
+        <button type="button" class="filter-btn" data-filtro="SQLi">SQLi</button>
+        <button type="button" class="filter-btn" data-filtro="XSS">XSS</button>
+        <button type="button" class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
+        <button type="button" class="filter-btn" data-filtro="Scanner">Scanner</button>
+        <button type="button" class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
+        <button type="button" class="filter-btn" data-filtro="Otro">Otro</button>
+      </div>
     </div>
     <table>
       <thead>
@@ -250,18 +307,18 @@
   </section>
 </main>
 
-<!-- Modal de detalles -->
+<!-- Modal de detalles: datos reales del evento (API /monitor/api/eventos) -->
 <div class="modal-overlay" id="modal" onclick="cerrarModalFuera(event)">
   <div class="modal" onclick="event.stopPropagation()">
-    <button class="modal-close" onclick="cerrarModal()">×</button>
+    <button type="button" class="modal-close" onclick="cerrarModal()">×</button>
     <h2>Detalle del Evento</h2>
     <div class="modal-row"><div class="k">IP</div><div class="v" id="m-ip"></div></div>
     <div class="modal-row"><div class="k">Ruta</div><div class="v" id="m-ruta"></div></div>
     <div class="modal-row"><div class="k">Tipo</div><div class="v"><span id="m-tipo" class="badge"></span></div></div>
-    <div class="modal-row"><div class="k">Timestamp</div><div class="v" id="m-ts"></div></div>
-    <div class="modal-row"><div class="k">User-Agent</div><div class="v" id="m-ua"></div></div>
     <div class="modal-row"><div class="k">Payload</div><pre class="code-block" id="m-payload"></pre></div>
+    <div class="modal-row"><div class="k">User-Agent</div><div class="v" id="m-ua"></div></div>
     <div class="modal-row"><div class="k">Headers</div><pre class="code-block" id="m-headers"></pre></div>
+    <div class="modal-row"><div class="k">Timestamp</div><div class="v" id="m-ts"></div></div>
   </div>
 </div>
 
@@ -269,50 +326,60 @@
 <a class="fab" href="/monitor/exportar">📥 Exportar CSV</a>
 
 <script>
-  // === Estado global ===
-  let eventosCache = [];        // array de eventos en memoria
-  let filtroActual = 'Todos';   // filtro activo
-  let chartTipos = null;        // instancia chart de barras
-  let chartHoras = null;        // instancia chart de líneas
+  /**
+   * Dashboard del monitor de FlyPaper.
+   * - Estadísticas y gráficas: GET /monitor/api/stats (ataques_por_tipo, actividad_por_hora, etc.)
+   * - Tabla y modal: GET /monitor/api/eventos (lista en JSON)
+   * - Filtros solo en navegador, combinados; refresco cada 30 s.
+   */
+  let eventosCache = [];           // Últimos eventos devueltos por /monitor/api/eventos
+  let filtroTipoActual = 'Todos';  // Botón activo del filtro por tipo de ataque
+  let chartTipos = null;
+  let chartHoras = null;
 
-  // === Carga de estadísticas y gráficas ===
+  /**
+   * Descarga estadísticas reales y actualiza las 4 tarjetas y las dos gráficas Chart.js.
+   * Usa las claves del backend: ataques_por_tipo, actividad_por_hora, ultimo_ataque_hace.
+   */
   async function cargarEstadisticas() {
     try {
       const res = await fetch('/monitor/api/stats');
       if (!res.ok) throw new Error('respuesta no OK');
       const data = await res.json();
 
-      // Rellenar tarjetas
+      // Tarjetas superiores (valores numéricos directos del JSON del servidor)
       document.getElementById('stat-total').textContent = data.total_eventos ?? 0;
       document.getElementById('stat-ips').textContent = data.ips_unicas ?? 0;
       document.getElementById('stat-ataques').textContent = data.ataques_detectados ?? 0;
-      document.getElementById('stat-ultimo').textContent =
-        (data.ultimo_ataque_min ?? '—') + ' min';
+      const ultimoMin = data.ultimo_ataque_hace ?? data.ultimo_ataque_min;
+      const ultimoNum = ultimoMin !== undefined && ultimoMin !== null ? Number(ultimoMin) : NaN;
+      document.getElementById('stat-ultimo').textContent = !Number.isNaN(ultimoNum) ? `${ultimoNum} min` : '—';
 
-      // Renderizar gráficas con los datos recibidos
-      renderChartTipos(data.tipos_ataque || {});
-      renderChartHoras(data.actividad_horas || {});
+      // Gráficas con los mismos datos que expone el API (con alias legacy por compatibilidad)
+      const ataquesPorTipo = data.ataques_por_tipo ?? data.tipos_ataque ?? {};
+      const actividadPorHora = data.actividad_por_hora ?? data.actividad_horas ?? {};
+      renderChartTipos(ataquesPorTipo);
+      renderChartHoras(actividadPorHora);
     } catch (e) {
-      // En caso de error mostramos texto en las tarjetas
-      ['stat-total','stat-ips','stat-ataques','stat-ultimo'].forEach(id => {
+      ['stat-total', 'stat-ips', 'stat-ataques', 'stat-ultimo'].forEach((id) => {
         document.getElementById(id).textContent = 'Error al cargar datos';
       });
     }
   }
 
-  // === Renderizado del gráfico de barras (tipos de ataque) ===
+  /** Gráfico de barras: conteos por tipo de ataque (objeto clave → número). */
   function renderChartTipos(tipos) {
     const ctx = document.getElementById('chart-tipos').getContext('2d');
-    const labels = Object.keys(tipos);
-    const valores = Object.values(tipos);
+    const labels = Object.keys(tipos || {});
+    const valores = labels.map((k) => tipos[k]);
     if (chartTipos) chartTipos.destroy();
     chartTipos = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels,
+        labels: labels.length ? labels : ['Sin datos'],
         datasets: [{
           label: 'Ataques',
-          data: valores,
+          data: labels.length ? valores : [0],
           backgroundColor: '#3b82f6',
           borderRadius: 4
         }]
@@ -328,11 +395,12 @@
     });
   }
 
-  // === Renderizado del gráfico de líneas (actividad por hora) ===
+  /** Gráfico de líneas: actividad agregada por hora del día (claves "0".."23"). */
   function renderChartHoras(horas) {
     const ctx = document.getElementById('chart-horas').getContext('2d');
-    const labels = Object.keys(horas);
-    const valores = Object.values(horas);
+    const claves = Object.keys(horas || {}).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    const labels = claves.length ? claves.map((h) => `${h}h`) : ['Sin datos'];
+    const valores = claves.length ? claves.map((h) => horas[h]) : [0];
     if (chartHoras) chartHoras.destroy();
     chartHoras = new Chart(ctx, {
       type: 'line',
@@ -359,13 +427,112 @@
     });
   }
 
-  // === Carga de eventos ===
+  // Tipos que tienen botón dedicado; el botón "Otro" muestra el resto de clasificaciones.
+  const TIPOS_CON_BOTON = ['sqli', 'xss', 'reconocimiento', 'scanner', 'fuerza bruta'];
+
+  /** Nombre del tipo de ataque (el API envía `tipo_ataque`). */
+  function tipoDeEvento(ev) {
+    return (ev.tipo || ev.tipo_ataque || '').trim() || 'Otro';
+  }
+
+  /** Cadena de user-agent unificada. */
+  function navegadorDeEvento(ev) {
+    return ev.navegador || ev.user_agent || '';
+  }
+
+  /**
+   * Convierte el timestamp del evento a milisegundos (UTC/local según el string).
+   * Acepta "YYYY-MM-DD HH:MM:SS" del API y variantes ISO con "T".
+   */
+  function parseTimestampEventoMs(ts) {
+    if (!ts) return NaN;
+    const s = String(ts).trim();
+    const normalizado = s.includes('T') ? s : s.replace(' ', 'T');
+    let ms = Date.parse(normalizado);
+    if (!Number.isNaN(ms)) return ms;
+    ms = Date.parse(s);
+    return ms;
+  }
+
+  /**
+   * Límite inferior de la ventana temporal según el <select> (null = sin filtro).
+   */
+  function limiteTiempoMs(valorSelect) {
+    if (!valorSelect || valorSelect === 'all') return null;
+    const ahora = Date.now();
+    const ventanas = {
+      '15m': 15 * 60 * 1000,
+      '1h': 60 * 60 * 1000,
+      '6h': 6 * 60 * 60 * 1000,
+      '24h': 24 * 60 * 60 * 1000,
+    };
+    const delta = ventanas[valorSelect];
+    if (delta === undefined) return null;
+    return ahora - delta;
+  }
+
+  /** Filtro por texto en IP (parcial, en vivo mientras escribes). */
+  function pasaFiltroIp(ev, textoBusqueda) {
+    if (!textoBusqueda) return true;
+    const ip = String(ev.ip || '').toLowerCase();
+    return ip.includes(textoBusqueda);
+  }
+
+  /** Solo filas cuyo timestamp cae dentro de la ventana 15m / 1h / 6h / 24h. */
+  function pasaFiltroTiempo(ev, limiteMs) {
+    if (limiteMs == null) return true;
+    const ts = ev.timestamp;
+    if (!ts) return false;
+    const t = parseTimestampEventoMs(ts);
+    if (Number.isNaN(t)) return true;
+    return t >= limiteMs;
+  }
+
+  /**
+   * Filtro por botón de tipo: con "Todos" no se excluye nada;
+   * con "Otro" se muestran eventos cuyo tipo no es uno de los cinco con botón propio.
+   */
+  function pasaFiltroTipo(ev, filtro) {
+    if (!filtro || filtro === 'Todos') return true;
+    const norm = tipoDeEvento(ev).toLowerCase();
+    if (filtro === 'Otro') {
+      if (!norm) return true;
+      return !TIPOS_CON_BOTON.includes(norm);
+    }
+    return norm === filtro.toLowerCase();
+  }
+
+  /** Los tres criterios (IP + tipo + tiempo) se aplican a la vez sobre cada fila. */
+  function pasaFiltrosCombinados(ev) {
+    const textoIp = (document.getElementById('filtro-ip').value || '').trim().toLowerCase();
+    const valorTiempo = document.getElementById('filtro-tiempo').value;
+    const limMs = limiteTiempoMs(valorTiempo);
+    return (
+      pasaFiltroIp(ev, textoIp) &&
+      pasaFiltroTipo(ev, filtroTipoActual) &&
+      pasaFiltroTiempo(ev, limMs)
+    );
+  }
+
+  /** Vuelve al estado inicial de los tres filtros y repinta la tabla. */
+  function limpiarFiltros() {
+    document.getElementById('filtro-ip').value = '';
+    document.getElementById('filtro-tiempo').value = 'all';
+    filtroTipoActual = 'Todos';
+    document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.filtro === 'Todos');
+    });
+    renderTabla();
+  }
+
+  /**
+   * GET /monitor/api/eventos → guarda en memoria y repinta la tabla respetando filtros actuales.
+   */
   async function cargarEventos() {
     try {
       const res = await fetch('/monitor/api/eventos');
       if (!res.ok) throw new Error('respuesta no OK');
       const data = await res.json();
-      // Aceptamos array directo o {eventos: [...]}
       eventosCache = Array.isArray(data) ? data : (data.eventos || []);
       renderTabla();
     } catch (e) {
@@ -374,27 +541,20 @@
     }
   }
 
-  // === Render de la tabla aplicando filtro ===
+  /** Pinta la tabla aplicando filtros combinados sobre `eventosCache` (sin nueva petición). */
   function renderTabla() {
     const tbody = document.getElementById('tbody-eventos');
-    let lista = eventosCache;
-    // Filtrado en memoria
-    if (filtroActual !== 'Todos') {
-      lista = lista.filter(ev => (ev.tipo || '').toLowerCase() === filtroActual.toLowerCase());
-    }
-    // Limitar a 50 filas
-    lista = lista.slice(0, 50);
+    const lista = eventosCache.filter((ev) => pasaFiltrosCombinados(ev));
 
     if (lista.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No hay eventos registrados</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No hay eventos que coincidan con los filtros</td></tr>';
       return;
     }
 
     tbody.innerHTML = '';
     lista.forEach((ev, idx) => {
       const tr = document.createElement('tr');
-      const tipo = (ev.tipo || 'Otro');
-      // Aplicar clases por tipo
+      const tipo = tipoDeEvento(ev);
       const tipoLower = tipo.toLowerCase();
       if (tipoLower === 'sqli' || tipoLower === 'xss') tr.className = 'row-critical';
       else if (tipoLower === 'reconocimiento') tr.className = 'row-recon';
@@ -404,7 +564,7 @@
         <td>${escapeHtml(ev.ip || '')}</td>
         <td>${escapeHtml(ev.ruta || '')}</td>
         <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
-        <td>${escapeHtml(ev.navegador || '')}</td>
+        <td>${escapeHtml(navegadorDeEvento(ev))}</td>
         <td>${escapeHtml(ev.timestamp || '')}</td>
       `;
       tr.addEventListener('click', () => abrirModal(ev));
@@ -412,46 +572,66 @@
     });
   }
 
-  // === Devuelve la clase CSS de badge según tipo ===
+  /** Clases de color del badge según el nombre del tipo de ataque. */
   function badgeClass(tipo) {
     const t = (tipo || '').toLowerCase();
     if (t === 'sqli') return 'badge-sqli';
     if (t === 'xss') return 'badge-xss';
     if (t === 'reconocimiento') return 'badge-reconocimiento';
+    if (t === 'scanner') return 'badge-scanner';
     if (t === 'fuerza bruta') return 'badge-fuerza';
     return 'badge-otro';
   }
 
-  // === Escape básico para evitar inyección al pintar valores ===
+  /** Escapa HTML al insertar datos del servidor en celdas de tabla. */
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  // === Filtros: gestionar clic ===
-  document.querySelectorAll('#filtros .filter-btn').forEach(btn => {
+  // Listeners: IP en tiempo real; tiempo al cambiar opción; tipo al pulsar botón; limpiar todo.
+  document.getElementById('filtro-ip').addEventListener('input', () => {
+    renderTabla();
+  });
+  document.getElementById('filtro-tiempo').addEventListener('change', () => {
+    renderTabla();
+  });
+  document.getElementById('btn-limpiar-filtros').addEventListener('click', () => {
+    limpiarFiltros();
+  });
+  document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#filtros .filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#filtros-tipo .filter-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
-      filtroActual = btn.dataset.filtro;
+      filtroTipoActual = btn.dataset.filtro;
       renderTabla();
     });
   });
 
-  // === Modal ===
+  /** Serializa payload o headers para mostrarlos en el modal (texto o JSON formateado). */
+  function textoPlanoOJson(val) {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'string') return val;
+    try {
+      return JSON.stringify(val, null, 2);
+    } catch {
+      return String(val);
+    }
+  }
+
+  /** Muestra el modal con IP, ruta, tipo, payload, user_agent, headers y timestamp. */
   function abrirModal(ev) {
     document.getElementById('m-ip').textContent = ev.ip || '';
     document.getElementById('m-ruta').textContent = ev.ruta || '';
     const tipoEl = document.getElementById('m-tipo');
-    tipoEl.textContent = ev.tipo || 'Otro';
-    tipoEl.className = 'badge ' + badgeClass(ev.tipo);
+    const tipo = tipoDeEvento(ev);
+    tipoEl.textContent = tipo;
+    tipoEl.className = 'badge ' + badgeClass(tipo);
+    document.getElementById('m-payload').textContent = textoPlanoOJson(ev.payload);
+    document.getElementById('m-ua').textContent = navegadorDeEvento(ev);
+    document.getElementById('m-headers').textContent = textoPlanoOJson(ev.headers);
     document.getElementById('m-ts').textContent = ev.timestamp || '';
-    document.getElementById('m-ua').textContent = ev.user_agent || ev.navegador || '';
-    document.getElementById('m-payload').textContent =
-      typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {}, null, 2);
-    document.getElementById('m-headers').textContent =
-      typeof ev.headers === 'string' ? ev.headers : JSON.stringify(ev.headers || {}, null, 2);
     document.getElementById('modal').classList.add('show');
   }
   function cerrarModal() {
@@ -461,7 +641,7 @@
     if (e.target.id === 'modal') cerrarModal();
   }
 
-  // === Inicialización + refresco automático cada 30s ===
+  // Primera carga y refresco automático cada 30 s (stats + eventos en paralelo lógico).
   cargarEstadisticas();
   cargarEventos();
   setInterval(() => {

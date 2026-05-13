@@ -9,6 +9,9 @@ Este archivo define un honeypot web con Flask que:
 
 import csv
 import io
+import json
+from collections import defaultdict
+from datetime import datetime
 from functools import wraps
 
 from flask import (
@@ -24,6 +27,95 @@ from flask import (
 
 from database import guardar_evento, inicializar_db, obtener_estadisticas, obtener_eventos
 from detector import clasificar_ataque
+
+
+def _campo_evento_a_texto(valor):
+    """Convierte payload/headers (objeto o texto) a cadena para el JSON del monitor."""
+    if valor is None:
+        return ""
+    if isinstance(valor, (dict, list)):
+        return json.dumps(valor, ensure_ascii=False)
+    return str(valor)
+
+
+def _timestamp_evento_formato_api(valor):
+    """Formatea el timestamp como 'YYYY-MM-DD HH:MM:SS' (contrato del API de eventos)."""
+    if valor is None or valor == "":
+        return ""
+    s = str(valor).strip().replace("Z", "")
+    if "T" in s:
+        s = s.replace("T", " ", 1)
+    return s[:19] if len(s) >= 19 else s
+
+
+def _fila_evento_a_json_monitor(fila):
+    """Mapea un dict de BD al esquema JSON que consume el dashboard del monitor."""
+    return {
+        "id": int(fila["id"]) if fila.get("id") is not None else 0,
+        "ip": fila.get("ip") or "",
+        "ruta": fila.get("ruta") or "",
+        "metodo": fila.get("metodo") or "",
+        "payload": _campo_evento_a_texto(fila.get("payload")),
+        "user_agent": fila.get("user_agent") or "",
+        "tipo_ataque": fila.get("tipo_ataque") or "",
+        "pais": fila.get("pais") or "",
+        "timestamp": _timestamp_evento_formato_api(fila.get("timestamp")),
+        "headers": _campo_evento_a_texto(fila.get("headers")),
+    }
+
+
+def _ataques_detectados_sin_otro(estadisticas_bd):
+    """
+    Cuenta eventos cuyo tipo de ataque no es exactamente 'Otro' (sin distinguir mayúsculas).
+
+    Se usa la agregación `ataques_por_tipo` de `obtener_estadisticas` para no duplicar SQL.
+    """
+    total = 0
+    for tipo, cantidad in (estadisticas_bd.get("ataques_por_tipo") or {}).items():
+        if str(tipo).strip().lower() != "otro":
+            total += int(cantidad)
+    return total
+
+
+def _minutos_desde_ultimo_evento():
+    """Minutos transcurridos entre el último evento en BD y el instante actual (UTC naive)."""
+    ultimos = obtener_eventos(limite=1)
+    if not ultimos:
+        return None
+    ts = ultimos[0].get("timestamp")
+    if not ts:
+        return None
+    try:
+        s = str(ts).strip().replace("Z", "")
+        if "T" in s:
+            dt = datetime.fromisoformat(s)
+        else:
+            dt = datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return None
+    ahora = datetime.utcnow()
+    if getattr(dt, "tzinfo", None) is not None:
+        dt = dt.replace(tzinfo=None)
+    return max(0, int((ahora - dt).total_seconds() // 60))
+
+
+def _actividad_por_hora_desde_buckets(estadisticas_bd):
+    """
+    Agrupa `eventos_por_hora_ultimas_24h` por hora del día (0–23) en claves string.
+
+    Las claves de entrada son del estilo 'YYYY-MM-DD HH:00:00'; la salida es como {'18': 10}.
+    """
+    raw = estadisticas_bd.get("eventos_por_hora_ultimas_24h") or {}
+    acum = defaultdict(int)
+    for clave, cantidad in raw.items():
+        if not isinstance(clave, str) or len(clave) < 13 or clave[10] != " ":
+            continue
+        try:
+            hora = int(clave[11:13])
+        except ValueError:
+            continue
+        acum[str(hora)] += int(cantidad)
+    return {k: acum[k] for k in sorted(acum.keys(), key=lambda x: int(x))}
 
 
 # Creamos la instancia principal de Flask.
@@ -523,20 +615,44 @@ def monitor_logout():
 @requiere_autenticacion_monitor
 def monitor_api_eventos():
     """
-    Devuelve en JSON los últimos 100 eventos para refresco dinámico del dashboard.
+    Devuelve en JSON los últimos 100 eventos reales de la base de datos.
+
+    Cada elemento sigue el contrato acordado (tipos y nombres de campos fijos).
     """
-    eventos_recientes = obtener_eventos(limite=100)
-    return jsonify(eventos_recientes)
+    filas_bd = obtener_eventos(limite=100)
+    lista_json = [_fila_evento_a_json_monitor(fila) for fila in filas_bd]
+    return jsonify(lista_json)
 
 
 @aplicacion.get("/monitor/api/stats")
 @requiere_autenticacion_monitor
 def monitor_api_estadisticas():
     """
-    Devuelve en JSON las estadísticas principales del sistema de monitoreo.
+    Devuelve estadísticas agregadas reales a partir de `obtener_estadisticas()`.
+
+    Incluye conteo de ataques distintos de 'Otro', minutos desde el último evento
+    y actividad por hora del día. Se añaden alias (`tipos_ataque`, etc.) para el dashboard.
     """
-    estadisticas = obtener_estadisticas()
-    return jsonify(estadisticas)
+    estadisticas_bd = obtener_estadisticas()
+    ataques_por_tipo = dict(estadisticas_bd.get("ataques_por_tipo") or {})
+    ataques_detectados = _ataques_detectados_sin_otro(estadisticas_bd)
+    ultimo_hace = _minutos_desde_ultimo_evento()
+    ultimo_hace = 0 if ultimo_hace is None else ultimo_hace
+    actividad_por_hora = _actividad_por_hora_desde_buckets(estadisticas_bd)
+
+    cuerpo = {
+        "total_eventos": estadisticas_bd["total_eventos"],
+        "ips_unicas": estadisticas_bd["ips_unicas"],
+        "ataques_detectados": ataques_detectados,
+        "ultimo_ataque_hace": ultimo_hace,
+        "ataques_por_tipo": ataques_por_tipo,
+        "actividad_por_hora": actividad_por_hora,
+        # Nombres antiguos usados por `dashboard.html` (gráficas y tarjeta “último ataque”).
+        "ultimo_ataque_min": ultimo_hace,
+        "tipos_ataque": ataques_por_tipo,
+        "actividad_horas": actividad_por_hora,
+    }
+    return jsonify(cuerpo)
 
 
 @aplicacion.get("/monitor/exportar")
