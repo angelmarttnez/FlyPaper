@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>FlyPaper Admin — Configuración</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
+.sidebar{width:240px;background:#161b22;border-right:1px solid #21262d;padding:24px 0;display:flex;flex-direction:column;min-height:100vh}
+.logo{padding:0 24px 24px;font-size:20px;font-weight:700;color:#58a6ff;border-bottom:1px solid #21262d;margin-bottom:16px}
+.logo span{color:#e4e6eb}
+.nav{flex:1;display:flex;flex-direction:column;gap:4px;padding:0 12px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 14px;color:#8b949e;text-decoration:none;border-radius:6px;font-size:14px;transition:all .15s}
+.nav a:hover{background:#21262d;color:#e4e6eb}
+.nav a.active{background:#1f6feb22;color:#58a6ff;border-left:3px solid #58a6ff;padding-left:11px}
+.nav .icon{width:18px;height:18px;display:inline-block;text-align:center}
+.logout{margin-top:auto;padding:0 12px}
+.logout a{color:#f85149}
+.logout a:hover{background:#f8514922;color:#ff6b6b}
+.main{flex:1;padding:32px 40px;max-width:900px}
+.header h1{font-size:24px;font-weight:600}
+.header p{color:#8b949e;font-size:14px;margin-top:4px;margin-bottom:24px}
+.section{background:#161b22;border:1px solid #21262d;border-radius:8px;margin-bottom:20px;overflow:hidden}
+.section-header{padding:16px 20px;border-bottom:1px solid #21262d}
+.section-header h2{font-size:16px;font-weight:600}
+.section-header p{font-size:13px;color:#8b949e;margin-top:2px}
+.section-body{padding:20px;display:grid;gap:18px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:500;color:#e4e6eb}
+.field .hint{font-size:12px;color:#6e7681}
+.field input[type="text"],.field input[type="email"],.field input[type="number"],.field input[type="url"]{background:#0d1117;border:1px solid #30363d;color:#e4e6eb;padding:9px 12px;border-radius:6px;font-size:14px;width:100%}
+.field input:focus{outline:none;border-color:#58a6ff;box-shadow:0 0 0 3px #58a6ff22}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:18px}
+.toggle{display:flex;justify-content:space-between;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px 16px}
+.toggle-info strong{font-size:14px;display:block}
+.toggle-info span{font-size:12px;color:#8b949e}
+.switch{position:relative;width:42px;height:24px;background:#30363d;border-radius:12px;cursor:pointer;transition:.2s}
+.switch.on{background:#238636}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.2s}
+.switch.on::after{left:21px}
+.actions{display:flex;justify-content:flex-end;gap:12px;margin-top:8px}
+.btn{background:#238636;color:#fff;border:none;padding:10px 20px;border-radius:6px;font-size:14px;cursor:pointer;font-weight:500}
+.btn:hover{background:#2ea043}
+.btn-secondary{background:#21262d;color:#e4e6eb;border:1px solid #30363d}
+.btn-secondary:hover{background:#30363d}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo">Fly<span>Paper</span></div>
+  <nav class="nav">
+    <a href="/admin"><span class="icon">▦</span> Dashboard</a>
+    <a href="/admin/usuarios"><span class="icon">◉</span> Usuarios</a>
+    <a href="/admin/configuracion" class="active"><span class="icon">⚙</span> Configuración</a>
+    <a href="/admin/reportes"><span class="icon">▤</span> Reportes</a>
+  </nav>
+  <div class="logout nav">
+    <a href="/logout"><span class="icon">⎋</span> Logout</a>
+  </div>
+</aside>
+<main class="main">
+  <div class="header">
+    <h1>Configuración del sistema</h1>
+    <p>Ajusta los parámetros generales, seguridad y conexión de la plataforma</p>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>General</h2>
+      <p>Información básica de la instalación</p>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Nombre del sistema</label>
+        <input type="text" value="FlyPaper Admin">
+      </div>
+      <div class="field">
+        <label>URL base</label>
+        <input type="url" value="https://admin.flypaper.io">
+        <span class="hint">URL canónica utilizada en emails y enlaces externos</span>
+      </div>
+      <div class="field">
+        <label>Email de contacto</label>
+        <input type="email" value="soporte@flypaper.io">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Seguridad</h2>
+      <p>Políticas de autenticación y sesión</p>
+    </div>
+    <div class="section-body">
+      <div class="row">
+        <div class="field">
+          <label>Timeout de sesión (minutos)</label>
+          <input type="number" value="30">
+        </div>
+        <div class="field">
+          <label>Intentos máximos de login</label>
+          <input type="number" value="5">
+        </div>
+      </div>
+      <div class="toggle">
+        <div class="toggle-info">
+          <strong>Autenticación de dos factores (2FA)</strong>
+          <span>Requerir un segundo factor para todos los usuarios admin</span>
+        </div>
+        <div class="switch on"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Base de datos</h2>
+      <p>Conexión al servidor de base de datos principal</p>
+    </div>
+    <div class="section-body">
+      <div class="row3">
+        <div class="field">
+          <label>Host</label>
+          <input type="text" value="db-prod-01.flypaper.internal">
+        </div>
+        <div class="field">
+          <label>Puerto</label>
+          <input type="number" value="5432">
+        </div>
+        <div class="field">
+          <label>Nombre de BD</label>
+          <input type="text" value="flypaper_prod">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-secondary">Cancelar</button>
+    <button class="btn">Guardar cambios</button>
+  </div>
+</main>
+</body>
+</html>

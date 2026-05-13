@@ -7,14 +7,29 @@ Este archivo define un honeypot web con Flask que:
 - Guarda eventos en SQLite para posterior análisis.
 """
 
-from flask import Flask, jsonify, make_response, redirect, render_template, request, url_for
+import csv
+import io
+from functools import wraps
 
-from database import guardar_evento, inicializar_db
+from flask import (
+    Flask,
+    jsonify,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+
+from database import guardar_evento, inicializar_db, obtener_estadisticas, obtener_eventos
 from detector import clasificar_ataque
 
 
 # Creamos la instancia principal de Flask.
 aplicacion = Flask(__name__)
+# Clave para firmar cookies de sesión (login honeypot y otras sesiones).
+aplicacion.secret_key = 'flypaper_secreto_2026'
 
 # Inicializamos la base de datos al arrancar la aplicación para asegurar
 # que la tabla `eventos` exista antes de intentar guardar información.
@@ -62,6 +77,34 @@ def debe_excluirse_del_registro(ruta_solicitada):
         bool: True si debe excluirse, False en caso contrario.
     """
     return ruta_solicitada.startswith("/dashboard") or ruta_solicitada.startswith("/static")
+
+
+def acceso_monitor_autorizado():
+    """
+    Comprueba si el analista autenticó correctamente en /monitor/login.
+
+    Solo se considera válido `session["analyst"] == True` (sin atajos por URL).
+
+    Returns:
+        bool: True si la sesión de analista está activa, False en caso contrario.
+    """
+    return session.get("analyst") is True
+
+
+def requiere_autenticacion_monitor(funcion_vista):
+    """
+    Decorador para proteger rutas del monitor privado.
+
+    Si no hay sesión de analista (`session["analyst"]`), redirige al login del monitor.
+    """
+
+    @wraps(funcion_vista)
+    def envoltorio(*args, **kwargs):
+        if not acceso_monitor_autorizado():
+            return redirect(url_for("monitor_login_get"))
+        return funcion_vista(*args, **kwargs)
+
+    return envoltorio
 
 
 @aplicacion.after_request
@@ -136,23 +179,47 @@ def mostrar_login():
     return render_template("login.html")
 
 
+# Usuarios de demostración: contraseña y ruta tras login correcto.
+usuarios = {
+    "admin": {"password": "admin", "redirige": "/admin"},
+    "Angel": {"password": "Angel123", "redirige": "/search"},
+}
+
+
 @aplicacion.post("/login")
 def procesar_login():
     """
-    Acepta cualquier combinación de usuario y contraseña.
+    Valida usuario y contraseña contra el diccionario `usuarios`.
 
-    Aunque se reciben los datos enviados por el formulario, en este honeypot
-    no se valida nada: siempre redirige al dashboard falso para simular
-    un acceso "exitoso".
+    Si las credenciales son correctas, guarda el estado en la sesión y
+    redirige a la ruta asociada al usuario.
+    Si fallan, redirige al login con parámetro de error (sin conceder acceso).
     """
-    # Leemos campos típicos de login para mantener el comportamiento realista.
+    # Campos del formulario en `login.html` (honeypot con aspecto realista).
     usuario_enviado = request.form.get("username", "")
     contrasena_enviada = request.form.get("password", "")
 
-    # Las variables se usan intencionalmente aunque no haya validación todavía.
-    _ = (usuario_enviado, contrasena_enviada)
+    # Buscamos al usuario por nombre exacto (las claves distinguen mayúsculas).
+    datos_usuario = usuarios.get(usuario_enviado)
+    if datos_usuario is not None and datos_usuario["password"] == contrasena_enviada:
+        # Sesión del honeypot: marcamos acceso y guardamos el nombre mostrado.
+        session["logueado"] = True
+        session["usuario"] = usuario_enviado
+        # Credenciales válidas: vamos a la ruta configurada para ese usuario.
+        return redirect(datos_usuario["redirige"])
 
-    return redirect("/dashboard-falso")
+    # Usuario inexistente o contraseña incorrecta: mismo flujo, sin entrar a zonas protegidas.
+    return redirect("/login?error=1")
+
+
+@aplicacion.get("/logout")
+def cerrar_sesion_honeypot():
+    """
+    Cierra la sesión del visitante (honeypot) y vuelve al formulario de login.
+    """
+    # Vacía por completo la sesión Flask (incluye claves usadas por otras partes si las hubiera).
+    session.clear()
+    return redirect(url_for("mostrar_login"))
 
 
 @aplicacion.get("/admin")
@@ -163,7 +230,37 @@ def mostrar_panel_admin():
     Renderiza la plantilla `admin.html`, diseñada para aparentar
     una zona sensible de gestión.
     """
-    return render_template("admin.html")
+    # Solo accesible tras login correcto en POST /login.
+    if session.get("logueado") is not True:
+        return redirect("/login?error=1")
+    # Enlace al monitor real (ruta pasada al template para no duplicar literales).
+    return render_template("admin.html", monitor_url="/monitor/login")
+
+
+@aplicacion.get("/admin/usuarios")
+def admin_usuarios():
+    """
+    Subsección falsa de administración: listado de usuarios.
+
+    Misma política de acceso que el panel principal `/admin`.
+    """
+    # Requiere sesión creada en POST /login (honeypot).
+    if session.get("logueado") is not True:
+        return redirect("/login?error=1")
+    return render_template("usuarios.html")
+
+
+@aplicacion.get("/admin/configuracion")
+def admin_configuracion():
+    """
+    Subsección falsa de administración: pantalla de configuración.
+
+    Requiere autenticación por sesión igual que el resto de `/admin`.
+    """
+    # Sin sesión válida, no se muestra contenido sensible simulado.
+    if session.get("logueado") is not True:
+        return redirect("/login?error=1")
+    return render_template("configuracion.html")
 
 
 @aplicacion.get("/backup")
@@ -319,6 +416,9 @@ def mostrar_busqueda():
     Renderiza la plantilla `search.html`, pensada para recibir términos
     que después se reflejan en resultados simulados.
     """
+    # Misma regla que /admin: exige sesión iniciada por el login del honeypot.
+    if session.get("logueado") is not True:
+        return redirect("/login?error=1")
     return render_template("search.html")
 
 
@@ -330,6 +430,9 @@ def procesar_busqueda():
     La búsqueda no consulta base de datos real; solo construye un conjunto
     de resultados simulados para mantener la ilusión de funcionalidad.
     """
+    # Evita envíos POST anónimos a la búsqueda sin pasar antes por /login.
+    if session.get("logueado") is not True:
+        return redirect("/login?error=1")
     termino_busqueda = request.form.get("q", "").strip()
 
     resultados_falsos = [
@@ -356,6 +459,136 @@ def procesar_busqueda():
         resultados=resultados_falsos,
         total_resultados=len(resultados_falsos),
     )
+
+
+@aplicacion.get("/monitor")
+@requiere_autenticacion_monitor
+def monitor_dashboard():
+    """
+    Muestra el dashboard privado principal de FlyPaper.
+
+    La lógica visual queda en la plantilla `dashboard.html`.
+    """
+    return render_template("dashboard.html")
+
+
+@aplicacion.get("/monitor/login")
+def monitor_login_get():
+    """
+    Muestra el formulario de autenticación del panel de monitorización.
+
+    Si llega `?error=1` (p. ej. tras credenciales incorrectas), se muestra aviso.
+    """
+    mensaje_error = None
+    if request.args.get("error") == "1":
+        mensaje_error = "Usuario o contraseña incorrectos."
+    return render_template("monitor_login.html", error=mensaje_error)
+
+
+@aplicacion.post("/monitor/login")
+def monitor_login_post():
+    """
+    Procesa el login del dashboard privado.
+
+    Credenciales válidas:
+    - usuario: analyst
+    - contraseña: FlyPaper2026!
+    """
+    # Importante: estos nombres deben coincidir con `name="usuario"` y
+    # `name="contrasena"` definidos en `templates/monitor_login.html`.
+    usuario_enviado = request.form.get("usuario", "").strip()
+    contrasena_enviada = request.form.get("contrasena", "")
+
+    if usuario_enviado == "analyst" and contrasena_enviada == "FlyPaper2026!":
+        # Sesión exclusiva del monitor (clave distinta al honeypot `logueado`).
+        session["analyst"] = True
+        return redirect(url_for("monitor_dashboard"))
+
+    # Fallo: misma URL con query para que la plantilla muestre el error.
+    return redirect("/monitor/login?error=1")
+
+
+@aplicacion.get("/monitor/logout")
+def monitor_logout():
+    """
+    Cierra únicamente la sesión del analista del monitor.
+
+    No se usa `session.clear()` para no cerrar la sesión del honeypot (`logueado`, etc.).
+    """
+    session.pop("analyst", None)
+    return redirect(url_for("monitor_login_get"))
+
+
+@aplicacion.get("/monitor/api/eventos")
+@requiere_autenticacion_monitor
+def monitor_api_eventos():
+    """
+    Devuelve en JSON los últimos 100 eventos para refresco dinámico del dashboard.
+    """
+    eventos_recientes = obtener_eventos(limite=100)
+    return jsonify(eventos_recientes)
+
+
+@aplicacion.get("/monitor/api/stats")
+@requiere_autenticacion_monitor
+def monitor_api_estadisticas():
+    """
+    Devuelve en JSON las estadísticas principales del sistema de monitoreo.
+    """
+    estadisticas = obtener_estadisticas()
+    return jsonify(estadisticas)
+
+
+@aplicacion.get("/monitor/exportar")
+@requiere_autenticacion_monitor
+def monitor_exportar_csv():
+    """
+    Genera y descarga un CSV con los eventos obtenidos vía `obtener_eventos`.
+
+    Hasta 9999 filas de datos más la cabecera; columnas alineadas con el esquema pedido.
+    """
+    lista_eventos = obtener_eventos(limite=9999)
+
+    buffer_csv = io.StringIO()
+    escritor_csv = csv.writer(buffer_csv)
+
+    # Cabeceras exactamente como se solicitan para hojas de cálculo externas.
+    escritor_csv.writerow(
+        [
+            "ID",
+            "IP",
+            "Ruta",
+            "Metodo",
+            "Payload",
+            "User_Agent",
+            "Tipo_Ataque",
+            "Pais",
+            "Timestamp",
+        ]
+    )
+
+    for evento in lista_eventos:
+        escritor_csv.writerow(
+            [
+                evento.get("id", ""),
+                evento.get("ip", ""),
+                evento.get("ruta", ""),
+                evento.get("metodo", ""),
+                evento.get("payload", ""),
+                evento.get("user_agent", ""),
+                evento.get("tipo_ataque", ""),
+                evento.get("pais", ""),
+                evento.get("timestamp", ""),
+            ]
+        )
+
+    contenido_csv = buffer_csv.getvalue()
+    buffer_csv.close()
+
+    respuesta = make_response(contenido_csv, 200)
+    respuesta.mimetype = "text/csv"
+    respuesta.headers["Content-Disposition"] = "attachment; filename=flypaper_eventos.csv"
+    return respuesta
 
 
 if __name__ == "__main__":

@@ -185,11 +185,11 @@
       <div class="brand-name">FlyPaper</div>
     </div>
     <nav>
-      <a href="#" class="active"><span>📊</span><span>Dashboard</span></a>
-      <a href="#"><span>👥</span><span>Usuarios</span></a>
-      <a href="#"><span>⚙️</span><span>Configuración</span></a>
-      <a href="#"><span>📈</span><span>Reportes</span></a>
-      <a href="#"><span>🚪</span><span>Logout</span></a>
+      <a href="/admin" class="active"><span>📊</span><span>Dashboard</span></a>
+      <a href="/admin/usuarios"><span>👥</span><span>Usuarios</span></a>
+      <a href="/admin/configuracion"><span>⚙️</span><span>Configuración</span></a>
+      <a href="/admin/reportes"><span>📈</span><span>Reportes</span></a>
+      <a href="/logout"><span>🚪</span><span>Logout</span></a>
     </nav>
   </aside>
 
@@ -265,6 +265,10 @@
         </tbody>
       </table>
     </section>
+
+    <p style="margin-top: 28px; text-align: center;">
+      <a href="{{ monitor_url }}" style="color: #7da3ff; font-size: 14px; font-weight: 500; text-decoration: none;">Acceder al Monitor de Seguridad</a>
+    </p>
   </main>
 </body>
 </html>

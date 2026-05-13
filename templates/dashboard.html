@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>FlyPaper / Security Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0a0e1a;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding-top: 64px;
+  }
+  /* Cabecera fija */
+  header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 64px;
+    background: #111827;
+    border-bottom: 1px solid #1e293b;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 100;
+  }
+  header .brand { font-size: 16px; font-weight: 600; }
+  header .right { display: flex; align-items: center; gap: 16px; }
+  .live {
+    color: #22c55e;
+    font-size: 13px;
+    font-weight: 600;
+    animation: blink 1.2s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .btn-logout {
+    background: transparent;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .btn-logout:hover { background: #1e293b; }
+
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* Tarjetas estadísticas */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .stat-card .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 8px; color: #e2e8f0; }
+
+  /* Gráficas */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .chart-card {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .chart-card h3 { font-size: 14px; margin-bottom: 12px; color: #e2e8f0; }
+  .chart-card canvas { background: #111827; }
+
+  /* Tabla */
+  .table-section {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .table-section h3 { font-size: 14px; margin-bottom: 12px; }
+  .filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-btn {
+    background: #0a0e1a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .filter-btn.active { background: #3b82f6; border-color: #3b82f6; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #1e293b; }
+  th { color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #1e293b; }
+  tr.row-critical { background: #1a0a0a; border-left: 3px solid #ef4444; }
+  tr.row-recon { background: #0a0f1a; border-left: 3px solid #f97316; }
+  .empty-row td { text-align: center; color: #94a3b8; padding: 28px; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-sqli, .badge-xss { background: #ef4444; color: #fff; }
+  .badge-reconocimiento { background: #f97316; color: #fff; }
+  .badge-fuerza { background: #eab308; color: #111827; }
+  .badge-otro { background: #1e293b; color: #e2e8f0; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 24px;
+    max-width: 720px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  .modal h2 { font-size: 16px; margin-bottom: 16px; padding-right: 30px; }
+  .modal-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 22px;
+    cursor: pointer;
+  }
+  .modal-row { margin-bottom: 12px; font-size: 13px; }
+  .modal-row .k { color: #94a3b8; font-size: 11px; text-transform: uppercase; margin-bottom: 3px; }
+  .modal-row .v { color: #e2e8f0; word-break: break-all; }
+  .code-block {
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    color: #e2e8f0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  /* Botón flotante */
+  .fab {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    z-index: 50;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .fab:hover { background: #2563eb; }
+
+  @media (max-width: 900px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .charts-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">🪤 FlyPaper / Security Dashboard</div>
+  <div class="right">
+    <span class="live">● LIVE</span>
+    <a class="btn-logout" href="/monitor/logout">Cerrar sesión</a>
+  </div>
+</header>
+
+<main>
+  <!-- Tarjetas de estadísticas -->
+  <section class="stats-row">
+    <div class="stat-card"><div class="label">Total Eventos</div><div class="value" id="stat-total">...</div></div>
+    <div class="stat-card"><div class="label">IPs Únicas</div><div class="value" id="stat-ips">...</div></div>
+    <div class="stat-card"><div class="label">Ataques Detectados</div><div class="value" id="stat-ataques">...</div></div>
+    <div class="stat-card"><div class="label">Último ataque</div><div class="value" id="stat-ultimo">...</div></div>
+  </section>
+
+  <!-- Gráficas -->
+  <section class="charts-row">
+    <div class="chart-card">
+      <h3>Ataques por Tipo</h3>
+      <canvas id="chart-tipos" height="180"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Actividad por Hora</h3>
+      <canvas id="chart-horas" height="180"></canvas>
+    </div>
+  </section>
+
+  <!-- Tabla -->
+  <section class="table-section">
+    <h3>Eventos Recientes</h3>
+    <div class="filters" id="filtros">
+      <button class="filter-btn active" data-filtro="Todos">Todos</button>
+      <button class="filter-btn" data-filtro="SQLi">SQLi</button>
+      <button class="filter-btn" data-filtro="XSS">XSS</button>
+      <button class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
+      <button class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
+      <button class="filter-btn" data-filtro="Otro">Otro</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>#</th><th>IP</th><th>Ruta</th><th>Tipo</th><th>Navegador</th><th>Timestamp</th></tr>
+      </thead>
+      <tbody id="tbody-eventos">
+        <tr class="empty-row"><td colspan="6">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<!-- Modal de detalles -->
+<div class="modal-overlay" id="modal" onclick="cerrarModalFuera(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="cerrarModal()">×</button>
+    <h2>Detalle del Evento</h2>
+    <div class="modal-row"><div class="k">IP</div><div class="v" id="m-ip"></div></div>
+    <div class="modal-row"><div class="k">Ruta</div><div class="v" id="m-ruta"></div></div>
+    <div class="modal-row"><div class="k">Tipo</div><div class="v"><span id="m-tipo" class="badge"></span></div></div>
+    <div class="modal-row"><div class="k">Timestamp</div><div class="v" id="m-ts"></div></div>
+    <div class="modal-row"><div class="k">User-Agent</div><div class="v" id="m-ua"></div></div>
+    <div class="modal-row"><div class="k">Payload</div><pre class="code-block" id="m-payload"></pre></div>
+    <div class="modal-row"><div class="k">Headers</div><pre class="code-block" id="m-headers"></pre></div>
+  </div>
+</div>
+
+<!-- Botón flotante exportar -->
+<a class="fab" href="/monitor/exportar">📥 Exportar CSV</a>
+
+<script>
+  // === Estado global ===
+  let eventosCache = [];        // array de eventos en memoria
+  let filtroActual = 'Todos';   // filtro activo
+  let chartTipos = null;        // instancia chart de barras
+  let chartHoras = null;        // instancia chart de líneas
+
+  // === Carga de estadísticas y gráficas ===
+  async function cargarEstadisticas() {
+    try {
+      const res = await fetch('/monitor/api/stats');
+      if (!res.ok) throw new Error('respuesta no OK');
+      const data = await res.json();
+
+      // Rellenar tarjetas
+      document.getElementById('stat-total').textContent = data.total_eventos ?? 0;
+      document.getElementById('stat-ips').textContent = data.ips_unicas ?? 0;
+      document.getElementById('stat-ataques').textContent = data.ataques_detectados ?? 0;
+      document.getElementById('stat-ultimo').textContent =
+        (data.ultimo_ataque_min ?? '—') + ' min';
+
+      // Renderizar gráficas con los datos recibidos
+      renderChartTipos(data.tipos_ataque || {});
+      renderChartHoras(data.actividad_horas || {});
+    } catch (e) {
+      // En caso de error mostramos texto en las tarjetas
+      ['stat-total','stat-ips','stat-ataques','stat-ultimo'].forEach(id => {
+        document.getElementById(id).textContent = 'Error al cargar datos';
+      });
+    }
+  }
+
+  // === Renderizado del gráfico de barras (tipos de ataque) ===
+  function renderChartTipos(tipos) {
+    const ctx = document.getElementById('chart-tipos').getContext('2d');
+    const labels = Object.keys(tipos);
+    const valores = Object.values(tipos);
+    if (chartTipos) chartTipos.destroy();
+    chartTipos = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Ataques',
+          data: valores,
+          backgroundColor: '#3b82f6',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+        }
+      }
+    });
+  }
+
+  // === Renderizado del gráfico de líneas (actividad por hora) ===
+  function renderChartHoras(horas) {
+    const ctx = document.getElementById('chart-horas').getContext('2d');
+    const labels = Object.keys(horas);
+    const valores = Object.values(horas);
+    if (chartHoras) chartHoras.destroy();
+    chartHoras = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Eventos',
+          data: valores,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.15)',
+          tension: 0.3,
+          fill: true,
+          pointBackgroundColor: '#3b82f6'
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+        }
+      }
+    });
+  }
+
+  // === Carga de eventos ===
+  async function cargarEventos() {
+    try {
+      const res = await fetch('/monitor/api/eventos');
+      if (!res.ok) throw new Error('respuesta no OK');
+      const data = await res.json();
+      // Aceptamos array directo o {eventos: [...]}
+      eventosCache = Array.isArray(data) ? data : (data.eventos || []);
+      renderTabla();
+    } catch (e) {
+      const tbody = document.getElementById('tbody-eventos');
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Error al cargar datos</td></tr>';
+    }
+  }
+
+  // === Render de la tabla aplicando filtro ===
+  function renderTabla() {
+    const tbody = document.getElementById('tbody-eventos');
+    let lista = eventosCache;
+    // Filtrado en memoria
+    if (filtroActual !== 'Todos') {
+      lista = lista.filter(ev => (ev.tipo || '').toLowerCase() === filtroActual.toLowerCase());
+    }
+    // Limitar a 50 filas
+    lista = lista.slice(0, 50);
+
+    if (lista.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No hay eventos registrados</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    lista.forEach((ev, idx) => {
+      const tr = document.createElement('tr');
+      const tipo = (ev.tipo || 'Otro');
+      // Aplicar clases por tipo
+      const tipoLower = tipo.toLowerCase();
+      if (tipoLower === 'sqli' || tipoLower === 'xss') tr.className = 'row-critical';
+      else if (tipoLower === 'reconocimiento') tr.className = 'row-recon';
+
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(ev.ip || '')}</td>
+        <td>${escapeHtml(ev.ruta || '')}</td>
+        <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
+        <td>${escapeHtml(ev.navegador || '')}</td>
+        <td>${escapeHtml(ev.timestamp || '')}</td>
+      `;
+      tr.addEventListener('click', () => abrirModal(ev));
+      tbody.appendChild(tr);
+    });
+  }
+
+  // === Devuelve la clase CSS de badge según tipo ===
+  function badgeClass(tipo) {
+    const t = (tipo || '').toLowerCase();
+    if (t === 'sqli') return 'badge-sqli';
+    if (t === 'xss') return 'badge-xss';
+    if (t === 'reconocimiento') return 'badge-reconocimiento';
+    if (t === 'fuerza bruta') return 'badge-fuerza';
+    return 'badge-otro';
+  }
+
+  // === Escape básico para evitar inyección al pintar valores ===
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // === Filtros: gestionar clic ===
+  document.querySelectorAll('#filtros .filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#filtros .filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroActual = btn.dataset.filtro;
+      renderTabla();
+    });
+  });
+
+  // === Modal ===
+  function abrirModal(ev) {
+    document.getElementById('m-ip').textContent = ev.ip || '';
+    document.getElementById('m-ruta').textContent = ev.ruta || '';
+    const tipoEl = document.getElementById('m-tipo');
+    tipoEl.textContent = ev.tipo || 'Otro';
+    tipoEl.className = 'badge ' + badgeClass(ev.tipo);
+    document.getElementById('m-ts').textContent = ev.timestamp || '';
+    document.getElementById('m-ua').textContent = ev.user_agent || ev.navegador || '';
+    document.getElementById('m-payload').textContent =
+      typeof ev.payload === 'string' ? ev.payload : JSON.stringify(ev.payload || {}, null, 2);
+    document.getElementById('m-headers').textContent =
+      typeof ev.headers === 'string' ? ev.headers : JSON.stringify(ev.headers || {}, null, 2);
+    document.getElementById('modal').classList.add('show');
+  }
+  function cerrarModal() {
+    document.getElementById('modal').classList.remove('show');
+  }
+  function cerrarModalFuera(e) {
+    if (e.target.id === 'modal') cerrarModal();
+  }
+
+  // === Inicialización + refresco automático cada 30s ===
+  cargarEstadisticas();
+  cargarEventos();
+  setInterval(() => {
+    cargarEstadisticas();
+    cargarEventos();
+  }, 30000);
+</script>
+</body>
+</html>
