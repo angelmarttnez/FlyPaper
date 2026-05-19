@@ -17,14 +17,19 @@ from pathlib import Path
 # Nombres canónicos de los dos retos CTF del laboratorio.
 RETO_CTF_SQLI = "SQLi"
 RETO_CTF_PATH_TRAVERSAL = "Path Traversal"
-# Usuario señuelo en tabla `usuarios`: nombre engañoso, sin privilegios reales de app.
+# Usuario señuelo en tabla `usuarios` (pública): nombre engañoso, sin privilegios reales.
 USUARIO_SENUELO_SQLI = "admin"
+# Cuentas reales de panel / monitor viven solo en `usuarios_privados`.
+ROL_PRIV_ADMIN_PANEL = "admin_panel"
+ROL_PRIV_MONITOR = "monitor"
 # Formato estricto: flag{10 caracteres alfanuméricos} (grupo 1 = cuerpo de la flag).
 PATRON_FLAG_CTF = re.compile(r"^flag\{([a-zA-Z0-9]{10})\}$")
 
 
 RUTA_RAIZ_PROYECTO = Path(__file__).resolve().parent
 RUTA_BD = RUTA_RAIZ_PROYECTO / "flypaper.db"
+# Credenciales /admin y /monitor: BD separada, no alcanzable por SQLi en el buscador.
+RUTA_BD_PRIVADA = RUTA_RAIZ_PROYECTO / "flypaper_priv.db"
 
 
 def obtener_conexion():
@@ -32,11 +37,23 @@ def obtener_conexion():
     Crea una conexión SQLite con filas accesibles por nombre de columna.
 
     Returns:
-        sqlite3.Connection: Conexión a `flypaper.db`.
+        sqlite3.Connection: Conexión a `flypaper.db` (posts, usuarios públicos, CTF, etc.).
     """
     conexion = sqlite3.connect(RUTA_BD)
     conexion.row_factory = sqlite3.Row
     conexion.execute("PRAGMA foreign_keys = ON;")
+    return conexion
+
+
+def obtener_conexion_privada():
+    """
+    Conexión a la BD de cuentas privilegiadas (no usada por `/search`).
+
+    Returns:
+        sqlite3.Connection: Conexión a `flypaper_priv.db`.
+    """
+    conexion = sqlite3.connect(RUTA_BD_PRIVADA)
+    conexion.row_factory = sqlite3.Row
     return conexion
 
 
@@ -62,7 +79,8 @@ def inicializar_db():
     """
     Crea todas las tablas del modelo relacional si no existen.
 
-    Tablas: eventos, usuarios, posts, comentarios, flags, flags_resueltas, reportes_enviados, ips_bloqueadas.
+    Tablas en flypaper.db: eventos, usuarios, posts, comentarios, flags, etc.
+    Cuentas privilegiadas en flypaper_priv.db (tabla usuarios_privados).
     Tras crear el esquema, llama a `poblar_entorno_simulacion()` si procede.
     """
     ddl_tablas = """
@@ -149,9 +167,13 @@ def inicializar_db():
         _asegurar_columna_gravedad(cursor)
         conexion.commit()
 
+    _inicializar_bd_privada()
+    _migrar_privados_desde_bd_publica_si_existe()
     poblar_entorno_simulacion()
     asegurar_flags_ctf_dinamicas()
     asegurar_usuario_senuelo_sqli()
+    asegurar_cuentas_privilegiadas()
+    _migrar_cuentas_privilegiadas_fuera_de_usuarios()
 
 
 def generar_flag_ctf_aleatoria():
@@ -243,7 +265,7 @@ def asegurar_usuario_senuelo_sqli():
     """
     Usuario «admin» en BD (señuelo CTF): password_hash = 10 caracteres de la flag SQLi.
 
-    No otorga acceso a /monitor ni panel honeypot (login de app.py es independiente).
+    No otorga acceso a /monitor ni /admin (esas cuentas están en `usuarios_privados`).
     Se actualiza siempre que exista o cambie la flag del reto SQLi.
     """
     flag_sqli = obtener_flag_string_por_reto(RETO_CTF_SQLI)
@@ -290,6 +312,175 @@ def asegurar_usuario_senuelo_sqli():
         conexion.commit()
 
 
+def _inicializar_bd_privada():
+    """Crea `usuarios_privados` en flypaper_priv.db (aislada del buscador SQLi)."""
+    ddl = """
+    CREATE TABLE IF NOT EXISTS usuarios_privados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        rol TEXT NOT NULL,
+        redirige TEXT,
+        nombre TEXT,
+        email TEXT
+    );
+    """
+    with obtener_conexion_privada() as conexion:
+        conexion.executescript(ddl)
+        conexion.commit()
+
+
+def _migrar_privados_desde_bd_publica_si_existe():
+    """Copia filas legacy de usuarios_privados en flypaper.db hacia flypaper_priv.db."""
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='usuarios_privados';"
+        )
+        if not cursor.fetchone():
+            return
+        cursor.execute("SELECT * FROM usuarios_privados;")
+        filas = cursor.fetchall()
+        conexion.execute("DROP TABLE usuarios_privados;")
+        conexion.commit()
+
+    if not filas:
+        return
+
+    with obtener_conexion_privada() as priv:
+        pc = priv.cursor()
+        for fila in filas:
+            pc.execute(
+                """
+                INSERT OR IGNORE INTO usuarios_privados (
+                    username, password_hash, rol, redirige, nombre, email
+                ) VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    fila["username"],
+                    fila["password_hash"],
+                    fila["rol"],
+                    fila["redirige"],
+                    fila["nombre"],
+                    fila["email"],
+                ),
+            )
+        priv.commit()
+
+
+def asegurar_cuentas_privilegiadas():
+    """
+    Cuentas con acceso a /admin o /monitor; solo en flypaper_priv.db (fuera del SQLi).
+
+    Contraseñas en texto plano en BD (entorno de laboratorio).
+    """
+    cuentas = [
+        (
+            "admin",
+            "admin",
+            ROL_PRIV_ADMIN_PANEL,
+            "/admin",
+            "Administrador del panel",
+            "admin@flypaper.internal",
+        ),
+        (
+            "analyst",
+            "FlyPaper2026!",
+            ROL_PRIV_MONITOR,
+            None,
+            "Analista SOC",
+            "analyst@flypaper.internal",
+        ),
+    ]
+    with obtener_conexion_privada() as conexion:
+        cursor = conexion.cursor()
+        for username, password, rol, redirige, nombre, email in cuentas:
+            cursor.execute(
+                "SELECT id FROM usuarios_privados WHERE username = ?;",
+                (username,),
+            )
+            if cursor.fetchone():
+                cursor.execute(
+                    """
+                    UPDATE usuarios_privados
+                    SET password_hash = ?, rol = ?, redirige = ?, nombre = ?, email = ?
+                    WHERE username = ?;
+                    """,
+                    (password, rol, redirige, nombre, email, username),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO usuarios_privados (
+                        username, password_hash, rol, redirige, nombre, email
+                    ) VALUES (?, ?, ?, ?, ?, ?);
+                    """,
+                    (username, password, rol, redirige, nombre, email),
+                )
+        conexion.commit()
+
+
+def _migrar_cuentas_privilegiadas_fuera_de_usuarios():
+    """
+    En BDs antiguas, quita de `usuarios` filas que duplican cuentas de `usuarios_privados`.
+
+    Conserva el señuelo `admin` en `usuarios` (mismo username, tabla distinta para el CTF).
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "DELETE FROM usuarios WHERE username = ?;",
+            ("analyst",),
+        )
+        # Admin legacy con departamento Admin y hash MD5 (semilla antigua): dejar solo el señuelo.
+        cursor.execute(
+            """
+            DELETE FROM usuarios
+            WHERE username = ?
+              AND departamento = 'Admin'
+              AND length(password_hash) = 32;
+            """,
+            (USUARIO_SENUELO_SQLI,),
+        )
+        conexion.commit()
+    asegurar_usuario_senuelo_sqli()
+
+
+def verificar_usuario_privado(username, password):
+    """
+    Autenticación contra `usuarios_privados` (panel /admin y monitor).
+
+    Returns:
+        dict | None: {"rol", "redirige", "username"} si las credenciales son válidas.
+    """
+    if not username or password is None:
+        return None
+    with obtener_conexion_privada() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT username, rol, redirige
+            FROM usuarios_privados
+            WHERE username = ? AND password_hash = ?;
+            """,
+            (username.strip(), password),
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            return None
+        redirige = fila["redirige"]
+        if not redirige:
+            if fila["rol"] == ROL_PRIV_MONITOR:
+                redirige = "/monitor"
+            elif fila["rol"] == ROL_PRIV_ADMIN_PANEL:
+                redirige = "/admin"
+        return {
+            "username": fila["username"],
+            "rol": fila["rol"],
+            "redirige": redirige,
+        }
+
+
 def reiniciar_progreso_ctf_por_ip(ip):
     """
     Elimina todos los retos resueltos de una IP (QA / repetir pruebas en /objetivos).
@@ -315,7 +506,8 @@ def poblar_entorno_simulacion():
     Inserta datos falsos del entorno corporativo y flags del CTF.
 
     Solo inserta si las tablas principales de simulación están vacías (usuarios, posts, flags).
-    - 4 usuarios (IT, RRHH, Ventas, Admin); admin con MD5 de "admin123" (mala práctica intencional).
+    - 3 empleados en `usuarios` (sin cuentas privilegiadas; el señuelo admin se añade aparte).
+    - Cuentas /admin y /monitor en `usuarios_privados` vía `asegurar_cuentas_privilegiadas()`.
     - 3 posts de blog sobre FlyPaper con comentarios de empleados.
     - 2 flags: SQLi (100 pts) y Path Traversal / LFI (150 pts).
     """
@@ -332,19 +524,7 @@ def poblar_entorno_simulacion():
         ):
             return
 
-        # Hash MD5 débil del usuario admin (CTF: credencial predecible).
-        hash_admin_debil = hashlib.md5(b"admin123").hexdigest()
-
         usuarios_seed = [
-            (
-                "admin",
-                hash_admin_debil,
-                "Carlos",
-                "Méndez",
-                "Admin",
-                "admin@flypaper.io",
-                "/static/avatars/admin.png",
-            ),
             (
                 "lucia.vega",
                 hashlib.md5(b"FlyPaper2026!").hexdigest(),

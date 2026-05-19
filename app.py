@@ -46,6 +46,8 @@ from database import (
     obtener_flags_con_estado_por_ip,
     obtener_flags_publicas,
     reiniciar_progreso_ctf_por_ip,
+    verificar_usuario_privado,
+    ROL_PRIV_MONITOR,
     obtener_post_por_id,
     obtener_posts_blog,
     obtener_reportes_enviados,
@@ -813,9 +815,8 @@ def mostrar_login():
     return render_template("login.html")
 
 
-# Usuarios de demostración: contraseña y ruta tras login correcto.
-usuarios = {
-    "admin": {"password": "admin", "redirige": "/admin"},
+# Usuario de demostración sin privilegios (acceso solo a /search).
+USUARIOS_DEMO_PUBLICOS = {
     "Angel": {"password": "Angel123", "redirige": "/search"},
 }
 
@@ -823,11 +824,9 @@ usuarios = {
 @aplicacion.post("/login")
 def procesar_login():
     """
-    Valida usuario y contraseña contra el diccionario `usuarios`.
+    Valida credenciales: primero `usuarios_privados` (/admin), luego demo público.
 
-    Si las credenciales son correctas, guarda el estado en la sesión y
-    redirige a la ruta asociada al usuario.
-    Si fallan, redirige al login con parámetro de error (sin conceder acceso).
+    Las cuentas privilegiadas no están en la tabla `usuarios` expuesta por SQLi.
     """
     # Campos del formulario en `login.html` (honeypot con aspecto realista).
     usuario_enviado = request.form.get("username", "")
@@ -839,13 +838,18 @@ def procesar_login():
     if registrar_intento_login(ip_peticion):
         session["_fuerza_bruta_detectada"] = True
 
-    # Buscamos al usuario por nombre exacto (las claves distinguen mayúsculas).
-    datos_usuario = usuarios.get(usuario_enviado)
+    cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
+    if cuenta_priv is not None and cuenta_priv.get("rol") != ROL_PRIV_MONITOR:
+        session["logueado"] = True
+        session["usuario"] = cuenta_priv["username"]
+        session["rol_privilegiado"] = cuenta_priv["rol"]
+        return redirect(cuenta_priv["redirige"])
+
+    datos_usuario = USUARIOS_DEMO_PUBLICOS.get(usuario_enviado)
     if datos_usuario is not None and datos_usuario["password"] == contrasena_enviada:
-        # Sesión del honeypot: marcamos acceso y guardamos el nombre mostrado.
         session["logueado"] = True
         session["usuario"] = usuario_enviado
-        # Credenciales válidas: vamos a la ruta configurada para ese usuario.
+        session.pop("rol_privilegiado", None)
         return redirect(datos_usuario["redirige"])
 
     # Usuario inexistente o contraseña incorrecta: mismo flujo, sin entrar a zonas protegidas.
@@ -1109,10 +1113,11 @@ def procesar_busqueda():
     resultados = []
     error_sql = None
 
-    # Consulta insegura a propósito (laboratorio / CTF).
+    # Consulta insegura (UNION): 4 columnas alineadas con UNION sobre `usuarios`.
+    # posts: id, titulo, contenido, fecha  ↔  usuarios: id, username, password_hash, email
     sql = (
-        f"SELECT * FROM posts WHERE titulo LIKE '%{query}%' "
-        f"OR contenido LIKE '%{query}%'"
+        f"SELECT id, titulo, contenido, fecha FROM posts "
+        f"WHERE titulo LIKE '%{query}%' OR contenido LIKE '%{query}%'"
     )
 
     try:
@@ -1308,17 +1313,13 @@ def monitor_login_post():
     """
     Procesa el login del dashboard privado.
 
-    Credenciales válidas:
-    - usuario: analyst
-    - contraseña: FlyPaper2026!
+    Credenciales en tabla `usuarios_privados` (rol monitor); no accesibles vía SQLi en `usuarios`.
     """
-    # Importante: estos nombres deben coincidir con `name="usuario"` y
-    # `name="contrasena"` definidos en `templates/monitor_login.html`.
     usuario_enviado = request.form.get("usuario", "").strip()
     contrasena_enviada = request.form.get("contrasena", "")
 
-    if usuario_enviado == "analyst" and contrasena_enviada == "FlyPaper2026!":
-        # Sesión exclusiva del monitor (clave distinta al honeypot `logueado`).
+    cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
+    if cuenta_priv is not None and cuenta_priv.get("rol") == ROL_PRIV_MONITOR:
         session["analyst"] = True
         return redirect(url_for("monitor_dashboard"))
 

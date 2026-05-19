@@ -195,6 +195,80 @@
     border-radius: 4px;
     font-family: 'JetBrains Mono', monospace;
   }
+  .hint-brief { margin-bottom: 10px; }
+
+  .hint-sqli-details {
+    margin-top: 4px;
+    border: 1px solid #1a3a2a;
+    border-radius: 8px;
+    background: #06100c;
+    overflow: hidden;
+  }
+  .hint-sqli-details[open] {
+    border-color: rgba(0, 255, 140, 0.35);
+    box-shadow: 0 0 16px rgba(0, 255, 140, 0.06);
+  }
+  .hint-sqli-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #00ff8c;
+    user-select: none;
+    font-family: inherit;
+    transition: background 0.2s;
+  }
+  .hint-sqli-summary::-webkit-details-marker { display: none; }
+  .hint-sqli-summary::before {
+    content: "▸ ";
+    display: inline-block;
+    transition: transform 0.2s;
+    color: #5a7a6a;
+  }
+  .hint-sqli-details[open] .hint-sqli-summary::before {
+    transform: rotate(90deg);
+    color: #00ff8c;
+  }
+  .hint-sqli-summary:hover { background: rgba(0, 255, 140, 0.06); }
+  .hint-sqli-body {
+    padding: 0 12px 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #8aa89a;
+    border-top: 1px solid #1a3a2a;
+  }
+  .hint-sqli-body p { margin: 10px 0 0; }
+  .hint-sqli-body p:first-child { margin-top: 12px; }
+  .hint-sqli-body ul {
+    margin: 8px 0 0 18px;
+    color: #7a9b8a;
+    font-size: 12px;
+  }
+  .hint-sqli-body li { margin: 4px 0; }
+  .hint-sqli-body code {
+    color: #00ff8c;
+    font-size: 12px;
+    background: rgba(0, 255, 140, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .payload-code {
+    display: block;
+    margin-top: 8px;
+    padding: 12px 14px;
+    background: #05080f;
+    border: 1px solid #1a3a2a;
+    border-radius: 6px;
+    color: #00ff8c;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    box-shadow: inset 0 0 20px rgba(0, 255, 140, 0.04);
+  }
+  .hint-sqli-body strong { color: #c5e8d4; font-weight: 600; }
 
   .submit-section {
     background: linear-gradient(180deg, #0c1620 0%, #08101a 100%);
@@ -336,7 +410,40 @@
           </div>
         </div>
         <div class="hint-label">// pista</div>
+        {% if flag.reto_nombre == 'SQLi' %}
+        <div class="hint hint-brief">{{ flag.pista }}</div>
+        <details class="hint-sqli-details">
+          <summary class="hint-sqli-summary">Ver pista detallada (UNION)</summary>
+          <div class="hint-sqli-body">
+            <p>
+              El buscador interno en <code>/search</code> concatena tu texto en una consulta
+              sobre <code>posts</code> que devuelve exactamente <strong>4 columnas</strong>:
+            </p>
+            <ul>
+              <li><code>id</code></li>
+              <li><code>titulo</code></li>
+              <li><code>contenido</code></li>
+              <li><code>fecha</code></li>
+            </ul>
+            <p>
+              Para extraer filas de la tabla pública <code>usuarios</code>, alinea el
+              <code>UNION SELECT</code> con las mismas cuatro columnas de esa tabla:
+              <code>id</code>, <code>username</code>, <code>password_hash</code> y
+              <code>email</code> (se mostrarán en las columnas del resultado como id,
+              título, contenido y fecha).
+            </p>
+            <p>Payload de ejemplo:</p>
+            <code class="payload-code">' UNION SELECT id, username, password_hash, email FROM usuarios --</code>
+            <p>
+              Objetivo: localiza al usuario señuelo <strong>admin</strong> en los resultados.
+              El valor de su <code>password_hash</code> (10 caracteres alfanuméricos) es el
+              cuerpo de la flag; envíala aquí con el formato <code>flag&#123;...&#125;</code>.
+            </p>
+          </div>
+        </details>
+        {% else %}
         <div class="hint">{{ flag.pista }}</div>
+        {% endif %}
       </div>
       {% else %}
       <div style="grid-column:1/-1;text-align:center;padding:40px;color:#5a7a6a;">No hay retos disponibles.</div>
