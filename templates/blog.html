@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlyPaper - Blog</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e1a;
+    color: #e4e6eb;
+    min-height: 100vh;
+  }
+  .navbar {
+    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
+    border-bottom: 1px solid #1f2742;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+  }
+  .logo {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+  .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
+  .nav-links { display: flex; gap: 8px; list-style: none; }
+  .nav-links a {
+    color: #b4b8c5;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { background: #1a2138; color: #fff; }
+  .nav-links a.login {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+  }
+  .nav-links a.login:hover { opacity: 0.9; }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 48px 40px; }
+  .page-header { margin-bottom: 40px; }
+  .page-header h1 {
+    font-size: 36px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .page-header p { color: #8b91a7; font-size: 15px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+  }
+  .card {
+    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
+    border: 1px solid #1f2742;
+    border-radius: 14px;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: #3b3f6b;
+    box-shadow: 0 12px 30px rgba(99,102,241,0.15);
+  }
+  .card-img {
+    height: 180px;
+    background: linear-gradient(135deg, #1e2545 0%, #2d1b4e 50%, #1a2138 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .card-img::after {
+    content: "📄";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    opacity: 0.25;
+  }
+  .card-body { padding: 20px; flex: 1; display: flex; flex-direction: column; }
+  .card-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 12px;
+    line-height: 1.35;
+  }
+  .card-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: #8b91a7;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+  .meta-author { color: #a78bfa; font-weight: 600; }
+  .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: #4b5170; }
+  .card-excerpt {
+    color: #b4b8c5;
+    font-size: 14px;
+    line-height: 1.55;
+    margin-bottom: 20px;
+    flex: 1;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .btn-read {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    align-self: flex-start;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .btn-read:hover { opacity: 0.9; transform: translateX(2px); }
+  .btn-read::after { content: "→"; }
+
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 80px 20px;
+    color: #8b91a7;
+    background: #141a2e;
+    border: 1px dashed #2a3454;
+    border-radius: 14px;
+  }
+</style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="logo">FlyPaper</div>
+    <ul class="nav-links">
+      <li><a href="/">Inicio</a></li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="/objetivos">Objetivos CTF</a></li>
+      <li><a href="/search">Buscar</a></li>
+      <li><a href="/login" class="login">Login</a></li>
+    </ul>
+  </nav>
+
+  <main class="container">
+    <div class="page-header">
+      <h1>Blog</h1>
+      <p>Últimas publicaciones, writeups y notas técnicas</p>
+    </div>
+
+    <div class="grid">
+      {% for post in posts %}
+      <article class="card">
+        <div class="card-img"></div>
+        <div class="card-body">
+          <h2 class="card-title">{{ post.titulo }}</h2>
+          <div class="card-meta">
+            <span class="meta-author">Autor #{{ post.autor_id }}</span>
+            <span class="meta-dot"></span>
+            <span>{{ post.fecha }}</span>
+          </div>
+          <p class="card-excerpt">{{ post.contenido }}</p>
+          <a href="/blog/{{ post.id }}" class="btn-read">Leer más</a>
+        </div>
+      </article>
+      {% else %}
+      <div class="empty">No hay publicaciones disponibles todavía.</div>
+      {% endfor %}
+    </div>
+  </main>
+</body>
+</html>

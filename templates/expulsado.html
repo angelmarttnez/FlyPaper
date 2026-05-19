@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acceso denegado · FlyPaper</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    min-height: 100vh;
+    background: #0a0e1a;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .expulsion-pantalla {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    text-align: center;
+  }
+  .expulsion-titulo {
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-weight: 800;
+    color: #ef4444;
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+  }
+  .expulsion-subtitulo {
+    font-size: 1rem;
+    color: #94a3b8;
+    max-width: 420px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  .expulsion-gif-wrap {
+    background: #111827;
+    border: 2px solid #1e293b;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+    margin-bottom: 20px;
+  }
+  .expulsion-gif-wrap img {
+    display: block;
+    max-width: min(480px, 90vw);
+    height: auto;
+    border-radius: 8px;
+  }
+  .btn-reintentar {
+    display: inline-block;
+    margin-bottom: 24px;
+    padding: 14px 28px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-reintentar:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45);
+  }
+  .btn-reintentar:disabled {
+    opacity: 0.65;
+    cursor: wait;
+    transform: none;
+  }
+  .expulsion-codigo {
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+  .expulsion-estado {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #94a3b8;
+    min-height: 1.2em;
+  }
+  .expulsion-estado.err { color: #f87171; }
+</style>
+</head>
+<body>
+  <main class="expulsion-pantalla" role="alert">
+    <h1 class="expulsion-titulo">Has sido expulsado</h1>
+    <p class="expulsion-subtitulo">
+      Tu dirección IP ha sido bloqueada por el equipo de seguridad.
+      No puedes seguir navegando en este sitio.
+    </p>
+    <div class="expulsion-gif-wrap">
+      <img src="/assets/Cat.gif" alt="Acceso denegado" width="400" height="auto">
+    </div>
+    <button type="button" class="btn-reintentar" id="btn-reintentar">
+      Volver a intentar
+    </button>
+    <p class="expulsion-estado" id="estado-reintento" aria-live="polite"></p>
+    <p class="expulsion-codigo">FlyPaper · Bloqueo activo</p>
+  </main>
+
+  <script>
+    /**
+     * Limpia almacenamiento local del navegador y cookies accesibles desde JS.
+     */
+    function limpiarAlmacenamientoLocalNavegador() {
+      try {
+        localStorage.clear();
+      } catch (e) { /* ignorar */ }
+      try {
+        sessionStorage.clear();
+      } catch (e) { /* ignorar */ }
+      document.cookie.split(';').forEach((par) => {
+        const nombre = par.split('=')[0].trim();
+        if (!nombre) return;
+        document.cookie = `${nombre}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        document.cookie = `${nombre}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${location.hostname}`;
+      });
+    }
+
+    /**
+     * Pide al servidor desbloquear la IP, vaciar sesión Flask y redirigir al login.
+     */
+    async function volverAIntentarAcceso() {
+      const boton = document.getElementById('btn-reintentar');
+      const estado = document.getElementById('estado-reintento');
+      boton.disabled = true;
+      estado.textContent = 'Reiniciando acceso...';
+      estado.className = 'expulsion-estado';
+
+      try {
+        const res = await fetch('/acceso/reintentar', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (!res.ok || !data.exito) {
+          throw new Error(data.mensaje || 'No se pudo reiniciar el acceso');
+        }
+        limpiarAlmacenamientoLocalNavegador();
+        window.location.href = data.redirect || '/login';
+      } catch (err) {
+        estado.textContent = err.message || 'Error al reintentar. Recarga la página.';
+        estado.className = 'expulsion-estado err';
+        boton.disabled = false;
+      }
+    }
+
+    document.getElementById('btn-reintentar').addEventListener('click', volverAIntentarAcceso);
+  </script>
+</body>
+</html>

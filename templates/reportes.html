@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>FlyPaper Admin — Reportes</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
+.sidebar{width:240px;background:#161b22;border-right:1px solid #21262d;padding:24px 0;display:flex;flex-direction:column;min-height:100vh}
+.logo{padding:0 24px 24px;font-size:20px;font-weight:700;color:#58a6ff;border-bottom:1px solid #21262d;margin-bottom:16px}
+.logo span{color:#e4e6eb}
+.nav{flex:1;display:flex;flex-direction:column;gap:4px;padding:0 12px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 14px;color:#8b949e;text-decoration:none;border-radius:6px;font-size:14px;transition:all .15s}
+.nav a:hover{background:#21262d;color:#e4e6eb}
+.nav a.active{background:#1f6feb22;color:#58a6ff;border-left:3px solid #58a6ff;padding-left:11px}
+.nav .icon{width:18px;height:18px;display:inline-block;text-align:center}
+.logout{margin-top:auto;padding:0 12px}
+.logout a{color:#f85149}
+.logout a:hover{background:#f8514922;color:#ff6b6b}
+.main{flex:1;padding:32px 40px;overflow-x:auto}
+.header{margin-bottom:8px}
+.header h1{font-size:24px;font-weight:600}
+.header p{color:#8b949e;font-size:14px;margin-top:4px}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;margin-top:24px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{background:#0d1117;text-align:left;padding:12px 20px;font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #21262d}
+td{padding:14px 20px;font-size:14px;border-bottom:1px solid #21262d;color:#e4e6eb;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1c2128}
+.ip{font-family:"SF Mono",Menlo,monospace;color:#58a6ff}
+.fecha{color:#8b949e;font-size:13px;white-space:nowrap}
+.datos{max-width:520px}
+.datos pre{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:12px;color:#c9d1d9;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;margin:0}
+.empty{padding:40px 20px;text-align:center;color:#8b949e;font-size:14px}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo">Fly<span>Paper</span></div>
+  <nav class="nav">
+    <a href="/admin"><span class="icon">▦</span> Dashboard</a>
+    <a href="/admin/usuarios"><span class="icon">◉</span> Usuarios</a>
+    <a href="/admin/configuracion"><span class="icon">⚙</span> Configuración</a>
+    <a href="/admin/reportes" class="active"><span class="icon">▤</span> Reportes</a>
+  </nav>
+  <div class="logout nav">
+    <a href="/logout"><span class="icon">⎋</span> Logout</a>
+  </div>
+</aside>
+<main class="main">
+  <div class="header">
+    <h1>Reportes de seguridad</h1>
+    <p>Reportes enviados desde el monitor de analista, ordenados por fecha descendente</p>
+  </div>
+  <div class="card">
+    {% if reportes %}
+    <table>
+      <thead>
+        <tr><th>ID</th><th>IP atacante</th><th>Fecha</th><th>Datos del ataque</th></tr>
+      </thead>
+      <tbody>
+        {% for r in reportes %}
+        <tr>
+          <td>#{{ r.id }}</td>
+          <td class="ip">{{ r.ip_atacante }}</td>
+          <td class="fecha">{{ r.fecha }}</td>
+          <td class="datos"><pre>{{ r.datos_ataque }}</pre></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No hay reportes enviados todavía.</p>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

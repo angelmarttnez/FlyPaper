@@ -13,7 +13,6 @@
     min-height: 100vh;
     padding-top: 64px;
   }
-  /* Cabecera fija */
   header {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -50,7 +49,6 @@
 
   main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
-  /* Tarjetas estadísticas */
   .stats-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -66,7 +64,6 @@
   .stat-card .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
   .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 8px; color: #e2e8f0; }
 
-  /* Gráficas */
   .charts-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -82,7 +79,6 @@
   .chart-card h3 { font-size: 14px; margin-bottom: 12px; color: #e2e8f0; }
   .chart-card canvas { background: #111827; }
 
-  /* Tabla */
   .table-section {
     background: #111827;
     border: 1px solid #1e293b;
@@ -98,20 +94,7 @@
     gap: 10px;
     margin-bottom: 12px;
   }
-  .filtro-ip-input {
-    flex: 1;
-    min-width: 160px;
-    max-width: 280px;
-    background: #0a0e1a;
-    border: 1px solid #1e293b;
-    color: #e2e8f0;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: inherit;
-  }
-  .filtro-ip-input::placeholder { color: #64748b; }
-  .filtro-ip-input:focus { outline: none; border-color: #3b82f6; }
+  .filtro-ip-input,
   .filtro-tiempo-select {
     background: #0a0e1a;
     border: 1px solid #1e293b;
@@ -120,8 +103,15 @@
     border-radius: 6px;
     font-size: 13px;
     font-family: inherit;
-    cursor: pointer;
   }
+  .filtro-ip-input {
+    flex: 1;
+    min-width: 160px;
+    max-width: 280px;
+  }
+  .filtro-ip-input::placeholder { color: #64748b; }
+  .filtro-ip-input:focus { outline: none; border-color: #3b82f6; }
+  .filtro-tiempo-select { cursor: pointer; }
   .btn-limpiar-filtros {
     background: #0a0e1a;
     color: #94a3b8;
@@ -132,7 +122,15 @@
     font-size: 12px;
   }
   .btn-limpiar-filtros:hover { color: #e2e8f0; border-color: #334155; }
-  .filters { display: flex; gap: 8px; margin-bottom: 0; flex-wrap: wrap; }
+  .filters { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .filters-label {
+    width: 100%;
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+  }
   .filter-btn {
     background: #0a0e1a;
     color: #e2e8f0;
@@ -143,14 +141,154 @@
     font-size: 12px;
   }
   .filter-btn.active { background: #3b82f6; border-color: #3b82f6; }
+
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #1e293b; }
   th { color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover { background: #1e293b; }
-  tr.row-critical { background: #1a0a0a; border-left: 3px solid #ef4444; }
-  tr.row-recon { background: #0a0f1a; border-left: 3px solid #f97316; }
   .empty-row td { text-align: center; color: #94a3b8; padding: 28px; }
+
+  /* Filas agrupadas por IP — color según gravedad máxima */
+  tr.fila-grupo { cursor: pointer; transition: background 0.15s; }
+  tr.fila-grupo:hover { filter: brightness(1.08); }
+  tr.grav-critico { background: rgba(239, 68, 68, 0.18); border-left: 4px solid #ef4444; }
+  tr.grav-alto { background: rgba(249, 115, 22, 0.18); border-left: 4px solid #f97316; }
+  tr.grav-medio { background: rgba(234, 179, 8, 0.15); border-left: 4px solid #eab308; }
+  tr.grav-bajo { background: rgba(100, 116, 139, 0.2); border-left: 4px solid #64748b; }
+
+  .celda-expandir { width: 36px; text-align: center; color: #94a3b8; font-size: 12px; }
+  .ip-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; }
+  .tipos-lista { display: flex; flex-wrap: wrap; gap: 4px; }
+  .celda-accion {
+    min-width: 200px;
+    white-space: nowrap;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .btn-reportar-ip {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-reportar-ip:hover { background: #334155; border-color: #3b82f6; }
+  .btn-reportar-ip.ok {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: #22c55e;
+    color: #22c55e;
+  }
+  .btn-bloquear-ip {
+    background: rgba(239, 68, 68, 0.12);
+    color: #fca5a5;
+    border: 1px solid #7f1d1d;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-bloquear-ip:hover { background: rgba(239, 68, 68, 0.25); border-color: #ef4444; }
+  .btn-bloquear-ip.ok {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: #ef4444;
+    color: #fff;
+  }
+  .btn-bloquear-ip:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Subtabla de eventos al expandir un grupo */
+  tr.fila-detalle td { padding: 0; background: #0a0e1a; border-bottom: 1px solid #1e293b; }
+  .subtabla-wrap { padding: 12px 16px 16px 48px; }
+  .subtabla { width: 100%; font-size: 12px; }
+  .subtabla th { font-size: 10px; padding: 8px 10px; }
+  .subtabla td { padding: 8px 10px; border-bottom: 1px solid #1e293b; }
+  .subtabla tbody tr.fila-evento { cursor: pointer; transition: background 0.12s; }
+  .subtabla tbody tr.fila-evento:hover td { background: #1e293b !important; }
+
+  /* Modal de detalle de evento (sin position:fixed; debajo de la tabla) */
+  .modal-evento-overlay {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    min-height: 400px;
+    width: 100%;
+    border-radius: 8px;
+    margin-top: 1rem;
+    padding: 24px 16px;
+    box-sizing: border-box;
+  }
+  .modal-evento-overlay.activo { display: flex; }
+  .modal-evento-panel {
+    background: #1a1f2e;
+    padding: 2rem;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 100%;
+    position: relative;
+    border: 1px solid #1e293b;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal-evento-panel h3 {
+    font-size: 16px;
+    margin-bottom: 1rem;
+    padding-right: 28px;
+    color: #e2e8f0;
+  }
+  .modal-evento-cerrar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px 8px;
+  }
+  .modal-evento-cerrar:hover { color: #e2e8f0; }
+  .modal-evento-fila { margin-bottom: 12px; font-size: 13px; }
+  .modal-evento-fila .etiqueta {
+    color: #94a3b8;
+    font-size: 11px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    letter-spacing: 0.4px;
+  }
+  .modal-evento-fila .valor { color: #e2e8f0; word-break: break-all; }
+  .modal-evento-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .modal-evento-payload {
+    background: #0d1117;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .modal-evento-headers { display: flex; flex-direction: column; gap: 6px; }
+  .header-line {
+    background: #0d1117;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: #e2e8f0;
+    word-break: break-all;
+  }
+  .header-line .header-nombre { color: #7ee787; }
+  .header-line .header-nombre.header-sensible { color: #f0c040; }
+  .headers-raw-vacio { color: #64748b; font-size: 12px; font-style: italic; }
 
   .badge {
     display: inline-block;
@@ -164,61 +302,22 @@
   .badge-scanner { background: #8b5cf6; color: #fff; }
   .badge-fuerza { background: #eab308; color: #111827; }
   .badge-otro { background: #1e293b; color: #e2e8f0; }
+  .badge-gravedad-critico { background: #ef4444; color: #fff; }
+  .badge-gravedad-alto { background: #f97316; color: #fff; }
+  .badge-gravedad-medio { background: #eab308; color: #111827; }
+  .badge-gravedad-bajo { background: #475569; color: #e2e8f0; }
 
-  /* Modal */
-  .modal-overlay {
-    display: none;
+  .fab-container {
     position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.7);
-    z-index: 200;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    z-index: 50;
   }
-  .modal-overlay.show { display: flex; }
-  .modal {
-    background: #111827;
-    border: 1px solid #1e293b;
-    border-radius: 10px;
-    padding: 24px;
-    max-width: 720px;
-    width: 100%;
-    max-height: 85vh;
-    overflow-y: auto;
-    position: relative;
-  }
-  .modal h2 { font-size: 16px; margin-bottom: 16px; padding-right: 30px; }
-  .modal-close {
-    position: absolute;
-    top: 14px; right: 14px;
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    font-size: 22px;
-    cursor: pointer;
-  }
-  .modal-row { margin-bottom: 12px; font-size: 13px; }
-  .modal-row .k { color: #94a3b8; font-size: 11px; text-transform: uppercase; margin-bottom: 3px; }
-  .modal-row .v { color: #e2e8f0; word-break: break-all; }
-  .code-block {
-    background: #0a0e1a;
-    border: 1px solid #1e293b;
-    border-radius: 6px;
-    padding: 12px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-size: 12px;
-    color: #e2e8f0;
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  /* Botón flotante */
   .fab {
-    position: fixed;
-    bottom: 24px; right: 24px;
     background: #3b82f6;
     color: #fff;
     border: none;
@@ -228,11 +327,16 @@
     font-size: 14px;
     font-weight: 600;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    z-index: 50;
     text-decoration: none;
     display: inline-block;
   }
   .fab:hover { background: #2563eb; }
+  .fab-secondary {
+    background: #334155;
+    font-size: 13px;
+    padding: 10px 16px;
+  }
+  .fab-secondary:hover { background: #475569; }
 
   @media (max-width: 900px) {
     .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -251,7 +355,6 @@
 </header>
 
 <main>
-  <!-- Tarjetas de estadísticas -->
   <section class="stats-row">
     <div class="stat-card"><div class="label">Total Eventos</div><div class="value" id="stat-total">...</div></div>
     <div class="stat-card"><div class="label">IPs Únicas</div><div class="value" id="stat-ips">...</div></div>
@@ -259,7 +362,6 @@
     <div class="stat-card"><div class="label">Último ataque</div><div class="value" id="stat-ultimo">...</div></div>
   </section>
 
-  <!-- Gráficas -->
   <section class="charts-row">
     <div class="chart-card">
       <h3>Ataques por Tipo</h3>
@@ -271,21 +373,22 @@
     </div>
   </section>
 
-  <!-- Tabla -->
   <section class="table-section">
-    <h3>Eventos Recientes</h3>
+    <h3>Actividad agrupada por IP</h3>
     <div class="filter-bar">
       <div class="filter-row">
         <input type="text" id="filtro-ip" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
         <select id="filtro-tiempo" class="filtro-tiempo-select" aria-label="Filtrar por tiempo">
+          <option value="todo" selected>Todos</option>
           <option value="15m">Últimos 15 minutos</option>
           <option value="1h">Última hora</option>
           <option value="6h">Últimas 6 horas</option>
           <option value="24h">Últimas 24 horas</option>
-          <option value="all" selected>Todos</option>
         </select>
         <button type="button" id="btn-limpiar-filtros" class="btn-limpiar-filtros">Limpiar filtros</button>
       </div>
+
+      <p class="filters-label">Tipo de ataque</p>
       <div class="filters" id="filtros-tipo">
         <button type="button" class="filter-btn active" data-filtro="Todos">Todos</button>
         <button type="button" class="filter-btn" data-filtro="SQLi">SQLi</button>
@@ -295,51 +398,105 @@
         <button type="button" class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
         <button type="button" class="filter-btn" data-filtro="Otro">Otro</button>
       </div>
+
+      <p class="filters-label">Gravedad máxima</p>
+      <div class="filters" id="filtros-gravedad">
+        <button type="button" class="filter-btn active" data-gravedad="Todos">Todos</button>
+        <button type="button" class="filter-btn" data-gravedad="CRÍTICO">CRÍTICO</button>
+        <button type="button" class="filter-btn" data-gravedad="ALTO">ALTO</button>
+        <button type="button" class="filter-btn" data-gravedad="MEDIO">MEDIO</button>
+        <button type="button" class="filter-btn" data-gravedad="BAJO">BAJO</button>
+      </div>
     </div>
-    <table>
+
+    <table id="tabla-grupos">
       <thead>
-        <tr><th>#</th><th>IP</th><th>Ruta</th><th>Tipo</th><th>Navegador</th><th>Timestamp</th></tr>
+        <tr>
+          <th></th>
+          <th>IP</th>
+          <th>Total eventos</th>
+          <th>Tipos detectados</th>
+          <th>Gravedad máx.</th>
+          <th>Primera vez</th>
+          <th>Última vez</th>
+          <th>Acción</th>
+        </tr>
       </thead>
-      <tbody id="tbody-eventos">
-        <tr class="empty-row"><td colspan="6">Cargando...</td></tr>
+      <tbody id="tbody-grupos">
+        <tr class="empty-row"><td colspan="8">Cargando...</td></tr>
       </tbody>
     </table>
+
+    <!-- Modal de detalle al clic en fila de la subtabla (overlay inline, no fixed) -->
+    <div id="modal-evento-overlay" class="modal-evento-overlay" aria-hidden="true">
+      <div class="modal-evento-panel" role="dialog" aria-labelledby="modal-evento-titulo" onclick="event.stopPropagation()">
+        <button type="button" class="modal-evento-cerrar" id="modal-evento-cerrar" aria-label="Cerrar">×</button>
+        <h3 id="modal-evento-titulo">Detalle del evento</h3>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">IP del atacante</div>
+          <div class="valor" id="modal-ev-ip"></div>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">Ruta atacada</div>
+          <div class="valor" id="modal-ev-ruta"></div>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">Método HTTP</div>
+          <div class="valor" id="modal-ev-metodo"></div>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">Tipo de ataque y gravedad</div>
+          <div class="modal-evento-badges" id="modal-ev-badges"></div>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">Timestamp</div>
+          <div class="valor" id="modal-ev-ts"></div>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">Payload</div>
+          <pre class="modal-evento-payload" id="modal-ev-payload"></pre>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">User Agent</div>
+          <div class="valor" id="modal-ev-ua"></div>
+        </div>
+        <div class="modal-evento-fila">
+          <div class="etiqueta">Headers HTTP</div>
+          <div class="modal-evento-headers" id="modal-ev-headers"></div>
+        </div>
+      </div>
+    </div>
   </section>
 </main>
 
-<!-- Modal de detalles: datos reales del evento (API /monitor/api/eventos) -->
-<div class="modal-overlay" id="modal" onclick="cerrarModalFuera(event)">
-  <div class="modal" onclick="event.stopPropagation()">
-    <button type="button" class="modal-close" onclick="cerrarModal()">×</button>
-    <h2>Detalle del Evento</h2>
-    <div class="modal-row"><div class="k">IP</div><div class="v" id="m-ip"></div></div>
-    <div class="modal-row"><div class="k">Ruta</div><div class="v" id="m-ruta"></div></div>
-    <div class="modal-row"><div class="k">Tipo</div><div class="v"><span id="m-tipo" class="badge"></span></div></div>
-    <div class="modal-row"><div class="k">Payload</div><pre class="code-block" id="m-payload"></pre></div>
-    <div class="modal-row"><div class="k">User-Agent</div><div class="v" id="m-ua"></div></div>
-    <div class="modal-row"><div class="k">Headers</div><pre class="code-block" id="m-headers"></pre></div>
-    <div class="modal-row"><div class="k">Timestamp</div><div class="v" id="m-ts"></div></div>
-  </div>
+<!-- Exportaciones forenses -->
+<div class="fab-container">
+  <a class="fab fab-secondary" href="/monitor/exportar/headers">🔍 Exportar Headers</a>
+  <a class="fab" href="/monitor/exportar">📥 Exportar CSV</a>
 </div>
-
-<!-- Botón flotante exportar -->
-<a class="fab" href="/monitor/exportar">📥 Exportar CSV</a>
 
 <script>
   /**
-   * Dashboard del monitor de FlyPaper.
-   * - Estadísticas y gráficas: GET /monitor/api/stats (ataques_por_tipo, actividad_por_hora, etc.)
-   * - Tabla y modal: GET /monitor/api/eventos (lista en JSON)
-   * - Filtros solo en navegador, combinados; refresco cada 30 s.
+   * Dashboard del monitor de FlyPaper (Fase 4).
+   * - Estadísticas: GET /monitor/api/stats
+   * - Tabla agrupada por IP: GET /monitor/api/eventos
+   * - Reportes por IP: POST /monitor/reportar
+   * - Bloqueo: GET /monitor/api/ips-activas, POST /monitor/bloquear
    */
-  let eventosCache = [];           // Últimos eventos devueltos por /monitor/api/eventos
-  let filtroTipoActual = 'Todos';  // Botón activo del filtro por tipo de ataque
+
+  let gruposCache = [];              // Respuesta agrupada del API (lista de objetos por IP)
+  let ipsActivasCache = new Set();   // IPs con sesión/navegación activa (botón Bloquear)
+  let ipsExpandidas = new Set();     // IPs con la subtabla desplegada
+  let filtroTipoActual = 'Todos';
+  let filtroGravedadActual = 'Todos';
   let chartTipos = null;
   let chartHoras = null;
 
+  // Tipos con botón propio; "Otro" agrupa el resto.
+  const TIPOS_CON_BOTON = ['sqli', 'xss', 'reconocimiento', 'scanner', 'fuerza bruta'];
+
   /**
-   * Descarga estadísticas reales y actualiza las 4 tarjetas y las dos gráficas Chart.js.
-   * Usa las claves del backend: ataques_por_tipo, actividad_por_hora, ultimo_ataque_hace.
+   * Descarga estadísticas y actualiza tarjetas + gráficas Chart.js.
    */
   async function cargarEstadisticas() {
     try {
@@ -347,7 +504,6 @@
       if (!res.ok) throw new Error('respuesta no OK');
       const data = await res.json();
 
-      // Tarjetas superiores (valores numéricos directos del JSON del servidor)
       document.getElementById('stat-total').textContent = data.total_eventos ?? 0;
       document.getElementById('stat-ips').textContent = data.ips_unicas ?? 0;
       document.getElementById('stat-ataques').textContent = data.ataques_detectados ?? 0;
@@ -355,7 +511,6 @@
       const ultimoNum = ultimoMin !== undefined && ultimoMin !== null ? Number(ultimoMin) : NaN;
       document.getElementById('stat-ultimo').textContent = !Number.isNaN(ultimoNum) ? `${ultimoNum} min` : '—';
 
-      // Gráficas con los mismos datos que expone el API (con alias legacy por compatibilidad)
       const ataquesPorTipo = data.ataques_por_tipo ?? data.tipos_ataque ?? {};
       const actividadPorHora = data.actividad_por_hora ?? data.actividad_horas ?? {};
       renderChartTipos(ataquesPorTipo);
@@ -367,7 +522,7 @@
     }
   }
 
-  /** Gráfico de barras: conteos por tipo de ataque (objeto clave → número). */
+  /** Gráfico de barras por tipo de ataque. */
   function renderChartTipos(tipos) {
     const ctx = document.getElementById('chart-tipos').getContext('2d');
     const labels = Object.keys(tipos || {});
@@ -395,7 +550,7 @@
     });
   }
 
-  /** Gráfico de líneas: actividad agregada por hora del día (claves "0".."23"). */
+  /** Gráfico de líneas: actividad por hora del día. */
   function renderChartHoras(horas) {
     const ctx = document.getElementById('chart-horas').getContext('2d');
     const claves = Object.keys(horas || {}).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
@@ -427,152 +582,154 @@
     });
   }
 
-  // Tipos que tienen botón dedicado; el botón "Otro" muestra el resto de clasificaciones.
-  const TIPOS_CON_BOTON = ['sqli', 'xss', 'reconocimiento', 'scanner', 'fuerza bruta'];
+  /**
+   * Comprueba si el JSON del API es la estructura agrupada por IP (Fase 4).
+   */
+  function esRespuestaAgrupadaPorIp(data) {
+    return (
+      Array.isArray(data) &&
+      data.length > 0 &&
+      data[0] &&
+      typeof data[0].total_eventos === 'number' &&
+      Array.isArray(data[0].eventos)
+    );
+  }
 
-  /** Nombre del tipo de ataque (el API envía `tipo_ataque`). */
+  /** Normaliza gravedad (acepta CRITICO sin tilde). */
+  function normalizarGravedad(g) {
+    const s = (g || 'BAJO').toUpperCase().trim();
+    return s === 'CRITICO' ? 'CRÍTICO' : s;
+  }
+
+  /** Clase CSS de fila según gravedad máxima del grupo. */
+  function claseFilaGravedad(gravedad) {
+    const g = normalizarGravedad(gravedad);
+    if (g === 'CRÍTICO') return 'grav-critico';
+    if (g === 'ALTO') return 'grav-alto';
+    if (g === 'MEDIO') return 'grav-medio';
+    return 'grav-bajo';
+  }
+
+  /** Clase del badge de gravedad en subtabla. */
+  function claseGravedadBadge(gravedad) {
+    const g = normalizarGravedad(gravedad);
+    if (g === 'CRÍTICO') return 'badge-gravedad-critico';
+    if (g === 'ALTO') return 'badge-gravedad-alto';
+    if (g === 'MEDIO') return 'badge-gravedad-medio';
+    return 'badge-gravedad-bajo';
+  }
+
   function tipoDeEvento(ev) {
     return (ev.tipo || ev.tipo_ataque || '').trim() || 'Otro';
   }
 
-  /** Cadena de user-agent unificada. */
-  function navegadorDeEvento(ev) {
-    return ev.navegador || ev.user_agent || '';
-  }
-
   /**
-   * Convierte el timestamp del evento a milisegundos (UTC/local según el string).
-   * Acepta "YYYY-MM-DD HH:MM:SS" del API y variantes ISO con "T".
+   * Filtra filas de IP por la columna ultima_vez (actividad reciente del grupo).
+   *
+   * @param {Array} filas - Grupos del API con campo ultima_vez ("YYYY-MM-DD HH:MM:SS").
+   * @param {string} valor - "todo" | "15m" | "1h" | "6h" | "24h"
+   * @returns {Array} Filas cuya última actividad cae dentro de la ventana indicada.
    */
-  function parseTimestampEventoMs(ts) {
-    if (!ts) return NaN;
-    const s = String(ts).trim();
-    const normalizado = s.includes('T') ? s : s.replace(' ', 'T');
-    let ms = Date.parse(normalizado);
-    if (!Number.isNaN(ms)) return ms;
-    ms = Date.parse(s);
-    return ms;
-  }
+  function filtrarPorTiempo(filas, valor) {
+    if (!valor || valor === 'todo') return filas;
 
-  /**
-   * Límite inferior de la ventana temporal según el <select> (null = sin filtro).
-   */
-  function limiteTiempoMs(valorSelect) {
-    if (!valorSelect || valorSelect === 'all') return null;
-    const ahora = Date.now();
-    const ventanas = {
+    const ventanasMs = {
       '15m': 15 * 60 * 1000,
       '1h': 60 * 60 * 1000,
       '6h': 6 * 60 * 60 * 1000,
       '24h': 24 * 60 * 60 * 1000,
     };
-    const delta = ventanas[valorSelect];
-    if (delta === undefined) return null;
-    return ahora - delta;
+    const maxDiffMs = ventanasMs[valor];
+    if (maxDiffMs === undefined) return filas;
+
+    const ahora = new Date();
+    return filas.filter((fila) => {
+      if (!fila.ultima_vez) return false;
+      const ultimaVez = new Date(fila.ultima_vez.replace(' ', 'T'));
+      if (Number.isNaN(ultimaVez.getTime())) return false;
+      const diffMs = ahora - ultimaVez;
+      // Solo IPs cuya última vez vista está dentro del intervalo (y no en el futuro)
+      return diffMs >= 0 && diffMs <= maxDiffMs;
+    });
   }
 
-  /** Filtro por texto en IP (parcial, en vivo mientras escribes). */
-  function pasaFiltroIp(ev, textoBusqueda) {
+  /** Filtro de texto parcial sobre la IP del grupo. */
+  function pasaFiltroIpGrupo(grupo, textoBusqueda) {
     if (!textoBusqueda) return true;
-    const ip = String(ev.ip || '').toLowerCase();
-    return ip.includes(textoBusqueda);
-  }
-
-  /** Solo filas cuyo timestamp cae dentro de la ventana 15m / 1h / 6h / 24h. */
-  function pasaFiltroTiempo(ev, limiteMs) {
-    if (limiteMs == null) return true;
-    const ts = ev.timestamp;
-    if (!ts) return false;
-    const t = parseTimestampEventoMs(ts);
-    if (Number.isNaN(t)) return true;
-    return t >= limiteMs;
+    return String(grupo.ip || '').toLowerCase().includes(textoBusqueda);
   }
 
   /**
-   * Filtro por botón de tipo: con "Todos" no se excluye nada;
-   * con "Otro" se muestran eventos cuyo tipo no es uno de los cinco con botón propio.
+   * Filtro por tipo: el grupo debe incluir ese tipo en tipos_ataque
+   * (o algún evento del grupo si el array no viene del servidor).
    */
-  function pasaFiltroTipo(ev, filtro) {
+  function pasaFiltroTipoGrupo(grupo, filtro) {
     if (!filtro || filtro === 'Todos') return true;
-    const norm = tipoDeEvento(ev).toLowerCase();
+    const tiposGrupo = (grupo.tipos_ataque || []).map((t) => String(t).toLowerCase());
     if (filtro === 'Otro') {
-      if (!norm) return true;
-      return !TIPOS_CON_BOTON.includes(norm);
+      const tieneConocido = tiposGrupo.some((t) => TIPOS_CON_BOTON.includes(t));
+      if (tiposGrupo.length === 0) {
+        return (grupo.eventos || []).some((ev) => {
+          const n = tipoDeEvento(ev).toLowerCase();
+          return n && !TIPOS_CON_BOTON.includes(n);
+        });
+      }
+      return !tieneConocido || tiposGrupo.some((t) => t && !TIPOS_CON_BOTON.includes(t));
     }
-    return norm === filtro.toLowerCase();
+    const buscado = filtro.toLowerCase();
+    if (tiposGrupo.includes(buscado)) return true;
+    return (grupo.eventos || []).some((ev) => tipoDeEvento(ev).toLowerCase() === buscado);
   }
 
-  /** Los tres criterios (IP + tipo + tiempo) se aplican a la vez sobre cada fila. */
-  function pasaFiltrosCombinados(ev) {
+  /** Filtro por gravedad máxima del grupo. */
+  function pasaFiltroGravedadGrupo(grupo, filtro) {
+    if (!filtro || filtro === 'Todos') return true;
+    return normalizarGravedad(grupo.gravedad_maxima) === normalizarGravedad(filtro);
+  }
+
+  /**
+   * Eventos visibles en la subtabla (solo filtro por tipo de ataque, no por tiempo).
+   */
+  function eventosFiltradosDelGrupo(grupo, filtroTipo) {
+    return (grupo.eventos || []).filter((ev) => {
+      if (!filtroTipo || filtroTipo === 'Todos') return true;
+      const norm = tipoDeEvento(ev).toLowerCase();
+      if (filtroTipo === 'Otro') {
+        return !norm || !TIPOS_CON_BOTON.includes(norm);
+      }
+      return norm === filtroTipo.toLowerCase();
+    });
+  }
+
+  /**
+   * Aplica todos los filtros activos a la vez: IP, tipo, gravedad y tiempo (ultima_vez).
+   * Cada grupo incluye `_eventosVisibles` para la subtabla expandida.
+   */
+  function obtenerGruposFiltrados() {
     const textoIp = (document.getElementById('filtro-ip').value || '').trim().toLowerCase();
     const valorTiempo = document.getElementById('filtro-tiempo').value;
-    const limMs = limiteTiempoMs(valorTiempo);
-    return (
-      pasaFiltroIp(ev, textoIp) &&
-      pasaFiltroTipo(ev, filtroTipoActual) &&
-      pasaFiltroTiempo(ev, limMs)
-    );
+
+    let filas = gruposCache
+      .filter((grupo) => pasaFiltroIpGrupo(grupo, textoIp))
+      .filter((grupo) => pasaFiltroTipoGrupo(grupo, filtroTipoActual))
+      .filter((grupo) => pasaFiltroGravedadGrupo(grupo, filtroGravedadActual));
+
+    filas = filtrarPorTiempo(filas, valorTiempo);
+
+    return filas
+      .map((grupo) => {
+        const eventos = eventosFiltradosDelGrupo(grupo, filtroTipoActual);
+        return { ...grupo, _eventosVisibles: eventos };
+      })
+      .filter((grupo) => grupo._eventosVisibles.length > 0);
   }
 
-  /** Vuelve al estado inicial de los tres filtros y repinta la tabla. */
-  function limpiarFiltros() {
-    document.getElementById('filtro-ip').value = '';
-    document.getElementById('filtro-tiempo').value = 'all';
-    filtroTipoActual = 'Todos';
-    document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.filtro === 'Todos');
-    });
-    renderTabla();
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  /**
-   * GET /monitor/api/eventos → guarda en memoria y repinta la tabla respetando filtros actuales.
-   */
-  async function cargarEventos() {
-    try {
-      const res = await fetch('/monitor/api/eventos');
-      if (!res.ok) throw new Error('respuesta no OK');
-      const data = await res.json();
-      eventosCache = Array.isArray(data) ? data : (data.eventos || []);
-      renderTabla();
-    } catch (e) {
-      const tbody = document.getElementById('tbody-eventos');
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Error al cargar datos</td></tr>';
-    }
-  }
-
-  /** Pinta la tabla aplicando filtros combinados sobre `eventosCache` (sin nueva petición). */
-  function renderTabla() {
-    const tbody = document.getElementById('tbody-eventos');
-    const lista = eventosCache.filter((ev) => pasaFiltrosCombinados(ev));
-
-    if (lista.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No hay eventos que coincidan con los filtros</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = '';
-    lista.forEach((ev, idx) => {
-      const tr = document.createElement('tr');
-      const tipo = tipoDeEvento(ev);
-      const tipoLower = tipo.toLowerCase();
-      if (tipoLower === 'sqli' || tipoLower === 'xss') tr.className = 'row-critical';
-      else if (tipoLower === 'reconocimiento') tr.className = 'row-recon';
-
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${escapeHtml(ev.ip || '')}</td>
-        <td>${escapeHtml(ev.ruta || '')}</td>
-        <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
-        <td>${escapeHtml(navegadorDeEvento(ev))}</td>
-        <td>${escapeHtml(ev.timestamp || '')}</td>
-      `;
-      tr.addEventListener('click', () => abrirModal(ev));
-      tbody.appendChild(tr);
-    });
-  }
-
-  /** Clases de color del badge según el nombre del tipo de ataque. */
   function badgeClass(tipo) {
     const t = (tipo || '').toLowerCase();
     if (t === 'sqli') return 'badge-sqli';
@@ -583,69 +740,389 @@
     return 'badge-otro';
   }
 
-  /** Escapa HTML al insertar datos del servidor en celdas de tabla. */
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  /** HTML de badges para la lista de tipos del grupo. */
+  function htmlTiposGrupo(tipos) {
+    if (!tipos || !tipos.length) return '<span class="badge badge-otro">—</span>';
+    return tipos
+      .map((t) => `<span class="badge ${badgeClass(t)}">${escapeHtml(t)}</span>`)
+      .join(' ');
   }
 
-  // Listeners: IP en tiempo real; tiempo al cambiar opción; tipo al pulsar botón; limpiar todo.
-  document.getElementById('filtro-ip').addEventListener('input', () => {
-    renderTabla();
+  /** HTML de la subtabla con eventos de una IP. */
+  function htmlSubtabla(eventos) {
+    if (!eventos.length) {
+      return '<p style="color:#94a3b8;padding:8px">Sin eventos en este rango</p>';
+    }
+    const filas = eventos
+      .map((ev) => {
+        const tipo = tipoDeEvento(ev);
+        const grav = ev.gravedad || 'BAJO';
+        return `<tr class="fila-evento" title="Clic para ver detalle">
+          <td>${escapeHtml(ev.ruta || '')}</td>
+          <td>${escapeHtml(ev.metodo || '')}</td>
+          <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
+          <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
+          <td>${escapeHtml(ev.timestamp || '')}</td>
+        </tr>`;
+      })
+      .join('');
+    return `<div class="subtabla-wrap">
+      <table class="subtabla">
+        <thead>
+          <tr><th>Ruta</th><th>Método</th><th>Tipo</th><th>Gravedad</th><th>Timestamp</th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+  }
+
+  // Cabeceras HTTP que se resaltan en amarillo en el modal.
+  const HEADERS_SENSIBLES = ['authorization', 'cookie', 'x-forwarded-for'];
+
+  /**
+   * Devuelve el texto del payload o "Sin payload" si viene vacío.
+   */
+  function textoPayloadEvento(ev) {
+    const raw = ev.payload;
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+      return 'Sin payload';
+    }
+    if (typeof raw === 'string') return raw;
+    try {
+      return JSON.stringify(raw, null, 2);
+    } catch {
+      return String(raw);
+    }
+  }
+
+  /**
+   * Convierte el campo headers (JSON string) en HTML de líneas clave: valor.
+   * Si JSON.parse falla, muestra el texto original en una sola línea.
+   */
+  function htmlCabecerasEvento(headersRaw) {
+    if (headersRaw === null || headersRaw === undefined || String(headersRaw).trim() === '') {
+      return '<div class="headers-raw-vacio">Sin cabeceras</div>';
+    }
+    const texto = typeof headersRaw === 'string' ? headersRaw.trim() : JSON.stringify(headersRaw);
+    try {
+      const objeto = JSON.parse(texto);
+      if (objeto && typeof objeto === 'object' && !Array.isArray(objeto)) {
+        const entradas = Object.entries(objeto);
+        if (!entradas.length) {
+          return '<div class="headers-raw-vacio">Sin cabeceras</div>';
+        }
+        return entradas
+          .map(([nombre, valor]) => {
+            const esSensible = HEADERS_SENSIBLES.includes(String(nombre).toLowerCase());
+            const claseNombre = esSensible ? 'header-nombre header-sensible' : 'header-nombre';
+            return `<div class="header-line"><span class="${claseNombre}">${escapeHtml(nombre)}</span>: ${escapeHtml(String(valor ?? ''))}</div>`;
+          })
+          .join('');
+      }
+    } catch (err) {
+      /* Se muestra el raw más abajo */
+    }
+    return `<div class="header-line">${escapeHtml(texto)}</div>`;
+  }
+
+  /**
+   * Rellena y muestra el modal de detalle de un evento de la subtabla.
+   */
+  function abrirModalEvento(ev, ipAtacante) {
+    const overlay = document.getElementById('modal-evento-overlay');
+    const tipo = tipoDeEvento(ev);
+    const gravedad = ev.gravedad || 'BAJO';
+
+    document.getElementById('modal-ev-ip').textContent = ipAtacante || '—';
+    document.getElementById('modal-ev-ruta').textContent = ev.ruta || '—';
+    document.getElementById('modal-ev-metodo').textContent = ev.metodo || '—';
+    document.getElementById('modal-ev-ts').textContent = ev.timestamp || '—';
+    document.getElementById('modal-ev-payload').textContent = textoPayloadEvento(ev);
+    document.getElementById('modal-ev-ua').textContent = ev.user_agent || '—';
+
+    document.getElementById('modal-ev-badges').innerHTML = `
+      <span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span>
+      <span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>
+    `;
+    document.getElementById('modal-ev-headers').innerHTML = htmlCabecerasEvento(ev.headers);
+
+    overlay.classList.add('activo');
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /** Oculta el modal de detalle de evento. */
+  function cerrarModalEvento() {
+    const overlay = document.getElementById('modal-evento-overlay');
+    overlay.classList.remove('activo');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  /**
+   * Asocia clic en cada fila de la subtabla para abrir el modal con ese evento.
+   */
+  function enlazarClicsSubtabla(contenedorFila, eventos, ipAtacante) {
+    const filas = contenedorFila.querySelectorAll('.subtabla tbody tr.fila-evento');
+    filas.forEach((fila, indice) => {
+      fila.addEventListener('click', (e) => {
+        e.stopPropagation();
+        abrirModalEvento(eventos[indice], ipAtacante);
+      });
+    });
+  }
+
+  /**
+   * Alterna expandir/colapsar la fila de detalle de una IP.
+   */
+  function alternarExpansion(ip) {
+    if (ipsExpandidas.has(ip)) {
+      ipsExpandidas.delete(ip);
+    } else {
+      ipsExpandidas.add(ip);
+    }
+    renderTablaGrupos();
+  }
+
+  /**
+   * Construye el resumen que se envía al reportar una IP completa.
+   */
+  function resumenAtaquesGrupo(grupo) {
+    return {
+      ip: grupo.ip,
+      total_eventos: grupo.total_eventos,
+      tipos_ataque: grupo.tipos_ataque || [],
+      gravedad_maxima: grupo.gravedad_maxima,
+      primera_vez: grupo.primera_vez,
+      ultima_vez: grupo.ultima_vez,
+      eventos: grupo.eventos || [],
+    };
+  }
+
+  /**
+   * GET /monitor/api/ips-activas — IPs que están navegando ahora (ventana del servidor).
+   */
+  async function cargarIpsActivas() {
+    try {
+      const res = await fetch('/monitor/api/ips-activas');
+      if (!res.ok) return;
+      const data = await res.json();
+      ipsActivasCache = new Set((data.ips || []).map((ip) => String(ip)));
+      renderTablaGrupos();
+    } catch (e) {
+      /* Sin interrumpir el dashboard si falla el endpoint auxiliar */
+    }
+  }
+
+  /**
+   * POST /monitor/bloquear — blacklist + invalidación de sesión de la IP objetivo.
+   */
+  async function bloquearIp(ip, boton) {
+    if (!ip || !boton) return;
+    if (!confirm(`¿Bloquear la IP ${ip} y expulsar su sesión activa?`)) return;
+
+    const textoOriginal = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = 'Bloqueando...';
+    boton.classList.remove('ok');
+    try {
+      const res = await fetch('/monitor/bloquear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.exito) {
+        throw new Error(data.mensaje || 'No se pudo bloquear la IP');
+      }
+      boton.textContent = 'Bloqueada';
+      boton.classList.add('ok');
+      ipsActivasCache.delete(ip);
+    } catch (err) {
+      alert(err.message || 'Error al bloquear');
+      boton.textContent = textoOriginal;
+      boton.disabled = false;
+      return;
+    }
+    boton.disabled = true;
+    setTimeout(() => {
+      boton.textContent = textoOriginal;
+      boton.classList.remove('ok');
+      boton.disabled = false;
+    }, 2500);
+  }
+
+  /**
+   * POST /monitor/reportar — envía IP y resumen de ataques; muestra confirmación en el botón.
+   */
+  async function reportarIp(grupo, boton) {
+    if (!grupo || !boton) return;
+    const textoOriginal = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = 'Enviando...';
+    boton.classList.remove('ok');
+    try {
+      const res = await fetch('/monitor/reportar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: grupo.ip,
+          datos_ataque: resumenAtaquesGrupo(grupo),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.exito) throw new Error(data.mensaje || 'Error al reportar');
+      boton.textContent = 'Reporte enviado';
+      boton.classList.add('ok');
+    } catch (err) {
+      boton.textContent = 'Error';
+      setTimeout(() => {
+        boton.textContent = textoOriginal;
+        boton.disabled = false;
+      }, 2000);
+      return;
+    }
+    boton.disabled = false;
+    setTimeout(() => {
+      boton.textContent = textoOriginal;
+      boton.classList.remove('ok');
+    }, 3000);
+  }
+
+  /**
+   * Pinta la tabla principal agrupada por IP (filas expandibles + subtabla).
+   */
+  function renderTablaGrupos() {
+    const tbody = document.getElementById('tbody-grupos');
+    const grupos = obtenerGruposFiltrados();
+
+    if (grupos.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No hay IPs que coincidan con los filtros</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    grupos.forEach((grupo) => {
+      const ip = grupo.ip || '';
+      const expandido = ipsExpandidas.has(ip);
+      const grav = grupo.gravedad_maxima || 'BAJO';
+      const eventosVisibles = grupo._eventosVisibles || [];
+
+      const tr = document.createElement('tr');
+      tr.className = `fila-grupo ${claseFilaGravedad(grav)}`;
+      tr.dataset.ip = ip;
+      tr.innerHTML = `
+        <td class="celda-expandir">${expandido ? '▼' : '▶'}</td>
+        <td class="ip-mono">${escapeHtml(ip)}</td>
+        <td>${eventosVisibles.length}</td>
+        <td><div class="tipos-lista">${htmlTiposGrupo(grupo.tipos_ataque)}</div></td>
+        <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
+        <td>${escapeHtml(grupo.primera_vez || '')}</td>
+        <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+        <td class="celda-accion">
+          <button type="button" class="btn-reportar-ip" data-ip="${escapeHtml(ip)}">📋 Reportar</button>
+          ${ipsActivasCache.has(ip) ? `<button type="button" class="btn-bloquear-ip" data-ip="${escapeHtml(ip)}">Bloquear</button>` : ''}
+        </td>
+      `;
+
+      // Clic en la fila (no en botones de acción) expande/colapsa
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-reportar-ip') || e.target.closest('.btn-bloquear-ip')) return;
+        alternarExpansion(ip);
+      });
+
+      const btnReportar = tr.querySelector('.btn-reportar-ip');
+      btnReportar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        reportarIp(grupo, btnReportar);
+      });
+
+      const btnBloquear = tr.querySelector('.btn-bloquear-ip');
+      if (btnBloquear) {
+        btnBloquear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          bloquearIp(ip, btnBloquear);
+        });
+      }
+
+      tbody.appendChild(tr);
+
+      if (expandido) {
+        const trDet = document.createElement('tr');
+        trDet.className = 'fila-detalle';
+        trDet.innerHTML = `<td colspan="8">${htmlSubtabla(eventosVisibles)}</td>`;
+        enlazarClicsSubtabla(trDet, eventosVisibles, ip);
+        tbody.appendChild(trDet);
+      }
+    });
+  }
+
+  /** Restablece todos los filtros y repinta. */
+  function limpiarFiltros() {
+    document.getElementById('filtro-ip').value = '';
+    document.getElementById('filtro-tiempo').value = 'todo';
+    filtroTipoActual = 'Todos';
+    filtroGravedadActual = 'Todos';
+    document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.filtro === 'Todos');
+    });
+    document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.gravedad === 'Todos');
+    });
+    renderTablaGrupos();
+  }
+
+  /**
+   * GET /monitor/api/eventos — guarda grupos por IP y renderiza la tabla.
+   */
+  async function cargarEventos() {
+    try {
+      const res = await fetch('/monitor/api/eventos');
+      if (!res.ok) throw new Error('respuesta no OK');
+      const data = await res.json();
+      gruposCache = esRespuestaAgrupadaPorIp(data) ? data : [];
+      renderTablaGrupos();
+    } catch (e) {
+      document.getElementById('tbody-grupos').innerHTML =
+        '<tr class="empty-row"><td colspan="8">Error al cargar datos</td></tr>';
+    }
+  }
+
+  // ——— Modal de detalle de evento (cerrar con X o clic en overlay) ———
+  document.getElementById('modal-evento-cerrar').addEventListener('click', cerrarModalEvento);
+  document.getElementById('modal-evento-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-evento-overlay') cerrarModalEvento();
   });
-  document.getElementById('filtro-tiempo').addEventListener('change', () => {
-    renderTabla();
-  });
-  document.getElementById('btn-limpiar-filtros').addEventListener('click', () => {
-    limpiarFiltros();
-  });
+
+  // ——— Listeners de filtros ———
+  document.getElementById('filtro-ip').addEventListener('input', renderTablaGrupos);
+  document.getElementById('filtro-tiempo').addEventListener('change', renderTablaGrupos);
+  document.getElementById('btn-limpiar-filtros').addEventListener('click', limpiarFiltros);
+
   document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#filtros-tipo .filter-btn').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       filtroTipoActual = btn.dataset.filtro;
-      renderTabla();
+      renderTablaGrupos();
     });
   });
 
-  /** Serializa payload o headers para mostrarlos en el modal (texto o JSON formateado). */
-  function textoPlanoOJson(val) {
-    if (val === null || val === undefined) return '';
-    if (typeof val === 'string') return val;
-    try {
-      return JSON.stringify(val, null, 2);
-    } catch {
-      return String(val);
-    }
-  }
+  document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroGravedadActual = btn.dataset.gravedad;
+      renderTablaGrupos();
+    });
+  });
 
-  /** Muestra el modal con IP, ruta, tipo, payload, user_agent, headers y timestamp. */
-  function abrirModal(ev) {
-    document.getElementById('m-ip').textContent = ev.ip || '';
-    document.getElementById('m-ruta').textContent = ev.ruta || '';
-    const tipoEl = document.getElementById('m-tipo');
-    const tipo = tipoDeEvento(ev);
-    tipoEl.textContent = tipo;
-    tipoEl.className = 'badge ' + badgeClass(tipo);
-    document.getElementById('m-payload').textContent = textoPlanoOJson(ev.payload);
-    document.getElementById('m-ua').textContent = navegadorDeEvento(ev);
-    document.getElementById('m-headers').textContent = textoPlanoOJson(ev.headers);
-    document.getElementById('m-ts').textContent = ev.timestamp || '';
-    document.getElementById('modal').classList.add('show');
-  }
-  function cerrarModal() {
-    document.getElementById('modal').classList.remove('show');
-  }
-  function cerrarModalFuera(e) {
-    if (e.target.id === 'modal') cerrarModal();
-  }
-
-  // Primera carga y refresco automático cada 30 s (stats + eventos en paralelo lógico).
+  // Carga inicial y refresco cada 30 s (incluye IPs activas para el botón Bloquear)
   cargarEstadisticas();
+  cargarIpsActivas();
   cargarEventos();
   setInterval(() => {
     cargarEstadisticas();
+    cargarIpsActivas();
     cargarEventos();
   }, 30000);
 </script>

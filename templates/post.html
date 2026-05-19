@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlyPaper - {{ post.titulo }}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e1a;
+    color: #e4e6eb;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  .navbar {
+    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
+    border-bottom: 1px solid #1f2742;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+  }
+  .logo {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+  .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
+  .nav-links { display: flex; gap: 8px; list-style: none; }
+  .nav-links a {
+    color: #b4b8c5;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { background: #1a2138; color: #fff; }
+  .nav-links a.login {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+  }
+
+  .container { max-width: 820px; margin: 0 auto; padding: 48px 40px; }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #8b91a7;
+    text-decoration: none;
+    font-size: 13px;
+    margin-bottom: 24px;
+    transition: color 0.2s;
+  }
+  .back-link:hover { color: #a78bfa; }
+  .back-link::before { content: "←"; }
+
+  .article {
+    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
+    border: 1px solid #1f2742;
+    border-radius: 14px;
+    padding: 40px;
+    margin-bottom: 32px;
+  }
+  .article-title {
+    font-size: 34px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.25;
+    margin-bottom: 20px;
+    letter-spacing: -0.5px;
+  }
+  .article-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-bottom: 24px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid #1f2742;
+    font-size: 13px;
+    color: #8b91a7;
+  }
+  .author-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #fff;
+    font-size: 15px;
+  }
+  .author-info { display: flex; flex-direction: column; gap: 2px; }
+  .author-name { color: #e4e6eb; font-weight: 600; font-size: 14px; }
+  .article-content {
+    color: #c4c8d5;
+    font-size: 16px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+  }
+
+  .comments-section {
+    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
+    border: 1px solid #1f2742;
+    border-radius: 14px;
+    padding: 32px;
+  }
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .badge {
+    background: #1f2742;
+    color: #a78bfa;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .comment-list { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+  .comment {
+    background: #0f1424;
+    border: 1px solid #1f2742;
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .comment-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .comment-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2d3454 0%, #3b2d54 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #a78bfa;
+    font-size: 13px;
+  }
+  .comment-author { color: #fff; font-weight: 600; font-size: 14px; }
+  .comment-date { color: #6b7090; font-size: 12px; margin-left: auto; }
+  .comment-body { color: #b4b8c5; font-size: 14px; line-height: 1.6; }
+  .comment-sesion {
+    border-color: #4c3d8a;
+    background: linear-gradient(180deg, #151028 0%, #0f1424 100%);
+  }
+  .comment-tag-sesion {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.12);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .comment-actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .btn-borrar-comentario {
+    background: transparent;
+    border: 1px solid #4a3558;
+    color: #f87171;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-borrar-comentario:hover {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: #f87171;
+  }
+  .form-hint-cupo {
+    font-size: 12px;
+    color: #8b91a7;
+    margin-bottom: 12px;
+  }
+
+  .empty-comments {
+    text-align: center;
+    padding: 32px;
+    color: #6b7090;
+    background: #0f1424;
+    border: 1px dashed #2a3454;
+    border-radius: 10px;
+    margin-bottom: 32px;
+    font-size: 14px;
+  }
+
+  .comment-form {
+    background: #0f1424;
+    border: 1px solid #1f2742;
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .form-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #8b91a7;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .field input, .field textarea {
+    width: 100%;
+    background: #0a0e1a;
+    border: 1px solid #2a3454;
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #e4e6eb;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .field input:focus, .field textarea:focus {
+    outline: none;
+    border-color: #6366f1;
+    background: #0d1220;
+  }
+  .field textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
+  .btn-submit {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+    border: none;
+    padding: 11px 22px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .btn-submit:hover { opacity: 0.9; transform: translateY(-1px); }
+</style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="logo">FlyPaper</div>
+    <ul class="nav-links">
+      <li><a href="/">Inicio</a></li>
+      <li><a href="/blog">Blog</a></li>
+      <li><a href="/objetivos">Objetivos CTF</a></li>
+      <li><a href="/buscar">Buscar</a></li>
+      <li><a href="/login" class="login">Login</a></li>
+    </ul>
+  </nav>
+
+  <main class="container">
+    <a href="/blog" class="back-link">Volver al blog</a>
+
+    <article class="article">
+      <h1 class="article-title">{{ post.titulo }}</h1>
+      <div class="article-meta">
+        <div class="author-avatar">{{ post.autor_id }}</div>
+        <div class="author-info">
+          <span class="author-name">Autor #{{ post.autor_id }}</span>
+          <span>{{ post.fecha }}</span>
+        </div>
+      </div>
+      <div class="article-content">{{ post.contenido }}</div>
+    </article>
+
+    <section class="comments-section">
+      <h2 class="section-title">
+        Comentarios
+        <span class="badge">{{ comentarios|length }}</span>
+      </h2>
+
+      <div class="comment-list">
+        {% for c in comentarios %}
+        <div class="comment{% if c.es_sesion %} comment-sesion{% endif %}">
+          <div class="comment-header">
+            <div class="comment-avatar">{{ c.nombre[0]|upper }}</div>
+            <span class="comment-author">{{ c.nombre }}</span>
+            {% if c.es_sesion %}
+            <span class="comment-tag-sesion">Tu comentario</span>
+            {% endif %}
+            <span class="comment-date">{{ c.fecha }}</span>
+          </div>
+          <div class="comment-body">{{ c.comentario }}</div>
+          {% if c.es_sesion and c.id %}
+          <div class="comment-actions">
+            <form method="POST" action="/blog/{{ post.id }}/comentar/borrar">
+              <input type="hidden" name="id" value="{{ c.id }}">
+              <button type="submit" class="btn-borrar-comentario">Borrar</button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="empty-comments">Aún no hay comentarios. ¡Sé el primero en comentar!</div>
+        {% endfor %}
+      </div>
+
+      <form class="comment-form" method="POST" action="/blog/{{ post.id }}/comentar">
+        <div class="form-title">Deja tu comentario</div>
+        {% if cupo_restante is defined %}
+        <p class="form-hint-cupo">
+          Comentarios solo visibles para ti en esta sesión.
+          {% if cupo_restante > 0 %}
+          Puedes publicar {{ cupo_restante }} más (máx. {{ limite_sesion }} por publicación).
+          {% else %}
+          Has alcanzado el límite de {{ limite_sesion }} comentarios; borra uno para volver a comentar.
+          {% endif %}
+        </p>
+        {% endif %}
+        <div class="field">
+          <label for="nombre">Nombre</label>
+          <input type="text" id="nombre" name="nombre" required placeholder="Tu nombre">
+        </div>
+        <div class="field">
+          <label for="comentario">Comentario</label>
+          <textarea id="comentario" name="comentario" required placeholder="Escribe tu comentario..."></textarea>
+        </div>
+        <button type="submit" class="btn-submit">Publicar comentario</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

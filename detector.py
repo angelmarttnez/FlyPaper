@@ -1,156 +1,324 @@
 """
 Módulo de detección y clasificación de ataques para FlyPaper.
 
-Este archivo contiene reglas simples basadas en palabras clave/patrones.
-El objetivo es clasificar rápidamente eventos del honeypot en categorías
-útiles para análisis y visualización.
+Analiza rutas, payloads, user-agents y cabeceras HTTP con reglas por patrones.
+Incluye contador en memoria para fuerza bruta en POST /login y niveles de gravedad.
 """
 
+from datetime import datetime, timedelta
 
-def clasificar_ataque(ruta, payload, user_agent):
+# Timestamps de intentos POST /login por IP: {"203.0.113.1": [datetime, ...]}
+intentos_login = {}
+
+
+# ---------------------------------------------------------------------------
+# Patrones SQLi — inyección en formularios o parámetros
+# Ejemplo: username=admin' OR 1=1--  |  id=1 UNION SELECT password FROM users
+# ---------------------------------------------------------------------------
+PATRONES_SQLI = [
+    "select",
+    "union",
+    "drop",
+    "insert",
+    "update",
+    "delete",
+    "or 1=1",
+    "--",
+    "/*",
+    "sleep",
+    "exec",
+    "xp_",
+    "cast",
+    "convert",
+    "char",
+    "concat",
+    "group by",
+    "having",
+    "order by",
+    "benchmark",
+    "load_file",
+    "into outfile",
+    "information_schema",
+]
+
+# ---------------------------------------------------------------------------
+# Patrones XSS — ejecución de script en el navegador de la víctima
+# Ejemplo: <script>alert(1)</script>  |  <img src=x onerror=alert(1)>
+# ---------------------------------------------------------------------------
+PATRONES_XSS = [
+    "<script",
+    "javascript:",
+    "onerror=",
+    "onload=",
+    "alert(",
+    "document.cookie",
+    "eval(",
+    "<img src=",
+    "<svg",
+    "<iframe",
+    "onfocus",
+    "onmouseover",
+    "expression(",
+    "vbscript:",
+    "data:text/html",
+]
+
+# ---------------------------------------------------------------------------
+# Path Traversal — lectura de ficheros fuera del directorio web
+# Ejemplo: /../../etc/passwd  |  ruta=%2e%2e%2fetc%2fpasswd
+# ---------------------------------------------------------------------------
+PATRONES_PATH_TRAVERSAL = [
+    "/../",
+    "/etc/passwd",
+    "/etc/shadow",
+    "/windows/system32",
+    "%2e%2e",
+    "%252e",
+    "../",
+    "..\\",
+    "/proc/self",
+]
+
+# ---------------------------------------------------------------------------
+# Rutas típicas de reconocimiento y enumeración
+# Ejemplo: GET /.env  |  GET /wp-admin
+# ---------------------------------------------------------------------------
+RUTAS_RECONOCIMIENTO = [
+    "/admin",
+    "/backup",
+    "/.env",
+    "/config",
+    "/phpinfo",
+    "/wp-admin",
+    "/phpmyadmin",
+    "/robots.txt",
+    "/.git",
+    "/.htaccess",
+    "/web.config",
+    "/api/v1",
+    "/swagger",
+    "/actuator",
+    "/console",
+    "/.ssh",
+]
+
+# ---------------------------------------------------------------------------
+# User-Agents de herramientas automatizadas de escaneo
+# Ejemplo: sqlmap/1.7  |  Nikto/2.1.5
+# ---------------------------------------------------------------------------
+SCANNERS_CONOCIDOS = [
+    "sqlmap",
+    "nikto",
+    "nmap",
+    "masscan",
+    "zgrab",
+    "python-requests",
+    "curl/",
+    "wget/",
+    "dirbuster",
+    "gobuster",
+    "wfuzz",
+    "burpsuite",
+    "hydra",
+    "metasploit",
+]
+
+
+def _normalizar_headers(headers):
     """
-    Clasifica un evento según reglas de prioridad predefinidas.
-
-    Orden de prioridad aplicado (de mayor a menor):
-    1) SQLi
-    2) XSS
-    3) Path Traversal
-    4) Reconocimiento
-    5) Scanner Automatizado
-    6) Otro
+    Convierte cabeceras Flask/Werkzeug o dict a un dict con claves en minúsculas.
 
     Args:
-        ruta (str): Ruta solicitada por el visitante (por ejemplo `/login`).
-        payload (str): Datos enviados por formularios/parámetros.
-        user_agent (str): Cabecera User-Agent del cliente.
+        headers: Cabeceras de la petición o None.
+
+    Returns:
+        dict: Mapa nombre → valor en minúsculas.
+    """
+    if not headers:
+        return {}
+    if hasattr(headers, "items"):
+        return {str(k).lower(): str(v) for k, v in headers.items()}
+    return {str(k).lower(): str(v) for k, v in headers}
+
+
+def _contiene_patron(texto, patrones):
+    """True si algún patrón aparece como subcadena en `texto` (ya en minúsculas)."""
+    if not texto:
+        return False
+    return any(patron in texto for patron in patrones)
+
+
+def _detectar_csrf(headers, metodo):
+    """
+    Detecta posible CSRF en peticiones POST sin Referer válido.
+
+    Reglas:
+    - Solo aplica a método POST.
+    - Sin cabecera Referer → sospechoso.
+    - Referer presente pero sin coincidir con Host → sospechoso.
+
+    Ejemplo: POST /transfer sin Referer desde un formulario externo.
+
+    Args:
+        headers: Cabeceras HTTP de la petición.
+        metodo (str): GET, POST, etc.
+
+    Returns:
+        bool: True si parece CSRF.
+    """
+    if (metodo or "").upper() != "POST":
+        return False
+
+    cabeceras = _normalizar_headers(headers)
+    referer = cabeceras.get("referer", "").strip()
+    host = cabeceras.get("host", "").strip()
+
+    if not referer:
+        return True
+
+    if host:
+        referer_lower = referer.lower()
+        host_lower = host.lower().split(":")[0]
+        if host_lower not in referer_lower:
+            return True
+
+    return False
+
+
+def registrar_intento_login(ip):
+    """
+    Registra un intento de login (POST /login) y detecta fuerza bruta.
+
+    - Añade el timestamp actual a la lista de la IP.
+    - Elimina intentos con más de 1 minuto de antigüedad.
+    - Devuelve True si hay más de 5 intentos en el último minuto.
+
+    Ejemplo: la IP 10.0.0.5 envía 6 POST /login en 30 segundos → True.
+
+    Args:
+        ip (str): Dirección IP del cliente.
+
+    Returns:
+        bool: True si se supera el umbral de fuerza bruta.
+    """
+    if not ip:
+        return False
+
+    ahora = datetime.now()
+    hace_un_minuto = ahora - timedelta(minutes=1)
+
+    if ip not in intentos_login:
+        intentos_login[ip] = []
+
+    intentos_login[ip] = [
+        marca for marca in intentos_login[ip] if marca > hace_un_minuto
+    ]
+    intentos_login[ip].append(ahora)
+
+    return len(intentos_login[ip]) > 5
+
+
+def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
+    """
+    Clasifica un evento del honeypot según reglas de prioridad.
+
+    Orden aplicado:
+    1) SQLi (payload)
+    2) XSS (payload)
+    3) Path Traversal (ruta o payload)
+    4) CSRF (POST sin Referer coherente con Host)
+    5) Scanner Automatizado (User-Agent)
+    6) Reconocimiento (ruta señuelo)
+    7) Otro
+
+    La fuerza bruta se detecta con `registrar_intento_login` en POST /login;
+    la aplicación puede sobrescribir el tipo a "Fuerza Bruta" cuando devuelve True.
+
+    Args:
+        ruta (str): Ruta solicitada, p. ej. "/login".
+        payload (str): Cuerpo o parámetros de la petición.
+        user_agent (str): Cabecera User-Agent.
+        headers (dict | None): Cabeceras HTTP (necesarias para CSRF).
+        metodo (str | None): Método HTTP (necesario para CSRF).
 
     Returns:
         str: Tipo de ataque detectado.
-
-    Ejemplos:
-        - ruta="/login", payload="admin' OR 1=1 --", user_agent="Mozilla/5.0"
-          -> "SQLi"
-        - ruta="/search", payload="<script>alert(1)</script>", user_agent="Mozilla/5.0"
-          -> "XSS"
-        - ruta="/../../etc/passwd", payload="", user_agent="curl/8.0"
-          -> "Path Traversal" (tiene prioridad sobre scanner)
     """
-    # Normalizamos valores para evitar errores con None y facilitar búsquedas.
-    ruta_normalizada = (ruta or "").lower()
-    payload_normalizado = (payload or "").lower()
-    user_agent_normalizado = (user_agent or "").lower()
+    ruta_norm = (ruta or "").lower()
+    payload_norm = (payload or "").lower()
+    ua_norm = (user_agent or "").lower()
+    texto_ruta_payload = f"{ruta_norm} {payload_norm}"
 
-    # ---------------------------------------------------------------------
-    # Regla 1: SQLi (máxima prioridad)
-    # ---------------------------------------------------------------------
-    patrones_sqli = [
-        "select",
-        "union",
-        "drop",
-        "insert",
-        "update",
-        "delete",
-        "or 1=1",
-        "--",
-        "/*",
-        "*/",
-        "sleep",
-        "exec",
-        "xp_",
-    ]
-
-    if any(patron in payload_normalizado for patron in patrones_sqli):
+    # 1) SQLi — ej.: payload "admin' OR 1=1--"
+    if _contiene_patron(payload_norm, PATRONES_SQLI):
         return "SQLi"
 
-    # ---------------------------------------------------------------------
-    # Regla 2: XSS
-    # ---------------------------------------------------------------------
-    patrones_xss = [
-        "<script",
-        "javascript:",
-        "onerror",
-        "onload",
-        "alert(",
-        "document.cookie",
-        "eval(",
-        "<img src=",
-    ]
-
-    if any(patron in payload_normalizado for patron in patrones_xss):
+    # 2) XSS — ej.: payload "<script>alert(document.cookie)</script>"
+    if _contiene_patron(payload_norm, PATRONES_XSS):
         return "XSS"
 
-    # ---------------------------------------------------------------------
-    # Regla 3: Path Traversal
-    # ---------------------------------------------------------------------
-    patrones_path_traversal = [
-        "/../",
-        "/etc/passwd",
-        "/windows/system",
-        "%2e%2e",
-    ]
-
-    if any(patron in ruta_normalizada for patron in patrones_path_traversal):
+    # 3) Path Traversal — ej.: ruta "/../../etc/passwd"
+    if _contiene_patron(texto_ruta_payload, PATRONES_PATH_TRAVERSAL):
         return "Path Traversal"
 
-    # ---------------------------------------------------------------------
-    # Regla 4: Reconocimiento de endpoints sensibles
-    # ---------------------------------------------------------------------
-    rutas_reconocimiento = {
-        "/admin",
-        "/backup",
-        "/.env",
-        "/config",
-        "/phpinfo",
-        "/wp-admin",
-        "/phpmyadmin",
-        "/robots.txt",
-        "/.git",
-    }
+    # 4) CSRF — ej.: POST sin Referer o Referer de otro dominio
+    if _detectar_csrf(headers, metodo):
+        return "CSRF"
 
-    if ruta_normalizada in rutas_reconocimiento:
-        return "Reconocimiento"
-
-    # ---------------------------------------------------------------------
-    # Regla 5: Scanner automatizado por User-Agent
-    # ---------------------------------------------------------------------
-    patrones_scanner = [
-        "sqlmap",
-        "nikto",
-        "nmap",
-        "masscan",
-        "zgrab",
-        "python-requests",
-        "curl/",
-        "wget/",
-    ]
-
-    if any(patron in user_agent_normalizado for patron in patrones_scanner):
+    # 5) Scanner — ej.: User-Agent "sqlmap/1.4"
+    if _contiene_patron(ua_norm, SCANNERS_CONOCIDOS):
         return "Scanner Automatizado"
 
-    # ---------------------------------------------------------------------
-    # Regla 6: Sin coincidencias
-    # ---------------------------------------------------------------------
+    # 6) Reconocimiento — ej.: GET "/.env"
+    for ruta_senal in RUTAS_RECONOCIMIENTO:
+        if ruta_norm == ruta_senal or ruta_norm.startswith(ruta_senal + "/"):
+            return "Reconocimiento"
+
     return "Otro"
+
+
+def calcular_gravedad(tipo_ataque):
+    """
+    Asigna un nivel de gravedad al tipo de ataque clasificado.
+
+    - CRÍTICO: SQLi, Path Traversal, RCE
+    - ALTO: XSS, Fuerza Bruta, CSRF
+    - MEDIO: Scanner Automatizado
+    - BAJO: Reconocimiento, Otro y cualquier otro valor
+
+    Args:
+        tipo_ataque (str): Categoría devuelta por `clasificar_ataque`.
+
+    Returns:
+        str: "CRÍTICO", "ALTO", "MEDIO" o "BAJO".
+    """
+    if tipo_ataque in ("SQLi", "Path Traversal", "RCE"):
+        return "CRÍTICO"
+    if tipo_ataque in ("XSS", "Fuerza Bruta", "CSRF"):
+        return "ALTO"
+    if tipo_ataque == "Scanner Automatizado":
+        return "MEDIO"
+    return "BAJO"
 
 
 def es_ataque_grave(tipo_ataque):
     """
-    Indica si un tipo de ataque se considera grave.
-
-    Se marca como grave cuando es uno de estos:
-    - SQLi
-    - XSS
-    - Path Traversal
+    Indica si el ataque requiere atención prioritaria en el monitor.
 
     Args:
-        tipo_ataque (str): Categoría del ataque a evaluar.
+        tipo_ataque (str): Tipo clasificado.
 
     Returns:
-        bool: True si es grave, False en caso contrario.
+        bool: True para SQLi, XSS, Path Traversal, Fuerza Bruta o CSRF.
 
     Ejemplos:
-        - es_ataque_grave("SQLi") -> True
-        - es_ataque_grave("Reconocimiento") -> False
+        - es_ataque_grave("SQLi") → True
+        - es_ataque_grave("Reconocimiento") → False
     """
-    tipos_graves = {"SQLi", "XSS", "Path Traversal"}
-    return tipo_ataque in tipos_graves
+    return tipo_ataque in {
+        "SQLi",
+        "XSS",
+        "Path Traversal",
+        "Fuerza Bruta",
+        "CSRF",
+    }
