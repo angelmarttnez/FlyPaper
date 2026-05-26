@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.py[cod]
+*.db
+.env
+.venv
+venv
+*.md
+.cursor
+terminals
+malos
+app_old.py
+database_old.py

@@ -1,0 +1,23 @@
+# FlyPaper: honeypot Flask + SQLite (sin servicio de base de datos separado).
+#
+# Arranque: docker compose up --build
+# URL: http://localhost:5000
+#
+# Variables opcionales (IA / Claude): define ANTHROPIC_API_KEY en .env o en el entorno.
+
+services:
+  flypaper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flypaper:latest
+    container_name: flypaper
+    ports:
+      - "5000:5000"
+    environment:
+      # Opcional: clave para análisis IA del monitor (si no está, esas rutas pueden fallar).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    # Descomenta si usas .env en la raíz del proyecto:
+    # env_file:
+    #   - .env
+    restart: unless-stopped
