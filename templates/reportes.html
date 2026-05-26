@@ -21,7 +21,37 @@ body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
 .header{margin-bottom:8px}
 .header h1{font-size:24px;font-weight:600}
 .header p{color:#8b949e;font-size:14px;margin-top:4px}
-.card{background:#161b22;border:1px solid #21262d;border-radius:8px;margin-top:24px;overflow:hidden}
+.tabs{display:flex;gap:4px;margin-top:24px;border-bottom:1px solid #21262d}
+.tab-btn{padding:12px 20px;background:transparent;border:none;border-bottom:2px solid transparent;color:#8b949e;font-size:14px;font-weight:500;cursor:pointer;text-decoration:none;margin-bottom:-1px}
+.tab-btn:hover{color:#e4e6eb}
+.tab-btn.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.tab-panel{display:none;margin-top:24px}
+.tab-panel.active{display:block}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:hidden}
+.toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:20px;border-bottom:1px solid #21262d;background:#0d1117}
+.toolbar label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#8b949e;font-weight:600}
+.toolbar input[type=text],.toolbar input[type=date]{
+  background:#161b22;border:1px solid #30363d;color:#e4e6eb;padding:8px 12px;border-radius:6px;font-size:14px;min-width:200px
+}
+.toolbar input[type=text]{min-width:280px}
+.toolbar input:focus{outline:none;border-color:#58a6ff}
+.toolbar input.input-invalid{border-color:#f85149}
+.filtro-error{
+  width:100%;
+  flex-basis:100%;
+  margin:0;
+  padding:10px 14px;
+  background:#1a0f0f;
+  border:1px solid #f85149;
+  border-radius:6px;
+  color:#ff7b72;
+  font-size:13px;
+}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.btn-primary{background:#238636;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer}
+.btn-primary:hover{background:#2ea043}
+.btn-secondary{background:#21262d;color:#e4e6eb;border:1px solid #30363d;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}
+.btn-secondary:hover{border-color:#58a6ff;color:#58a6ff}
 table{width:100%;border-collapse:collapse}
 th{background:#0d1117;text-align:left;padding:12px 20px;font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #21262d}
 td{padding:14px 20px;font-size:14px;border-bottom:1px solid #21262d;color:#e4e6eb;vertical-align:top}
@@ -32,47 +62,254 @@ tr:hover td{background:#1c2128}
 .datos{max-width:520px}
 .datos pre{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:12px;color:#c9d1d9;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;margin:0}
 .empty{padding:40px 20px;text-align:center;color:#8b949e;font-size:14px}
+.resumen-lista{list-style:none}
+.resumen-item{padding:20px;border-bottom:1px solid #21262d}
+.resumen-item:last-child{border-bottom:none}
+.resumen-item:hover{background:#1c2128}
+.resumen-item-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.resumen-fecha{font-size:16px;font-weight:600;color:#58a6ff}
+.resumen-meta-item{font-size:12px;color:#8b949e}
+.resumen-preview{font-size:14px;line-height:1.6;color:#c9d1d9;margin-bottom:12px}
+.btn-ver{background:#1f6feb;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer}
+.btn-ver:hover{background:#388bfd}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;align-items:center;justify-content:center;padding:24px}
+.modal-overlay.open{display:flex}
+.modal-box{background:#161b22;border:1px solid #30363d;border-radius:8px;max-width:720px;width:100%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #21262d}
+.modal-header h2{font-size:18px;font-weight:600}
+.modal-cerrar{background:none;border:none;color:#8b949e;font-size:24px;cursor:pointer;line-height:1}
+.modal-cerrar:hover{color:#e4e6eb}
+.modal-body{padding:20px;overflow-y:auto;font-size:14px;line-height:1.65;color:#c9d1d9;white-space:pre-wrap}
+.texto-normativo{font-size:11px;line-height:1.55;color:#6e7681;margin:0}
+.texto-normativo strong{color:#8b949e;font-weight:600}
+.nis2-form-aviso{
+  width:100%;flex-basis:100%;font-size:11px;line-height:1.45;color:#6e7681;
+  margin:4px 0 0;padding:10px 12px;background:#0d1117;border:1px solid #21262d;border-radius:6px
+}
+.reportes-compliance-footer{margin-top:28px;padding-top:16px;border-top:1px solid #21262d}
+.badge-nis2{display:inline-block;font-size:11px;font-weight:600;padding:3px 8px;border-radius:4px;background:#3d2a00;color:#d29922;border:1px solid #6e4a00}
+.badge-nis2-no{color:#6e7681;font-size:12px}
 </style>
 </head>
 <body>
 <aside class="sidebar">
   <div class="logo">Fly<span>Paper</span></div>
   <nav class="nav">
-    <a href="/admin"><span class="icon">▦</span> Dashboard</a>
-    <a href="/admin/usuarios"><span class="icon">◉</span> Usuarios</a>
-    <a href="/admin/configuracion"><span class="icon">⚙</span> Configuración</a>
-    <a href="/admin/reportes" class="active"><span class="icon">▤</span> Reportes</a>
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/usuarios">Usuarios</a>
+    <a href="/admin/configuracion">Configuración</a>
+    <a href="/admin/reportes" class="active">Reportes</a>
   </nav>
   <div class="logout nav">
-    <a href="/logout"><span class="icon">⎋</span> Logout</a>
+    <a href="/logout">Logout</a>
   </div>
 </aside>
 <main class="main">
   <div class="header">
     <h1>Reportes de seguridad</h1>
-    <p>Reportes enviados desde el monitor de analista, ordenados por fecha descendente</p>
+    <p>Reportes manuales por IP y resúmenes diarios generados. La clasificación NIS 2 se define al generar el reporte desde el monitor de seguridad.</p>
   </div>
-  <div class="card">
-    {% if reportes %}
-    <table>
-      <thead>
-        <tr><th>ID</th><th>IP atacante</th><th>Fecha</th><th>Datos del ataque</th></tr>
-      </thead>
-      <tbody>
-        {% for r in reportes %}
-        <tr>
-          <td>#{{ r.id }}</td>
-          <td class="ip">{{ r.ip_atacante }}</td>
-          <td class="fecha">{{ r.fecha }}</td>
-          <td class="datos"><pre>{{ r.datos_ataque }}</pre></td>
-        </tr>
+
+  <nav class="tabs" role="tablist">
+    <a href="/admin/reportes?tab=ip{% if ip_seleccionada %}&ip={{ ip_seleccionada|urlencode }}{% endif %}"
+       class="tab-btn {% if tab == 'ip' %}active{% endif %}" role="tab">Reportes por IP</a>
+    <a href="/admin/reportes?tab=resumenes" class="tab-btn {% if tab == 'resumenes' %}active{% endif %}" role="tab">Resúmenes Diarios</a>
+  </nav>
+
+  <div id="tab-ip" class="tab-panel {% if tab == 'ip' %}active{% endif %}">
+    <div class="card">
+      <form class="toolbar" id="form-reportes-ip" method="get" action="/admin/reportes" novalidate>
+        <input type="hidden" name="tab" value="ip">
+        <label>
+          IP atacante
+          <input type="text" name="ip" id="input-ip-reportes"
+                 value="{{ ip_seleccionada }}"
+                 placeholder="Escribir IP del atacante (Ej: 192.168.1.50)"
+                 autocomplete="off" spellcheck="false">
+        </label>
+        <label>
+          Fecha Inicio
+          <input type="date" name="fecha_inicio" id="input-fecha-inicio" value="{{ fecha_inicio }}">
+        </label>
+        <label>
+          Fecha Fin
+          <input type="date" name="fecha_fin" id="input-fecha-fin" value="{{ fecha_fin }}">
+        </label>
+        <button type="submit" class="btn-primary" id="btn-filtrar-reportes">Filtrar</button>
+        <a href="/admin/reportes?tab=ip" class="btn-secondary">Limpiar</a>
+        <p class="nis2-form-aviso" role="note">
+          <strong>Directiva NIS 2:</strong> La casilla «Clasificar como incidente significativo (notificación prioritaria)» está disponible al generar reportes desde el monitor (<code>/monitor</code>), en el detalle de la petición.
+        </p>
+        <p class="filtro-error" id="filtro-error-reportes" role="alert" hidden></p>
+        {% if error_validacion %}
+        <p class="filtro-error" role="alert">{{ error_validacion }}</p>
+        {% endif %}
+      </form>
+      {% if busqueda_enviada and not error_validacion %}
+        {% if reportes_ip %}
+        <table>
+          <thead>
+            <tr><th>ID</th><th>IP atacante</th><th>Fecha</th><th>NIS 2</th><th>Datos del ataque</th></tr>
+          </thead>
+          <tbody>
+            {% for r in reportes_ip %}
+            <tr>
+              <td>#{{ r.id }}</td>
+              <td class="ip">{{ r.ip_atacante }}</td>
+              <td class="fecha">{{ r.fecha }}</td>
+              <td>
+                {% if r.nis2_significativo %}
+                <span class="badge-nis2">Significativo</span>
+                {% else %}
+                <span class="badge-nis2-no">—</span>
+                {% endif %}
+              </td>
+              <td class="datos"><pre>{{ r.datos_ataque }}</pre></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty">
+          {% if ip_seleccionada and fecha_inicio and fecha_fin %}
+          No hay reportes para {{ ip_seleccionada }} entre {{ fecha_inicio }} y {{ fecha_fin }}.
+          {% elif ip_seleccionada %}
+          No hay reportes para la IP {{ ip_seleccionada }}.
+          {% else %}
+          No hay reportes en el rango {{ fecha_inicio }} — {{ fecha_fin }}.
+          {% endif %}
+        </p>
+        {% endif %}
+      {% elif not busqueda_enviada %}
+      <p class="empty">Introduce una IP o un rango de fechas completo (inicio y fin) para buscar reportes.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="tab-resumenes" class="tab-panel {% if tab == 'resumenes' %}active{% endif %}">
+    <div class="card">
+      {% if resumenes %}
+      <ul class="resumen-lista">
+        {% for s in resumenes %}
+        <li class="resumen-item">
+          <div class="resumen-item-header">
+            <span class="resumen-fecha">{{ s.fecha }}</span>
+            <span class="resumen-meta-item">{{ s.total_eventos }} evento(s) · Generado {{ s.generado_en }}</span>
+          </div>
+          <p class="resumen-preview">{{ s.preview }}</p>
+          <div class="resumen-full-hidden" id="resumen-full-{{ loop.index }}" hidden>{{ s.resumen_completo }}</div>
+          <button type="button" class="btn-ver" data-fecha="{{ s.fecha }}"
+                  data-target="resumen-full-{{ loop.index }}">Ver completo</button>
+        </li>
         {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="empty">No hay reportes enviados todavía.</p>
-    {% endif %}
+      </ul>
+      {% else %}
+      <p class="empty">Aún no hay resúmenes diarios guardados. Genéralos desde el monitor (/monitor) en la sección Resumen Diario.</p>
+      {% endif %}
+    </div>
   </div>
+
+  <footer class="reportes-compliance-footer" aria-label="Cumplimiento normativo">
+    <p class="texto-normativo">
+      <strong>Cumplimiento RGPD (Art. 6.1.f):</strong> El registro de direcciones IP y metadatos de red se realiza bajo la base legal de interés legítimo para salvaguardar la seguridad de los activos y prevenir el fraude o ataques dirigidos.
+    </p>
+    <p class="texto-normativo" style="margin-top:8px">
+      <strong>Aviso de Auditoría (ISO 27001):</strong> Las exportaciones de evidencias desde el monitor quedan sujetas al registro en el log de auditoría del sistema con timestamp local y usuario de administración activo.
+    </p>
+  </footer>
 </main>
+
+<div id="modal-resumen" class="modal-overlay" aria-hidden="true">
+  <div class="modal-box" role="dialog" aria-labelledby="modal-resumen-titulo">
+    <div class="modal-header">
+      <h2 id="modal-resumen-titulo">Resumen diario</h2>
+      <button type="button" class="modal-cerrar" id="modal-resumen-cerrar" aria-label="Cerrar">×</button>
+    </div>
+    <div class="modal-body" id="modal-resumen-cuerpo"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const MSG_FILTRO_INVALIDO =
+    'Debe introducir una IP o seleccionar un rango de fechas completo';
+
+  const formReportes = document.getElementById('form-reportes-ip');
+  if (formReportes) {
+    const inputIp = document.getElementById('input-ip-reportes');
+    const inputInicio = document.getElementById('input-fecha-inicio');
+    const inputFin = document.getElementById('input-fecha-fin');
+    const btnFiltrar = document.getElementById('btn-filtrar-reportes');
+    const errorEl = document.getElementById('filtro-error-reportes');
+
+    function criteriosValidos() {
+      const ip = (inputIp.value || '').trim();
+      const inicio = (inputInicio.value || '').trim();
+      const fin = (inputFin.value || '').trim();
+      return ip.length > 0 || (inicio.length > 0 && fin.length > 0);
+    }
+
+    function mostrarError(mostrar, mensaje) {
+      if (!errorEl) return;
+      if (mostrar) {
+        errorEl.textContent = mensaje || MSG_FILTRO_INVALIDO;
+        errorEl.hidden = false;
+      } else {
+        errorEl.textContent = '';
+        errorEl.hidden = true;
+      }
+      [inputIp, inputInicio, inputFin].forEach((el) => {
+        el.classList.toggle('input-invalid', mostrar);
+      });
+      if (btnFiltrar) btnFiltrar.disabled = mostrar;
+    }
+
+    function validarFormulario() {
+      const ok = criteriosValidos();
+      mostrarError(!ok, MSG_FILTRO_INVALIDO);
+      return ok;
+    }
+
+    formReportes.addEventListener('submit', (e) => {
+      if (!validarFormulario()) e.preventDefault();
+    });
+
+    [inputIp, inputInicio, inputFin].forEach((el) => {
+      el.addEventListener('input', () => {
+        if (criteriosValidos()) mostrarError(false);
+      });
+    });
+
+    validarFormulario();
+  }
+
+  const overlay = document.getElementById('modal-resumen');
+  const cuerpo = document.getElementById('modal-resumen-cuerpo');
+  const titulo = document.getElementById('modal-resumen-titulo');
+
+  document.querySelectorAll('.btn-ver').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const fecha = btn.getAttribute('data-fecha') || '';
+      const targetId = btn.getAttribute('data-target');
+      const hidden = targetId ? document.getElementById(targetId) : null;
+      const texto = hidden ? hidden.textContent : '';
+      titulo.textContent = 'Resumen del ' + fecha;
+      cuerpo.textContent = texto;
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+    });
+  });
+
+  function cerrar() {
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  document.getElementById('modal-resumen-cerrar').addEventListener('click', cerrar);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) cerrar();
+  });
+})();
+</script>
 </body>
 </html>

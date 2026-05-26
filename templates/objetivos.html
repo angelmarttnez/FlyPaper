@@ -35,7 +35,7 @@
     text-shadow: 0 0 12px rgba(0,255,140,0.4);
     font-family: 'JetBrains Mono', monospace;
   }
-  .logo::before { content: "✈ "; }
+  .logo::before { content: ""; }
   .nav-links { display: flex; gap: 8px; list-style: none; }
   .nav-links a {
     color: #8aa89a;
@@ -47,12 +47,7 @@
     transition: all 0.2s;
   }
   .nav-links a:hover { background: #0f2a1f; color: #00ff8c; }
-  .nav-links a.login {
-    background: transparent;
-    border: 1px solid #00ff8c;
-    color: #00ff8c;
-  }
-  .nav-links a.login:hover { background: rgba(0,255,140,0.1); }
+  .nav-links a.active { background: #0f2a1f; color: #00ff8c; }
 
   .container { max-width: 1200px; margin: 0 auto; padding: 56px 40px; }
 
@@ -221,7 +216,7 @@
   }
   .hint-sqli-summary::-webkit-details-marker { display: none; }
   .hint-sqli-summary::before {
-    content: "▸ ";
+    content: "> ";
     display: inline-block;
     transition: transform 0.2s;
     color: #5a7a6a;
@@ -369,21 +364,12 @@
   .btn-reset-retos:disabled { opacity: 0.5; cursor: wait; }
 </style>
 </head>
-<body>
-  <nav class="navbar">
-    <div class="logo">FlyPaper</div>
-    <ul class="nav-links">
-      <li><a href="/">Inicio</a></li>
-      <li><a href="/blog">Blog</a></li>
-      <li><a href="/objetivos">Objetivos CTF</a></li>
-      <li><a href="/search">Buscar</a></li>
-      <li><a href="/login" class="login">Login</a></li>
-    </ul>
-  </nav>
+<body class="nav-tema-ctf">
+  {% include 'partials/navbar_publico.html' %}
 
   <main class="container">
     <div class="hero">
-      <h1>🚩 Objetivos — FlyPaper CTF</h1>
+      <h1>Objetivos — FlyPaper CTF</h1>
       <p>Demuestra tus habilidades resolviendo los retos</p>
     </div>
 
@@ -404,13 +390,13 @@
           <div class="challenge-name">{{ flag.reto_nombre }}</div>
           <div class="challenge-meta">
             {% if flag.resuelta %}
-            <span class="badge-resuelto" title="Reto completado">✓</span>
+            <span class="badge-resuelto" title="Reto completado">OK</span>
             {% endif %}
             <div class="points">{{ flag.puntos }} pts</div>
           </div>
         </div>
         <div class="hint-label">// pista</div>
-        {% if flag.reto_nombre == 'SQLi' %}
+        {% if flag.reto_nombre == reto_sqli_titulo %}
         <div class="hint hint-brief">{{ flag.pista }}</div>
         <details class="hint-sqli-details">
           <summary class="hint-sqli-summary">Ver pista detallada (UNION)</summary>
@@ -429,14 +415,13 @@
               Para extraer filas de la tabla pública <code>usuarios</code>, alinea el
               <code>UNION SELECT</code> con las mismas cuatro columnas de esa tabla:
               <code>id</code>, <code>username</code>, <code>password_hash</code> y
-              <code>email</code> (se mostrarán en las columnas del resultado como id,
-              título, contenido y fecha).
+              <code>email</code> (se mostrarán en el resultado como id, título, contenido y fecha).
             </p>
             <p>Payload de ejemplo:</p>
             <code class="payload-code">' UNION SELECT id, username, password_hash, email FROM usuarios --</code>
             <p>
-              Objetivo: localiza al usuario señuelo <strong>admin</strong> en los resultados.
-              El valor de su <code>password_hash</code> (10 caracteres alfanuméricos) es el
+              <strong>Objetivo:</strong> localiza al usuario <code>SQLi_flag</code> en los resultados.
+              El valor de su campo <code>password_hash</code> (10 caracteres alfanuméricos) es el
               cuerpo de la flag; envíala aquí con el formato <code>flag&#123;...&#125;</code>.
             </p>
           </div>
@@ -488,7 +473,7 @@
           const tick = document.createElement('span');
           tick.className = 'badge-resuelto';
           tick.title = 'Reto completado';
-          tick.textContent = '✓';
+          tick.textContent = 'OK';
           meta.insertBefore(tick, meta.firstChild);
         }
       });
@@ -515,14 +500,14 @@
           desmarcarTodosLosRetos();
           actualizarProgresoUI(data.resueltas ?? 0, data.total ?? 0);
           result.className = 'result show success';
-          result.textContent = '✓ ' + (data.mensaje || 'Progreso restablecido.');
+          result.textContent = 'Correcto: ' + (data.mensaje || 'Progreso restablecido.');
         } else {
           result.className = 'result show error';
-          result.textContent = '✗ ' + (data.mensaje || 'No se pudo reiniciar el progreso.');
+          result.textContent = 'Error: ' + (data.mensaje || 'No se pudo reiniciar el progreso.');
         }
       } catch (err) {
         result.className = 'result show error';
-        result.textContent = '✗ Error de red: ' + err.message;
+        result.textContent = 'Error de red: ' + err.message;
       } finally {
         if (btnReset) btnReset.disabled = false;
       }
@@ -550,7 +535,7 @@
         result.className = 'result show ' + (ok ? 'success' : 'error');
         let texto = data.mensaje || (ok ? '¡Flag correcta!' : 'La flag introducida es incorrecta');
         if (ok && data.puntos && !data.ya_resuelta) texto += ' (+' + data.puntos + ' pts)';
-        result.textContent = (ok ? '✓ ' : '✗ ') + texto;
+        result.textContent = (ok ? 'Correcto: ' : 'Error: ') + texto;
         if (ok) {
           if (data.reto_nombre) marcarRetoResuelto(data.reto_nombre);
           if (data.resueltas !== undefined && data.total !== undefined) {
@@ -560,7 +545,7 @@
         }
       } catch (err) {
         result.className = 'result show error';
-        result.textContent = '✗ Error de red: ' + err.message;
+        result.textContent = 'Error de red: ' + err.message;
       } finally {
         btn.disabled = false;
       }

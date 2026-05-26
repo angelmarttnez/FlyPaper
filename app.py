@@ -7,6 +7,10 @@ Este archivo define un honeypot web con Flask que:
 - Guarda eventos en SQLite para posterior análisis.
 """
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import csv
 import io
 import json
@@ -20,6 +24,7 @@ from pathlib import Path
 
 from flask import (
     Flask,
+    g,
     jsonify,
     make_response,
     redirect,
@@ -31,32 +36,79 @@ from flask import (
 )
 
 from database import (
-    contar_flags_resueltas_por_ip,
-    enviar_flag,
+    contar_flags_resueltas_por_usuario,
+    enviar_flag_por_usuario,
     guardar_evento,
+    guardar_registro_peticion,
+    vincular_registro_peticion_evento,
+    _ruta_es_zona_administracion,
     guardar_reporte_enviado,
     inicializar_db,
     obtener_comentarios_visibles_post,
     obtener_conexion,
     obtener_estadisticas,
     obtener_eventos,
+    obtener_registros_peticiones,
+    obtener_registro_peticion_por_id,
+    obtener_peticiones_publicas_por_ip_y_fecha,
+    listar_ips_peticiones_publicas,
+    listar_fechas_peticiones_publicas_por_ip,
     desbloquear_ip_persistente,
     ip_esta_bloqueada_en_bd,
     listar_ips_bloqueadas,
-    obtener_flags_con_estado_por_ip,
+    obtener_flags_con_estado_por_usuario,
     obtener_flags_publicas,
-    reiniciar_progreso_ctf_por_ip,
+    reiniciar_progreso_ctf_por_usuario,
     verificar_usuario_privado,
+    verificar_credencial_usuario_bd,
+    obtener_usuarios_para_panel_admin,
     ROL_PRIV_MONITOR,
+    ROL_USUARIO_ADMIN_BD,
     obtener_post_por_id,
     obtener_posts_blog,
     obtener_reportes_enviados,
+    obtener_reportes_filtrados,
+    obtener_fechas_con_eventos,
+    obtener_ultima_fecha_con_eventos,
+    RETO_CTF_SQLI,
+    contar_eventos_en_fecha,
+    guardar_resumen_diario_ia,
+    obtener_resumen_diario_ia,
+    listar_resumenes_diarios_ia,
     registrar_ip_bloqueada,
+    normalizar_periodo_monitor,
+    obtener_alertas_graves_monitor,
+    obtener_evento_por_id,
+    obtener_eventos_ultima_hora,
 )
-from detector import calcular_gravedad, clasificar_ataque, registrar_intento_login
+from ai_analyzer import analizar_payload, generar_resumen_diario, detectar_anomalias
+from detector import (
+    calcular_gravedad,
+    clasificar_ataque,
+    normalizar_gravedad_almacenada,
+    normalizar_gravedad_filtro_api,
+    prioridad_gravedad,
+    registrar_intento_login,
+)
+from timezone_fp import (
+    ZONA_NOMBRE,
+    ahora_naive,
+    fecha_hoy,
+    formatear_marca,
+    hace,
+    marca_ahora,
+    minutos_desde_marca,
+)
 
-# Intervalo entre ejecuciones del hilo de limpieza de comentarios (30 minutos).
+# Intervalo entre ejecuciones del hilo de fondo (limpieza + anomalías IA, 30 minutos).
 INTERVALO_LIMPIEZA_COMENTARIOS_SEG = 30 * 60
+
+# Caché en memoria del resumen diario por fecha (evita llamadas repetidas a la API).
+_cache_resumen_diario_por_fecha = {}
+TTL_RESUMEN_DIARIO_SEG = 3600
+
+# Último resultado de detección de anomalías (actualizado por el hilo de fondo).
+_cache_anomalias = {"datos": None, "actualizado_en": None}
 
 # Timestamps de comentarios enviados por IP (anti-spam en memoria).
 # Ejemplo: {"203.0.113.5": [datetime, datetime, ...]}
@@ -101,7 +153,7 @@ def _fila_evento_a_json_monitor(fila):
         "payload": _campo_evento_a_texto(fila.get("payload")),
         "user_agent": fila.get("user_agent") or "",
         "tipo_ataque": fila.get("tipo_ataque") or "",
-        "gravedad": fila.get("gravedad") or "BAJO",
+        "gravedad": normalizar_gravedad_almacenada(fila.get("gravedad")) or "",
         "pais": fila.get("pais") or "",
         "timestamp": _timestamp_evento_formato_api(fila.get("timestamp")),
         "headers": _campo_evento_a_texto(fila.get("headers")),
@@ -118,39 +170,44 @@ def _evento_detalle_agrupado(fila):
         "metodo": fila.get("metodo") or "",
         "payload": _campo_evento_a_texto(fila.get("payload")),
         "tipo_ataque": fila.get("tipo_ataque") or "",
-        "gravedad": fila.get("gravedad") or "BAJO",
+        "gravedad": normalizar_gravedad_almacenada(fila.get("gravedad")) or "",
         "timestamp": _timestamp_evento_formato_api(fila.get("timestamp")),
         "user_agent": fila.get("user_agent") or "",
         "headers": _campo_evento_a_texto(fila.get("headers")),
     }
 
 
-# Prioridad numérica para calcular la gravedad máxima de un grupo de eventos.
-_PRIORIDAD_GRAVEDAD = {"CRÍTICO": 4, "ALTO": 3, "MEDIO": 2, "BAJO": 1}
-
-
 def _calcular_gravedad_maxima(lista_gravedades):
-    """Devuelve la gravedad más alta presente en una lista (por defecto BAJO)."""
-    maxima = "BAJO"
+    """Devuelve la severidad más alta del grupo (Crítica > Alta > Sospechoso)."""
+    maxima = ""
     rank_max = 0
     for gravedad in lista_gravedades:
-        clave = (gravedad or "BAJO").strip().upper()
-        rank = _PRIORIDAD_GRAVEDAD.get(clave, 1)
+        canon = normalizar_gravedad_almacenada(gravedad)
+        if not canon:
+            continue
+        rank = prioridad_gravedad(canon)
         if rank > rank_max:
             rank_max = rank
-            maxima = gravedad or "BAJO"
+            maxima = canon
     return maxima
 
 
-def agrupar_eventos_por_ip(limite_eventos=500):
+def agrupar_eventos_por_ip(limite_eventos=500, periodo=None, gravedad=None):
     """
     Agrupa eventos recientes por dirección IP para el API del monitor.
+
+    Args:
+        limite_eventos (int): Máximo de filas leídas antes de agrupar.
+        periodo (str|None): Filtro temporal (hoy, ayer, semana, mes, todo).
+        gravedad (str|None): Crítica, Alta o Sospechoso; None = todas las amenazas.
 
     Returns:
         list[dict]: Grupos con total_eventos, tipos_ataque, gravedad_maxima,
                     primera_vez, ultima_vez y lista de eventos detallados.
     """
-    filas = obtener_eventos(limite=limite_eventos)
+    filas = obtener_eventos(
+        limite=limite_eventos, periodo=periodo, gravedad=gravedad
+    )
     mapa_grupos = {}
 
     for fila in filas:
@@ -168,7 +225,9 @@ def agrupar_eventos_por_ip(limite_eventos=500):
         grupo["total_eventos"] += 1
         tipo = (fila.get("tipo_ataque") or "").strip() or "Otro"
         grupo["tipos_set"].add(tipo)
-        grupo["gravedades"].append(fila.get("gravedad") or "BAJO")
+        grav = normalizar_gravedad_almacenada(fila.get("gravedad"))
+        if grav:
+            grupo["gravedades"].append(grav)
         ts = _timestamp_evento_formato_api(fila.get("timestamp"))
         if ts:
             grupo["timestamps"].append(ts)
@@ -186,6 +245,74 @@ def agrupar_eventos_por_ip(limite_eventos=500):
                 "primera_vez": timestamps_ordenados[0] if timestamps_ordenados else "",
                 "ultima_vez": timestamps_ordenados[-1] if timestamps_ordenados else "",
                 "eventos": grupo["eventos"],
+            }
+        )
+
+    resultado.sort(key=lambda g: g.get("ultima_vez") or "", reverse=True)
+    return resultado
+
+
+def _peticion_detalle_agrupado(fila):
+    """Petición HTTP anidada dentro de un grupo por IP (monitor)."""
+    tipo = (fila.get("tipo_ataque") or "Otro").strip() or "Otro"
+    gravedad = ""
+    if tipo != "Otro":
+        gravedad = normalizar_gravedad_almacenada(fila.get("gravedad")) or ""
+    return {
+        "id": int(fila["id"]) if fila.get("id") is not None else 0,
+        "ruta": fila.get("ruta") or "",
+        "metodo": fila.get("metodo") or "",
+        "codigo_http": fila.get("codigo_http"),
+        "timestamp": _timestamp_evento_formato_api(fila.get("timestamp")),
+        "tipo_ataque": tipo,
+        "gravedad": gravedad,
+        "evento_id": fila.get("evento_id"),
+    }
+
+
+def agrupar_peticiones_por_ip(limite_peticiones=2000, periodo=None, ambito="publico"):
+    """
+    Agrupa peticiones HTTP por IP para las tablas de actividad del monitor.
+
+    Args:
+        limite_peticiones (int): Máximo de filas leídas antes de agrupar.
+        periodo (str|None): Filtro temporal.
+        ambito (str): «publico» o «admin».
+
+    Returns:
+        list[dict]: Grupos con total_peticiones, primera_vez, ultima_vez, peticiones.
+    """
+    filas = obtener_registros_peticiones(
+        limite=limite_peticiones, periodo=periodo, ambito=ambito
+    )
+    mapa_grupos = {}
+
+    for fila in filas:
+        ip = fila.get("ip") or ""
+        if ip not in mapa_grupos:
+            mapa_grupos[ip] = {
+                "ip": ip,
+                "total_peticiones": 0,
+                "timestamps": [],
+                "peticiones": [],
+            }
+        grupo = mapa_grupos[ip]
+        grupo["total_peticiones"] += 1
+        ts = _timestamp_evento_formato_api(fila.get("timestamp"))
+        if ts:
+            grupo["timestamps"].append(ts)
+        grupo["peticiones"].append(_peticion_detalle_agrupado(fila))
+
+    resultado = []
+    for grupo in mapa_grupos.values():
+        timestamps_ordenados = sorted(grupo["timestamps"])
+        resultado.append(
+            {
+                "ip": grupo["ip"],
+                "total_peticiones": grupo["total_peticiones"],
+                "primera_vez": timestamps_ordenados[0] if timestamps_ordenados else "",
+                "ultima_vez": timestamps_ordenados[-1] if timestamps_ordenados else "",
+                "peticiones": grupo["peticiones"],
             }
         )
 
@@ -220,19 +347,15 @@ def _cabeceras_http_a_lineas(headers_texto):
     return [linea for linea in texto.splitlines() if linea.strip()]
 
 
-def generar_exportacion_wireshark_headers():
-    """
-    Construye un .txt con flujo secuencial de peticiones simulando captura Wireshark.
-    """
-    eventos = obtener_eventos(limite=9999)
+def _bloques_wireshark_desde_registros(registros):
+    """Genera bloques de texto estilo Wireshark a partir de filas de BD."""
     bloques = []
-
-    for indice, evento in enumerate(eventos, start=1):
-        ts = _timestamp_evento_formato_api(evento.get("timestamp"))
-        metodo = evento.get("metodo") or "GET"
-        ruta = evento.get("ruta") or "/"
-        ip = evento.get("ip") or ""
-        ua = evento.get("user_agent") or ""
+    for indice, fila in enumerate(registros, start=1):
+        ts = _timestamp_evento_formato_api(fila.get("timestamp"))
+        metodo = fila.get("metodo") or "GET"
+        ruta = fila.get("ruta") or "/"
+        ip = fila.get("ip") or ""
+        ua = fila.get("user_agent") or ""
 
         lineas_bloque = [
             f"=== Petición #{indice} [{ts}] ===",
@@ -242,10 +365,73 @@ def generar_exportacion_wireshark_headers():
         if ua:
             lineas_bloque.append(f"User-Agent: {ua}")
 
-        lineas_bloque.extend(_cabeceras_http_a_lineas(evento.get("headers") or ""))
+        lineas_bloque.extend(_cabeceras_http_a_lineas(fila.get("headers") or ""))
         bloques.append("\n".join(lineas_bloque))
+    return bloques
 
-    return "\n\n".join(bloques)
+
+def generar_exportacion_wireshark_headers():
+    """
+    Construye un .txt con flujo secuencial de peticiones simulando captura Wireshark.
+    """
+    eventos = obtener_eventos(limite=9999, ambito="todo")
+    return "\n\n".join(_bloques_wireshark_desde_registros(eventos))
+
+
+def generar_exportacion_wireshark_peticiones(peticiones):
+    """Exportación Wireshark a partir de filas de `registro_peticiones`."""
+    return "\n\n".join(_bloques_wireshark_desde_registros(peticiones))
+
+
+MENSAJE_EXPORTACION_ACTIVIDAD_INVALIDA = (
+    "Debe seleccionar una IP y una fecha exacta de 1 día para exportar"
+)
+
+
+def _validar_exportacion_actividad_publica():
+    """
+    Valida ip + fecha para exportar actividad pública.
+
+    Returns:
+        tuple: ((ip, fecha), None) si válido; (None, mensaje_error) si no.
+    """
+    ip = (request.args.get("ip") or "").strip()
+    fecha = (request.args.get("fecha") or "").strip()
+    if not ip or not fecha:
+        return None, MENSAJE_EXPORTACION_ACTIVIDAD_INVALIDA
+
+    ips_validas = set(listar_ips_peticiones_publicas())
+    if ip not in ips_validas:
+        return None, MENSAJE_EXPORTACION_ACTIVIDAD_INVALIDA
+
+    fechas_validas = {
+        f["fecha"] for f in listar_fechas_peticiones_publicas_por_ip(ip)
+    }
+    if fecha not in fechas_validas:
+        return None, MENSAJE_EXPORTACION_ACTIVIDAD_INVALIDA
+
+    return (ip, fecha), None
+
+
+def _respuesta_analisis_ia(registro_id, tipo_ataque, payload, ruta, fuente):
+    """Construye la respuesta JSON del análisis Claude (eventos o peticiones)."""
+    if _payload_evento_vacio(payload):
+        return jsonify({"error": "Este registro no tiene payload para analizar"}), 400
+
+    resultado = analizar_payload(
+        tipo_ataque or "Otro",
+        payload,
+        ruta or "/",
+    )
+    return jsonify(
+        {
+            "registro_id": registro_id,
+            "fuente": fuente,
+            "tipo_ataque": tipo_ataque,
+            "ruta": ruta,
+            "analisis": resultado,
+        }
+    )
 
 
 def _ataques_detectados_sin_otro(estadisticas_bd):
@@ -261,26 +447,12 @@ def _ataques_detectados_sin_otro(estadisticas_bd):
     return total
 
 
-def _minutos_desde_ultimo_evento():
-    """Minutos transcurridos entre el último evento en BD y el instante actual (UTC naive)."""
-    ultimos = obtener_eventos(limite=1)
+def _minutos_desde_ultimo_evento(periodo=None):
+    """Minutos desde el último evento del período hasta ahora (Europe/Madrid)."""
+    ultimos = obtener_eventos(limite=1, periodo=periodo)
     if not ultimos:
         return None
-    ts = ultimos[0].get("timestamp")
-    if not ts:
-        return None
-    try:
-        s = str(ts).strip().replace("Z", "")
-        if "T" in s:
-            dt = datetime.fromisoformat(s)
-        else:
-            dt = datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
-        return None
-    ahora = datetime.utcnow()
-    if getattr(dt, "tzinfo", None) is not None:
-        dt = dt.replace(tzinfo=None)
-    return max(0, int((ahora - dt).total_seconds() // 60))
+    return minutos_desde_marca(ultimos[0].get("timestamp"))
 
 
 def _actividad_por_hora_desde_buckets(estadisticas_bd):
@@ -312,7 +484,8 @@ def limpiar_comentarios_antiguos():
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
-            "DELETE FROM comentarios WHERE fecha < datetime('now', '-24 hours');"
+            "DELETE FROM comentarios WHERE fecha < ?;",
+            (formatear_marca(hace(hours=24)),),
         )
         eliminados = cursor.rowcount
         conexion.commit()
@@ -323,35 +496,58 @@ def limpiar_comentarios_antiguos():
     return eliminados
 
 
-def tarea_periodica_limpieza_comentarios():
+def ejecutar_deteccion_anomalias_fondo():
     """
-    Bucle del hilo en segundo plano: limpia comentarios viejos cada 30 minutos.
+    Ejecuta detectar_anomalias con eventos de la última hora y guarda el resultado en caché.
+
+    Lo invoca el hilo de fondo cada 30 minutos para no bloquear peticiones HTTP.
+    """
+    eventos_hora = obtener_eventos_ultima_hora(limite=500)
+    resultado = detectar_anomalias(eventos_hora)
+    _cache_anomalias["datos"] = resultado
+    _cache_anomalias["actualizado_en"] = ahora_naive()
+    print(
+        f"[FlyPaper] Detección de anomalías (IA): "
+        f"{len(eventos_hora)} evento(s), hay_anomalia={resultado.get('hay_anomalia')}"
+    )
+
+
+def tarea_periodica_fondo():
+    """
+    Bucle del hilo en segundo plano: limpieza de comentarios y anomalías IA cada 30 minutos.
     """
     while True:
         try:
             limpiar_comentarios_antiguos()
         except Exception as exc:
             print(f"[FlyPaper] Error en la limpieza periódica de comentarios: {exc}")
+        try:
+            ejecutar_deteccion_anomalias_fondo()
+        except Exception as exc:
+            print(f"[FlyPaper] Error en la detección periódica de anomalías: {exc}")
         time.sleep(INTERVALO_LIMPIEZA_COMENTARIOS_SEG)
 
 
 def iniciar_hilo_limpieza_comentarios():
     """
-    Arranca el hilo daemon de limpieza (no bloquea el cierre del proceso Flask).
+    Arranca el hilo daemon de tareas periódicas (no bloquea el cierre del proceso Flask).
     """
     hilo = threading.Thread(
-        target=tarea_periodica_limpieza_comentarios,
-        name="flypaper-limpieza-comentarios",
+        target=tarea_periodica_fondo,
+        name="flypaper-tareas-fondo",
         daemon=True,
     )
     hilo.start()
-    print("[FlyPaper] Hilo de limpieza de comentarios iniciado (cada 30 minutos).")
+    print(
+        "[FlyPaper] Hilo de fondo iniciado (limpieza de comentarios y anomalías IA, "
+        "cada 30 minutos)."
+    )
 
 
 def _limpiar_ventana_comentarios_ip(ip):
     """Deja solo los timestamps de comentarios de los últimos 5 minutos para esa IP."""
-    ahora = datetime.now()
-    hace_cinco_minutos = ahora - timedelta(minutes=5)
+    ahora = ahora_naive()
+    hace_cinco_minutos = hace(minutes=5)
     if ip not in comentarios_recientes_por_ip:
         comentarios_recientes_por_ip[ip] = []
     comentarios_recientes_por_ip[ip] = [
@@ -379,7 +575,7 @@ def registrar_comentario_en_memoria(ip):
     if not ip:
         return
     _limpiar_ventana_comentarios_ip(ip)
-    comentarios_recientes_por_ip[ip].append(datetime.now())
+    comentarios_recientes_por_ip[ip].append(ahora_naive())
 
 
 def respuesta_error_comentario_json(mensaje, codigo_http=429):
@@ -420,7 +616,7 @@ def _agregar_comentario_volatil(post_id, autor_nombre, contenido):
 
     No escribe en la tabla `comentarios` de SQLite.
     """
-    marca = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    marca = marca_ahora()
     nuevo = {
         "id": str(uuid.uuid4()),
         "post_id": int(post_id),
@@ -494,6 +690,17 @@ aplicacion = Flask(__name__)
 # Clave para firmar cookies de sesión (login honeypot y otras sesiones).
 aplicacion.secret_key = 'flypaper_secreto_2026'
 
+# Sesión pública (/search, /blog, /objetivos): caducidad por inactividad de 15 minutos.
+SESION_PUBLICA_INACTIVIDAD_SEGUNDOS = 900
+SESION_PUBLICA_INACTIVIDAD = timedelta(seconds=SESION_PUBLICA_INACTIVIDAD_SEGUNDOS)
+CLAVE_ULTIMA_ACTIVIDAD_PUBLICA = "ultima_actividad_publica_ts"
+
+aplicacion.config["PERMANENT_SESSION_LIFETIME"] = SESION_PUBLICA_INACTIVIDAD
+aplicacion.config["SESSION_REFRESH_EACH_REQUEST"] = True
+
+# Rol asignado en /search, /blog y /objetivos cuando no hay login.
+ROL_INVITADO = "invitado"
+
 # Inicializamos la base de datos al arrancar la aplicación para asegurar
 # que la tabla `eventos` exista antes de intentar guardar información.
 inicializar_db()
@@ -510,6 +717,247 @@ cargar_cache_ips_bloqueadas()
 
 # Tarea en segundo plano: purga de comentarios antiguos al cargar el módulo Flask.
 iniciar_hilo_limpieza_comentarios()
+
+
+def _es_ruta_sesion_publica(path):
+    """True si la ruta pertenece al área pública con sesión Invitado o usuario logueado."""
+    if path == "/search" or path.startswith("/search/"):
+        return True
+    if path == "/blog" or path.startswith("/blog/"):
+        return True
+    if path == "/objetivos" or path.startswith("/objetivos/"):
+        return True
+    return False
+
+
+def _asegurar_sesion_publica():
+    """
+    Mantiene la sesión de usuario autenticado o asigna rol Invitado sin forzar login.
+    """
+    if session.get("logueado") is True and session.get("usuario"):
+        return
+    session["logueado"] = False
+    session["rol"] = ROL_INVITADO
+    session.pop("usuario", None)
+
+
+def _usuario_publico_autenticado():
+    """True si hay un usuario honeypot logueado (no Invitado)."""
+    return session.get("logueado") is True and bool(session.get("usuario"))
+
+
+def requiere_autenticacion_objetivos(funcion_vista):
+    """
+    Control estricto de acceso a /objetivos.
+
+    - GET /objetivos (HTML): redirect a /login.
+    - POST /objetivos/submit y /objetivos/reset (API JSON): 401 Unauthorized.
+    """
+
+    @wraps(funcion_vista)
+    def envoltorio(*args, **kwargs):
+        if _usuario_publico_autenticado():
+            return funcion_vista(*args, **kwargs)
+
+        ruta = request.path or ""
+        es_api = ruta.startswith("/objetivos/") and request.method == "POST"
+
+        if es_api:
+            return jsonify({"exito": False, "mensaje": "Unauthorized"}), 401
+
+        return _redirect_login_sin_cache()
+
+    return envoltorio
+
+
+def _limpiar_estado_sesion_publica():
+    """
+    Elimina credenciales y estado temporal del área pública sin tocar sesión de monitor.
+
+    Tras la limpieza el visitante queda como Invitado.
+    """
+    for clave in (
+        "logueado",
+        "usuario",
+        "rol",
+        CLAVE_ULTIMA_ACTIVIDAD_PUBLICA,
+        CLAVE_SESION_COMENTARIOS_VOLATILES,
+    ):
+        session.pop(clave, None)
+    _asegurar_sesion_publica()
+    session.modified = True
+
+
+def _sesion_publica_expirada_por_inactividad():
+    """True si la última actividad en rutas públicas supera el límite de 15 minutos."""
+    ultima = session.get(CLAVE_ULTIMA_ACTIVIDAD_PUBLICA)
+    if ultima is None:
+        return False
+    try:
+        ultima_ts = float(ultima)
+    except (TypeError, ValueError):
+        return False
+    return (time.time() - ultima_ts) > SESION_PUBLICA_INACTIVIDAD_SEGUNDOS
+
+
+def _marcar_actividad_sesion_publica():
+    """Actualiza el timestamp de última interacción en el área pública."""
+    session.permanent = True
+    session[CLAVE_ULTIMA_ACTIVIDAD_PUBLICA] = time.time()
+    session.modified = True
+
+
+def _invalidar_sesion_honeypot_en_servidor():
+    """
+    Destruye la sesión del visitante e invalida su token para que la cookie no se reutilice.
+
+    No conserva rol Invitado ni credenciales; la próxima visita a rutas públicas
+    creará una sesión nueva desde cero.
+    """
+    ip = obtener_ip_cliente()
+    token = session.get("token_sesion")
+    if token:
+        sesiones_invalidadas.add(token)
+        if ip:
+            tokens_por_ip[ip].discard(token)
+    session.clear()
+    session.modified = True
+
+
+def _redirect_login_sin_cache(**parametros_url):
+    """Redirección 302 a /login con cabeceras que impiden cachear la respuesta."""
+    respuesta = redirect(url_for("mostrar_login", **parametros_url), code=302)
+    respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    respuesta.headers["Pragma"] = "no-cache"
+    respuesta.headers["Expires"] = "0"
+    return respuesta
+
+
+def _contexto_barra_sesion():
+    """Variables para la barra de sesión en plantillas públicas."""
+    if session.get("logueado") is True and session.get("usuario"):
+        return {
+            "sesion_logueado": True,
+            "sesion_etiqueta": session.get("usuario"),
+            "sesion_rol": session.get("rol") or "usuario",
+        }
+    return {
+        "sesion_logueado": False,
+        "sesion_etiqueta": "Invitado",
+        "sesion_rol": ROL_INVITADO,
+    }
+
+
+def formatear_tamano_bytes(num_bytes):
+    """Convierte bytes a texto legible (B, KB, MB)."""
+    if num_bytes is None:
+        return "—"
+    try:
+        n = int(num_bytes)
+    except (TypeError, ValueError):
+        return "—"
+    if n < 0:
+        return "—"
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / (1024 * 1024):.1f} MB"
+
+
+def _usuario_activo_para_log():
+    """Etiqueta de usuario de sesión pública o analista del monitor."""
+    if session.get("logueado") is True and session.get("usuario"):
+        return str(session.get("usuario"))
+    if session.get("analyst") is True:
+        return "Analista"
+    return "Invitado"
+
+
+def _sesion_id_corto_para_log():
+    """Primeros 8 caracteres del token de sesión (auditoría)."""
+    if "token_sesion" not in session:
+        session["token_sesion"] = str(uuid.uuid4())
+    token = session.get("token_sesion")
+    if token:
+        return str(token).replace("-", "")[:8]
+    nombre_cookie = aplicacion.config.get("SESSION_COOKIE_NAME", "session")
+    cookie_val = request.cookies.get(nombre_cookie)
+    if cookie_val:
+        return str(cookie_val)[:8]
+    return ""
+
+
+def _puerto_origen_cliente():
+    """Puerto TCP efímero del cliente (o cabecera de proxy)."""
+    puerto = request.environ.get("REMOTE_PORT")
+    if puerto is not None:
+        return str(puerto)
+    xfp = request.headers.get("X-Forwarded-Port")
+    if xfp:
+        return str(xfp).split(",")[0].strip()
+    return ""
+
+
+def _tamano_respuesta_bytes(respuesta):
+    """Tamaño del cuerpo de respuesta en bytes."""
+    try:
+        if respuesta.content_length is not None and respuesta.content_length >= 0:
+            return int(respuesta.content_length)
+    except (TypeError, AttributeError):
+        pass
+    cl_header = respuesta.headers.get("Content-Length")
+    if cl_header is not None and str(cl_header).strip().isdigit():
+        return int(cl_header)
+    try:
+        datos = respuesta.get_data()
+        return len(datos) if datos else 0
+    except (RuntimeError, TypeError):
+        return 0
+
+
+def _tiempo_procesamiento_ms():
+    """Milisegundos desde before_request hasta after_request."""
+    inicio = getattr(g, "_inicio_peticion_perf", None)
+    if inicio is None:
+        return None
+    return max(0, int(round((time.perf_counter() - inicio) * 1000)))
+
+
+@aplicacion.before_request
+def _marcar_inicio_telemetria_peticion():
+    """Marca el instante de entrada para medir tiempo de respuesta."""
+    g._inicio_peticion_perf = time.perf_counter()
+
+
+@aplicacion.before_request
+def control_inactividad_sesion_publica():
+    """
+    En /search, /blog y /objetivos: expira la sesión tras 15 min sin actividad.
+
+    Usuarios autenticados → login con aviso. Invitado → solo limpia estado temporal.
+    """
+    if not _es_ruta_sesion_publica(request.path):
+        return None
+
+    if _sesion_publica_expirada_por_inactividad():
+        era_autenticado = _usuario_publico_autenticado()
+        _limpiar_estado_sesion_publica()
+        if era_autenticado:
+            return redirect(url_for("mostrar_login", reason="timeout"))
+
+    _asegurar_sesion_publica()
+    _marcar_actividad_sesion_publica()
+    return None
+
+
+def _plantilla_publica(nombre, nav_activo=None, **kwargs):
+    """Render con contexto de navbar y sesión unificado."""
+    ctx = _contexto_barra_sesion()
+    ctx["nav_activo"] = nav_activo
+    ctx["sesion_inactividad_seg"] = SESION_PUBLICA_INACTIVIDAD_SEGUNDOS
+    ctx.update(kwargs)
+    return render_template(nombre, **ctx)
 
 
 def construir_payload_para_registro():
@@ -599,7 +1047,7 @@ def registrar_actividad_visitante(ip):
     """Actualiza la marca de actividad y el token de sesión asociado a la IP."""
     if not ip:
         return
-    ultima_actividad_por_ip[ip] = datetime.now()
+    ultima_actividad_por_ip[ip] = ahora_naive()
     if "token_sesion" not in session:
         session["token_sesion"] = str(uuid.uuid4())
     token = session["token_sesion"]
@@ -613,7 +1061,7 @@ def ip_tiene_actividad_reciente(ip):
     ultima = ultima_actividad_por_ip.get(ip)
     if ultima is None:
         return False
-    delta = (datetime.now() - ultima).total_seconds()
+    delta = (ahora_naive() - ultima).total_seconds()
     return delta <= VENTANA_IP_ACTIVA_SEGUNDOS
 
 
@@ -750,17 +1198,10 @@ def registrar_evento_honeypot(respuesta):
     """
     ruta_visitada = request.path or ""
     metodo_peticion = request.method
-
-    # Omitimos rutas internas/estáticas y las que registran el evento en su propia vista.
-    if debe_excluirse_del_registro(ruta_visitada) or omitir_registro_automatico_honeypot(
-        ruta_visitada, metodo_peticion
-    ):
-        return respuesta
-
     ip_visitante = obtener_ip_cliente()
-    payload_peticion = construir_payload_para_registro()
     user_agent_visitante = request.headers.get("User-Agent", "")
     cabeceras_peticion = dict(request.headers)
+    payload_peticion = construir_payload_para_registro()
 
     tipo_ataque_detectado = clasificar_ataque(
         ruta=ruta_visitada,
@@ -780,7 +1221,34 @@ def registrar_evento_honeypot(respuesta):
 
     gravedad_evento = calcular_gravedad(tipo_ataque_detectado)
 
-    guardar_evento(
+    peticion_id = guardar_registro_peticion(
+        ip=ip_visitante,
+        ruta=ruta_visitada,
+        metodo=metodo_peticion,
+        codigo_http=respuesta.status_code,
+        user_agent=user_agent_visitante,
+        payload=payload_peticion,
+        headers=cabeceras_peticion,
+        tipo_ataque=tipo_ataque_detectado,
+        gravedad=gravedad_evento,
+        usuario_activo=_usuario_activo_para_log(),
+        sesion_id_corto=_sesion_id_corto_para_log(),
+        tiempo_ms=_tiempo_procesamiento_ms(),
+        tamano_respuesta_bytes=_tamano_respuesta_bytes(respuesta),
+        puerto_origen=_puerto_origen_cliente(),
+    )
+
+    # Omitimos rutas internas/estáticas y las que registran el evento en su propia vista.
+    if debe_excluirse_del_registro(ruta_visitada) or omitir_registro_automatico_honeypot(
+        ruta_visitada, metodo_peticion
+    ):
+        return respuesta
+
+    # Alertas de /admin y /monitor solo en «Actividad de Administración» (registro_peticiones).
+    if _ruta_es_zona_administracion(ruta_visitada):
+        return respuesta
+
+    evento_id = guardar_evento(
         ip=ip_visitante,
         ruta=ruta_visitada,
         metodo=metodo_peticion,
@@ -790,6 +1258,9 @@ def registrar_evento_honeypot(respuesta):
         headers=cabeceras_peticion,
         gravedad=gravedad_evento,
     )
+
+    if peticion_id and evento_id:
+        vincular_registro_peticion_evento(peticion_id, evento_id)
 
     return respuesta
 
@@ -812,21 +1283,56 @@ def mostrar_login():
 
     Renderiza la plantilla `login.html`, que simula una pantalla de acceso.
     """
-    return render_template("login.html")
+    mensaje_timeout = None
+    mensaje_cierre = None
+    if request.args.get("reason") == "timeout":
+        mensaje_timeout = (
+            "Tu sesión ha expirado por inactividad (15 minutos). "
+            "Vuelve a iniciar sesión."
+        )
+    elif request.args.get("cerrado") == "1":
+        mensaje_cierre = "Has cerrado sesión. Vuelve a iniciar sesión para continuar."
+
+    respuesta = make_response(
+        render_template(
+            "login.html",
+            mensaje_timeout=mensaje_timeout,
+            mensaje_cierre=mensaje_cierre,
+        )
+    )
+    respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    respuesta.headers["Pragma"] = "no-cache"
+    respuesta.headers["Expires"] = "0"
+    return respuesta
 
 
-# Usuario de demostración sin privilegios (acceso solo a /search).
+# Usuarios de demostración sin privilegios (acceso solo a /search, /blog y /objetivos).
 USUARIOS_DEMO_PUBLICOS = {
     "Angel": {"password": "Angel123", "redirige": "/search"},
+    "Carlos": {"password": "Carlos123", "redirige": "/search"},
 }
+
+
+def _redirigir_si_no_es_admin():
+    """
+    Protege rutas /admin: requiere sesión activa y rol «admin».
+
+    Returns:
+        Response | None: Redirección si no cumple; None si el acceso es válido.
+    """
+    if session.get("logueado") is not True:
+        return redirect("/login?error=1")
+    if session.get("rol") != ROL_USUARIO_ADMIN_BD:
+        return redirect("/search?error=acceso_denegado")
+    return None
 
 
 @aplicacion.post("/login")
 def procesar_login():
     """
-    Valida credenciales: primero `usuarios_privados` (/admin), luego demo público.
+    Valida credenciales en este orden: privados (admin/admin), demo Angel, tabla usuarios (MD5).
 
-    Las cuentas privilegiadas no están en la tabla `usuarios` expuesta por SQLi.
+    La tabla `usuarios` expuesta por SQLi no incluye cuentas de flypaper_priv.db.
     """
     # Campos del formulario en `login.html` (honeypot con aspecto realista).
     usuario_enviado = request.form.get("username", "")
@@ -838,32 +1344,57 @@ def procesar_login():
     if registrar_intento_login(ip_peticion):
         session["_fuerza_bruta_detectada"] = True
 
+    def _iniciar_sesion_usuario(nombre, rol):
+        session.permanent = True
+        session["logueado"] = True
+        session["usuario"] = nombre
+        session["rol"] = rol
+        _marcar_actividad_sesion_publica()
+
     cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
     if cuenta_priv is not None and cuenta_priv.get("rol") != ROL_PRIV_MONITOR:
-        session["logueado"] = True
-        session["usuario"] = cuenta_priv["username"]
-        session["rol_privilegiado"] = cuenta_priv["rol"]
-        return redirect(cuenta_priv["redirige"])
+        _iniciar_sesion_usuario(cuenta_priv["username"], ROL_USUARIO_ADMIN_BD)
+        return redirect(cuenta_priv["redirige"] or "/admin")
 
     datos_usuario = USUARIOS_DEMO_PUBLICOS.get(usuario_enviado)
     if datos_usuario is not None and datos_usuario["password"] == contrasena_enviada:
-        session["logueado"] = True
-        session["usuario"] = usuario_enviado
-        session.pop("rol_privilegiado", None)
+        _iniciar_sesion_usuario(usuario_enviado, "usuario")
         return redirect(datos_usuario["redirige"])
 
-    # Usuario inexistente o contraseña incorrecta: mismo flujo, sin entrar a zonas protegidas.
+    cuenta_bd = verificar_credencial_usuario_bd(usuario_enviado, contrasena_enviada)
+    if cuenta_bd is not None:
+        _iniciar_sesion_usuario(cuenta_bd["username"], cuenta_bd["rol"])
+        if cuenta_bd["rol"] == ROL_USUARIO_ADMIN_BD:
+            return redirect("/admin")
+        return redirect("/search")
+
     return redirect("/login?error=1")
 
 
 @aplicacion.get("/logout")
 def cerrar_sesion_honeypot():
     """
-    Cierra la sesión del visitante (honeypot) y vuelve al formulario de login.
+    Cierra la sesión del honeypot y redirige siempre a /login (salvo limpieza silenciosa de Invitado).
+
+    Query:
+        reason=timeout — cierre por inactividad (mensaje en login).
+        guest=1 — solo para el temporizador JS del Invitado (sin redirigir a login).
     """
-    # Vacía por completo la sesión Flask (incluye claves usadas por otras partes si las hubiera).
-    session.clear()
-    return redirect(url_for("mostrar_login"))
+    reason = request.args.get("reason")
+
+    if request.args.get("guest") == "1":
+        _limpiar_estado_sesion_publica()
+        if request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json":
+            respuesta = jsonify({"exito": True, "motivo": reason or "guest"})
+            respuesta.headers["Cache-Control"] = "no-store"
+            return respuesta
+        return redirect(request.referrer or url_for("blog_listado"))
+
+    _invalidar_sesion_honeypot_en_servidor()
+
+    if reason == "timeout":
+        return _redirect_login_sin_cache(reason="timeout")
+    return _redirect_login_sin_cache(cerrado=1)
 
 
 @aplicacion.get("/admin")
@@ -874,70 +1405,153 @@ def mostrar_panel_admin():
     Renderiza la plantilla `admin.html`, diseñada para aparentar
     una zona sensible de gestión.
     """
-    # Solo accesible tras login correcto en POST /login.
-    if session.get("logueado") is not True:
-        return redirect("/login?error=1")
-    # Enlace al monitor real (ruta pasada al template para no duplicar literales).
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return bloqueo
     return render_template("admin.html", monitor_url="/monitor/login")
 
 
 @aplicacion.get("/admin/usuarios")
 def admin_usuarios():
     """
-    Subsección falsa de administración: listado de usuarios.
+    Listado de usuarios reales de la tabla `usuarios` (sin contraseñas).
 
-    Misma política de acceso que el panel principal `/admin`.
+    Solo accesible con session['rol'] == 'admin'.
     """
-    # Requiere sesión creada en POST /login (honeypot).
-    if session.get("logueado") is not True:
-        return redirect("/login?error=1")
-    return render_template("usuarios.html")
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return bloqueo
+    lista_usuarios = obtener_usuarios_para_panel_admin()
+    return render_template(
+        "admin/usuarios.html",
+        usuarios=lista_usuarios,
+        total_usuarios=len(lista_usuarios),
+    )
 
 
 @aplicacion.get("/admin/configuracion")
 def admin_configuracion():
-    """
-    Subsección falsa de administración: pantalla de configuración.
-
-    Requiere autenticación por sesión igual que el resto de `/admin`.
-    """
-    # Sin sesión válida, no se muestra contenido sensible simulado.
-    if session.get("logueado") is not True:
-        return redirect("/login?error=1")
+    """Pantalla de configuración del panel; solo rol admin."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return bloqueo
     return render_template("configuracion.html")
+
+
+def _formatear_datos_ataque_reporte(datos_crudos):
+    """JSON legible para plantillas de reportes."""
+    datos_legibles = datos_crudos or ""
+    try:
+        objeto = json.loads(datos_crudos)
+        datos_legibles = json.dumps(objeto, ensure_ascii=False, indent=2)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return datos_legibles
+
+
+def _nis2_significativo_desde_datos_ataque(datos_ataque):
+    """True si el reporte fue marcado como incidente significativo (NIS 2)."""
+    if isinstance(datos_ataque, dict):
+        return bool(datos_ataque.get("nis2_incidente_significativo"))
+    texto = str(datos_ataque or "").strip()
+    if not texto:
+        return False
+    try:
+        parsed = json.loads(texto)
+        if isinstance(parsed, dict):
+            return bool(parsed.get("nis2_incidente_significativo"))
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return False
+
+
+def _preparar_reportes_vista(filas):
+    """Convierte filas de reportes_enviados al formato de la plantilla."""
+    reportes_vista = []
+    for fila in filas:
+        datos_crudos = fila.get("datos_ataque")
+        reportes_vista.append(
+            {
+                "id": fila.get("id"),
+                "ip_atacante": fila.get("ip_atacante") or "",
+                "datos_ataque": _formatear_datos_ataque_reporte(datos_crudos),
+                "fecha": fila.get("fecha") or "",
+                "nis2_significativo": _nis2_significativo_desde_datos_ataque(datos_crudos),
+            }
+        )
+    return reportes_vista
 
 
 @aplicacion.get("/admin/reportes")
 def admin_reportes():
     """
-    Lista los reportes enviados desde el monitor de analista (tabla reportes_enviados).
+    Panel de reportes con pestañas: por IP y resúmenes diarios IA.
 
-    Protegida con la misma sesión honeypot `logueado` que el resto del panel /admin.
+    Query params: tab=ip|resumenes, ip=..., filtro_desde, filtro_hasta.
     """
-    if session.get("logueado") is not True:
-        return redirect("/login?error=1")
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return bloqueo
 
-    filas = obtener_reportes_enviados()
-    # Preparar datos legibles en plantilla (JSON formateado si aplica).
-    reportes_vista = []
-    for fila in filas:
-        datos_crudos = fila.get("datos_ataque") or ""
-        datos_legibles = datos_crudos
-        try:
-            objeto = json.loads(datos_crudos)
-            datos_legibles = json.dumps(objeto, ensure_ascii=False, indent=2)
-        except (json.JSONDecodeError, TypeError):
-            pass
-        reportes_vista.append(
+    tab = request.args.get("tab", "ip")
+    if tab not in ("ip", "resumenes"):
+        tab = "ip"
+
+    ip_sel = (request.args.get("ip") or "").strip()
+    fecha_inicio = (
+        request.args.get("fecha_inicio") or request.args.get("filtro_desde") or ""
+    ).strip() or None
+    fecha_fin = (
+        request.args.get("fecha_fin") or request.args.get("filtro_hasta") or ""
+    ).strip() or None
+
+    busqueda_enviada = any(
+        clave in request.args
+        for clave in ("ip", "fecha_inicio", "fecha_fin", "filtro_desde", "filtro_hasta")
+    )
+    error_validacion = None
+    reportes_ip = []
+
+    if tab == "ip" and busqueda_enviada:
+        tiene_ip = bool(ip_sel)
+        tiene_rango = bool(fecha_inicio and fecha_fin)
+        if not tiene_ip and not tiene_rango:
+            error_validacion = (
+                "Debe introducir una IP o seleccionar un rango de fechas completo"
+            )
+        else:
+            filas = obtener_reportes_filtrados(
+                ip=ip_sel or None,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+            )
+            reportes_ip = _preparar_reportes_vista(filas)
+
+    resumenes_vista = []
+    for fila in listar_resumenes_diarios_ia():
+        texto = fila.get("resumen") or ""
+        preview = texto[:280] + ("…" if len(texto) > 280 else "")
+        resumenes_vista.append(
             {
-                "id": fila.get("id"),
-                "ip_atacante": fila.get("ip_atacante") or "",
-                "datos_ataque": datos_legibles,
                 "fecha": fila.get("fecha") or "",
+                "preview": preview,
+                "resumen_completo": texto,
+                "total_eventos": fila.get("total_eventos") or 0,
+                "generado_en": fila.get("generado_en") or "",
             }
         )
 
-    return render_template("reportes.html", reportes=reportes_vista)
+    return render_template(
+        "reportes.html",
+        tab=tab,
+        ip_seleccionada=ip_sel,
+        reportes_ip=reportes_ip,
+        fecha_inicio=fecha_inicio or "",
+        fecha_fin=fecha_fin or "",
+        busqueda_enviada=busqueda_enviada,
+        error_validacion=error_validacion,
+        resumenes=resumenes_vista,
+    )
 
 
 @aplicacion.get("/backup")
@@ -1088,13 +1702,18 @@ def simular_wp_admin():
 @aplicacion.get("/search")
 def mostrar_busqueda():
     """
-    Muestra el formulario de búsqueda interna (requiere sesión honeypot).
+    Búsqueda interna accesible con sesión de usuario o Invitado.
 
     La consulta vulnerable se envía por POST al mismo endpoint.
     """
-    if session.get("logueado") is not True:
-        return redirect("/login?error=1")
-    return render_template("search.html")
+    mensaje_acceso = None
+    if request.args.get("error") == "acceso_denegado":
+        mensaje_acceso = "No tienes permisos para acceder a esa sección"
+    return _plantilla_publica(
+        "search.html",
+        nav_activo="search",
+        mensaje_acceso=mensaje_acceso,
+    )
 
 
 @aplicacion.post("/search")
@@ -1104,11 +1723,8 @@ def procesar_busqueda():
 
     - Éxito: muestra filas de `posts` en search.html.
     - Error SQLite: muestra el mensaje de error (error-based SQLi).
-    - Siempre registra el evento; gravedad CRÍTICO si el detector ve SQLi.
+    - Siempre registra el evento con severidad según el tipo detectado (p. ej. Crítica en SQLi).
     """
-    if session.get("logueado") is not True:
-        return redirect("/login?error=1")
-
     query = request.form.get("query", "")
     resultados = []
     error_sql = None
@@ -1138,7 +1754,7 @@ def procesar_busqueda():
         headers=dict(request.headers),
         metodo="POST",
     )
-    gravedad = "CRÍTICO" if tipo_ataque == "SQLi" else calcular_gravedad(tipo_ataque)
+    gravedad = calcular_gravedad(tipo_ataque)
     guardar_evento(
         ip=obtener_ip_cliente(),
         ruta="/search",
@@ -1150,34 +1766,40 @@ def procesar_busqueda():
         gravedad=gravedad,
     )
 
-    return render_template(
+    return _plantilla_publica(
         "search.html",
+        nav_activo="search",
         query=query,
         resultados=resultados,
         error_sql=error_sql,
         total_resultados=len(resultados),
+        mensaje_acceso=None,
     )
 
 
 @aplicacion.get("/objetivos")
+@requiere_autenticacion_objetivos
 def pagina_objetivos():
     """
-    Página pública de retos CTF: lista flags (sin el secreto) y progreso por IP.
+    Página de retos CTF: lista flags (sin el secreto) y progreso individual por usuario.
     """
-    ip_actual = obtener_ip_cliente()
-    flags = obtener_flags_con_estado_por_ip(ip_actual)
-    resueltas = contar_flags_resueltas_por_ip(ip_actual)
+    usuario_id = session.get("usuario") or ""
+    flags = obtener_flags_con_estado_por_usuario(usuario_id)
+    resueltas = contar_flags_resueltas_por_usuario(usuario_id)
     total = len(flags)
 
-    return render_template(
+    return _plantilla_publica(
         "objetivos.html",
+        nav_activo="objetivos",
         flags=flags,
         resueltas=resueltas,
         total=total if total else 2,
+        reto_sqli_titulo=RETO_CTF_SQLI,
     )
 
 
 @aplicacion.post("/objetivos/submit")
+@requiere_autenticacion_objetivos
 def objetivos_submit():
     """
     Valida una flag enviada por el jugador y la registra si es correcta.
@@ -1190,19 +1812,21 @@ def objetivos_submit():
         cuerpo = request.get_json(silent=True) or {}
         flag_enviada = cuerpo.get("flag", "")
 
-    resultado = enviar_flag(obtener_ip_cliente(), flag_enviada)
+    usuario_id = session.get("usuario") or ""
+    resultado = enviar_flag_por_usuario(usuario_id, flag_enviada)
     return jsonify(resultado)
 
 
 @aplicacion.post("/objetivos/reset")
+@requiere_autenticacion_objetivos
 def objetivos_reset_progreso():
     """
     Borra el progreso CTF de la IP actual para poder reenviar las mismas flags (QA).
 
     JSON: {"exito": true, "resueltas": 0, "total": 2, "mensaje": "..."}
     """
-    ip_actual = obtener_ip_cliente()
-    reiniciar_progreso_ctf_por_ip(ip_actual)
+    usuario_id = session.get("usuario") or ""
+    reiniciar_progreso_ctf_por_usuario(usuario_id)
     total = len(obtener_flags_publicas())
     return jsonify(
         {
@@ -1220,7 +1844,7 @@ def blog_listado():
     Blog público del honeypot: listado de posts reales desde la BD.
     """
     posts = obtener_posts_blog()
-    return render_template("blog.html", posts=posts)
+    return _plantilla_publica("blog.html", nav_activo="blog", posts=posts)
 
 
 @aplicacion.get("/blog/<int:post_id>")
@@ -1235,8 +1859,9 @@ def blog_detalle(post_id):
     comentarios = construir_comentarios_para_vista(post_id)
     activos_sesion = _contar_comentarios_volatiles_post(post_id)
     cupo_restante = max(0, LIMITE_COMENTARIOS_SESION_POR_POST - activos_sesion)
-    return render_template(
+    return _plantilla_publica(
         "post.html",
+        nav_activo="blog",
         post=post,
         comentarios=comentarios,
         limite_sesion=LIMITE_COMENTARIOS_SESION_POR_POST,
@@ -1338,17 +1963,51 @@ def monitor_logout():
     return redirect(url_for("monitor_login_get"))
 
 
+def _periodo_monitor_desde_request():
+    """Lee y normaliza ?periodo= de la petición (hoy, ayer, semana, mes, todo)."""
+    return normalizar_periodo_monitor(request.args.get("periodo"))
+
+
 @aplicacion.get("/monitor/api/eventos")
 @requiere_autenticacion_monitor
 def monitor_api_eventos():
     """
-    Devuelve eventos agrupados por IP para el dashboard del monitor.
+    Eventos del período solicitado, agrupados por IP.
 
-    Cada grupo incluye resumen (total, tipos, gravedad máxima, ventana temporal)
-    y la lista detallada de eventos de esa IP.
+    Query:
+        ?periodo=hoy|ayer|semana|mes|todo (alias: 7d→semana, 30d→mes).
+        ?gravedad=Crítica|Alta|Sospechoso (opcional; omitir = todas las amenazas).
+
+    Respuesta JSON:
+        periodo (str): período aplicado tras normalizar.
+        grupos (list): filas agrupadas por IP con eventos detallados.
     """
-    grupos_por_ip = agrupar_eventos_por_ip(limite_eventos=500)
-    return jsonify(grupos_por_ip)
+    periodo = _periodo_monitor_desde_request()
+    gravedad = normalizar_gravedad_filtro_api(request.args.get("gravedad"))
+    grupos_por_ip = agrupar_eventos_por_ip(
+        limite_eventos=500, periodo=periodo, gravedad=gravedad
+    )
+    return jsonify({"periodo": periodo, "gravedad": gravedad, "grupos": grupos_por_ip})
+
+
+@aplicacion.get("/monitor/api/actividad-peticiones")
+@requiere_autenticacion_monitor
+def monitor_api_actividad_peticiones():
+    """
+    Peticiones HTTP agrupadas por IP (tráfico público o de administración).
+
+    Query:
+        ?periodo=hoy|ayer|semana|mes|todo
+        ?ambito=publico|admin (por defecto publico)
+    """
+    periodo = _periodo_monitor_desde_request()
+    ambito = (request.args.get("ambito") or "publico").strip().lower()
+    if ambito not in ("publico", "admin"):
+        ambito = "publico"
+    grupos = agrupar_peticiones_por_ip(
+        limite_peticiones=2000, periodo=periodo, ambito=ambito
+    )
+    return jsonify({"periodo": periodo, "ambito": ambito, "grupos": grupos})
 
 
 @aplicacion.post("/monitor/reportar")
@@ -1411,31 +2070,307 @@ def monitor_bloquear_ip():
 @requiere_autenticacion_monitor
 def monitor_api_estadisticas():
     """
-    Devuelve estadísticas agregadas reales a partir de `obtener_estadisticas()`.
+    Estadísticas agregadas del período seleccionado.
 
-    Incluye conteo de ataques distintos de 'Otro', minutos desde el último evento
-    y actividad por hora del día. Se añaden alias (`tipos_ataque`, etc.) para el dashboard.
+    Query: ?periodo=hoy|ayer|semana|mes|todo
+
+    Campos principales:
+        variacion_eventos — % de cambio vs el período anterior equivalente.
+        ips_nuevas — IPs que no constaban antes del inicio del período.
+        actividad_por_periodo — por horas (hoy/ayer) o por días (semana/mes/todo).
+        top_rutas — cinco rutas más atacadas.
+        alertas_graves — últimas 10 alertas Crítica/Alta dentro del período.
     """
-    estadisticas_bd = obtener_estadisticas()
+    periodo = _periodo_monitor_desde_request()
+    estadisticas_bd = obtener_estadisticas(periodo=periodo)
     ataques_por_tipo = dict(estadisticas_bd.get("ataques_por_tipo") or {})
-    ataques_detectados = _ataques_detectados_sin_otro(estadisticas_bd)
-    ultimo_hace = _minutos_desde_ultimo_evento()
-    ultimo_hace = 0 if ultimo_hace is None else ultimo_hace
-    actividad_por_hora = _actividad_por_hora_desde_buckets(estadisticas_bd)
+    actividad = estadisticas_bd.get("actividad_por_periodo") or {}
 
     cuerpo = {
-        "total_eventos": estadisticas_bd["total_eventos"],
-        "ips_unicas": estadisticas_bd["ips_unicas"],
-        "ataques_detectados": ataques_detectados,
-        "ultimo_ataque_hace": ultimo_hace,
+        "periodo": periodo,
+        "total_eventos": estadisticas_bd.get("total_eventos", 0),
+        "ips_unicas": estadisticas_bd.get("ips_unicas", 0),
+        "ips_nuevas": estadisticas_bd.get("ips_nuevas", 0),
+        "ataques_detectados": estadisticas_bd.get("ataques_detectados", 0),
         "ataques_por_tipo": ataques_por_tipo,
-        "actividad_por_hora": actividad_por_hora,
-        # Nombres antiguos usados por `dashboard.html` (gráficas y tarjeta “último ataque”).
-        "ultimo_ataque_min": ultimo_hace,
+        "ataques_por_gravedad": estadisticas_bd.get("ataques_por_gravedad") or {},
+        "variacion_eventos": estadisticas_bd.get("variacion_eventos"),
+        "variacion_eventos_etiqueta": estadisticas_bd.get(
+            "total_eventos_variacion_etiqueta"
+        ),
+        "actividad_por_periodo": actividad,
+        "top_rutas": estadisticas_bd.get("top_rutas") or [],
+        "alertas_graves": estadisticas_bd.get("alertas_graves") or [],
+        "ultimo_ataque_hace": estadisticas_bd.get("ultimo_ataque_hace"),
+        "ultimo_ataque_gravedad": estadisticas_bd.get("ultimo_ataque_gravedad"),
+        "alertas_criticas_recientes": estadisticas_bd.get(
+            "alertas_criticas_recientes", False
+        ),
+        # Alias para compatibilidad con dashboard.html existente
+        "total_eventos_variacion_pct": estadisticas_bd.get("variacion_eventos"),
+        "total_eventos_variacion_etiqueta": estadisticas_bd.get(
+            "total_eventos_variacion_etiqueta"
+        ),
+        "ataques_tipo_gravedad": estadisticas_bd.get("ataques_tipo_gravedad") or {},
+        "actividad_modo": actividad.get("modo"),
+        "actividad_labels": actividad.get("etiquetas") or [],
+        "actividad_valores": actividad.get("valores") or [],
+        "actividad_pico_indice": actividad.get("pico_indice", 0),
+        "ultimo_ataque_min": estadisticas_bd.get("ultimo_ataque_hace"),
         "tipos_ataque": ataques_por_tipo,
-        "actividad_horas": actividad_por_hora,
+        "actividad_por_hora": dict(
+            zip(actividad.get("etiquetas") or [], actividad.get("valores") or [])
+        ),
+        "actividad_horas": dict(
+            zip(actividad.get("etiquetas") or [], actividad.get("valores") or [])
+        ),
+        "zona_horaria": estadisticas_bd.get("zona_horaria") or ZONA_NOMBRE,
     }
     return jsonify(cuerpo)
+
+
+def _payload_evento_vacio(payload):
+    """True si el evento no tiene datos útiles en el campo payload."""
+    if payload is None:
+        return True
+    if isinstance(payload, str):
+        return not payload.strip()
+    if isinstance(payload, (dict, list)):
+        return len(payload) == 0
+    return False
+
+
+def _normalizar_fecha_resumen(fecha_param):
+    """Valida YYYY-MM-DD o devuelve hoy en Europe/Madrid."""
+    if fecha_param:
+        try:
+            datetime.strptime(fecha_param, "%Y-%m-%d")
+            return fecha_param
+        except ValueError:
+            pass
+    return fecha_hoy()
+
+
+def _obtener_resumen_diario_con_cache(fecha, regenerar=False):
+    """
+    Devuelve el resumen diario de Claude para una fecha, con caché en memoria y BD.
+    """
+    total = contar_eventos_en_fecha(fecha)
+    if total == 0:
+        return None, False, 0, True
+
+    if not regenerar:
+        guardado = obtener_resumen_diario_ia(fecha)
+        if guardado and guardado.get("resumen"):
+            return guardado["resumen"], True, total, False
+
+    ahora = ahora_naive()
+    entrada = _cache_resumen_diario_por_fecha.get(fecha, {})
+    generado = entrada.get("generado_en")
+    if (
+        not regenerar
+        and entrada.get("resumen")
+        and generado
+        and (ahora - generado).total_seconds() < TTL_RESUMEN_DIARIO_SEG
+    ):
+        return entrada["resumen"], True, total, False
+
+    texto = generar_resumen_diario(fecha)
+    if texto:
+        guardar_resumen_diario_ia(fecha, texto, total_eventos=total)
+    _cache_resumen_diario_por_fecha[fecha] = {
+        "resumen": texto,
+        "generado_en": ahora,
+    }
+    return texto, False, total, False
+
+
+@aplicacion.get("/monitor/api/analizar/<int:registro_id>")
+@requiere_autenticacion_monitor
+def monitor_api_analizar_registro(registro_id):
+    """
+    Analiza con Claude un evento (`eventos`) o una petición (`registro_peticiones`).
+
+    Query: ?fuente=evento (defecto) | peticion
+    """
+    fuente = (request.args.get("fuente") or "evento").strip().lower()
+
+    if fuente == "peticion":
+        peticion = obtener_registro_peticion_por_id(registro_id)
+        if peticion is None:
+            return jsonify({"error": f"No existe la petición con id {registro_id}"}), 404
+        return _respuesta_analisis_ia(
+            registro_id,
+            peticion.get("tipo_ataque"),
+            peticion.get("payload"),
+            peticion.get("ruta"),
+            "peticion",
+        )
+
+    evento = obtener_evento_por_id(registro_id)
+    if evento is None:
+        return jsonify({"error": f"No existe el evento con id {registro_id}"}), 404
+    return _respuesta_analisis_ia(
+        registro_id,
+        evento.get("tipo_ataque"),
+        evento.get("payload"),
+        evento.get("ruta"),
+        "evento",
+    )
+
+
+@aplicacion.get("/monitor/api/peticion/<int:peticion_id>")
+@requiere_autenticacion_monitor
+def monitor_api_peticion_detalle(peticion_id):
+    """Detalle completo de una petición HTTP para el inspector del monitor."""
+    peticion = obtener_registro_peticion_por_id(peticion_id)
+    if peticion is None:
+        return jsonify({"error": "Petición no encontrada"}), 404
+
+    tamano_bytes = peticion.get("tamano_respuesta_bytes")
+    tiempo_ms = peticion.get("tiempo_ms")
+    tipo_ataque = (peticion.get("tipo_ataque") or "Otro").strip() or "Otro"
+    gravedad = ""
+    if tipo_ataque != "Otro":
+        gravedad = normalizar_gravedad_almacenada(peticion.get("gravedad")) or ""
+
+    return jsonify(
+        {
+            "id": peticion["id"],
+            "ip": peticion.get("ip") or "",
+            "ruta": peticion.get("ruta") or "",
+            "metodo": peticion.get("metodo") or "",
+            "codigo_http": peticion.get("codigo_http"),
+            "user_agent": peticion.get("user_agent") or "",
+            "payload": peticion.get("payload"),
+            "headers": peticion.get("headers"),
+            "tipo_ataque": tipo_ataque,
+            "gravedad": gravedad,
+            "evento_id": peticion.get("evento_id"),
+            "timestamp": _timestamp_evento_formato_api(peticion.get("timestamp")),
+            "usuario_activo": peticion.get("usuario_activo") or "Invitado",
+            "sesion_id_corto": peticion.get("sesion_id_corto") or "",
+            "tiempo_ms": tiempo_ms,
+            "tiempo_ms_legible": (
+                f"{tiempo_ms} ms" if tiempo_ms is not None else "—"
+            ),
+            "tamano_respuesta_bytes": tamano_bytes,
+            "tamano_respuesta_legible": formatear_tamano_bytes(tamano_bytes),
+            "puerto_origen": peticion.get("puerto_origen") or "",
+        }
+    )
+
+
+@aplicacion.get("/monitor/api/actividad-publica/ips")
+@requiere_autenticacion_monitor
+def monitor_api_actividad_publica_ips():
+    """IPs disponibles en el listado de actividad pública."""
+    return jsonify({"ips": listar_ips_peticiones_publicas()})
+
+
+@aplicacion.get("/monitor/api/actividad-publica/fechas")
+@requiere_autenticacion_monitor
+def monitor_api_actividad_publica_fechas():
+    """Días con tráfico público para una IP (exportación y filtro de fecha)."""
+    ip = (request.args.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"fechas": [], "mensaje": MENSAJE_EXPORTACION_ACTIVIDAD_INVALIDA})
+    return jsonify({"fechas": listar_fechas_peticiones_publicas_por_ip(ip)})
+
+
+@aplicacion.get("/monitor/api/fechas-con-datos")
+@requiere_autenticacion_monitor
+def monitor_api_fechas_con_datos():
+    """Días con eventos registrados (para el selector de fecha del resumen diario)."""
+    fechas = obtener_fechas_con_eventos()
+    hoy = fecha_hoy()
+    ultima = obtener_ultima_fecha_con_eventos()
+    defecto = hoy if any(f["fecha"] == hoy for f in fechas) else (ultima or hoy)
+    return jsonify(
+        {
+            "fechas": fechas,
+            "defecto": defecto,
+            "hoy": hoy,
+            "zona_horaria": ZONA_NOMBRE,
+        }
+    )
+
+
+@aplicacion.get("/monitor/api/resumen-diario")
+@requiere_autenticacion_monitor
+def monitor_api_resumen_diario():
+    """
+    Resumen ejecutivo en prosa de los ataques de un día (Claude).
+
+    Query: fecha=YYYY-MM-DD, regenerar=1 para forzar nueva generación.
+    """
+    fecha = _normalizar_fecha_resumen(request.args.get("fecha"))
+    regenerar = request.args.get("regenerar", "").lower() in ("1", "true", "si", "yes")
+    resumen, desde_cache, total, sin_datos = _obtener_resumen_diario_con_cache(
+        fecha, regenerar=regenerar
+    )
+    if sin_datos:
+        return jsonify(
+            {
+                "sin_datos": True,
+                "mensaje": "No hay datos para este día",
+                "fecha": fecha,
+                "total_eventos": 0,
+            }
+        )
+    guardado = obtener_resumen_diario_ia(fecha)
+    return jsonify(
+        {
+            "resumen": resumen,
+            "fecha": fecha,
+            "total_eventos": total,
+            "desde_cache": desde_cache,
+            "desde_bd": bool(guardado and not regenerar),
+            "generado_en": (guardado or {}).get("generado_en"),
+            "cache_ttl_segundos": TTL_RESUMEN_DIARIO_SEG,
+        }
+    )
+
+
+@aplicacion.get("/monitor/api/anomalias")
+@requiere_autenticacion_monitor
+def monitor_api_anomalias():
+    """
+    Devuelve la última detección de anomalías (caché del hilo de fondo o cálculo en vivo).
+
+    El hilo periódico actualiza el caché cada 30 minutos; si aún no hay datos, se calcula al vuelo.
+    """
+    if _cache_anomalias.get("datos") is not None:
+        return jsonify(
+            {
+                "desde_cache": True,
+                "actualizado_en": (
+                    _cache_anomalias["actualizado_en"].isoformat()
+                    if _cache_anomalias.get("actualizado_en")
+                    else None
+                ),
+                **_cache_anomalias["datos"],
+            }
+        )
+
+    eventos_hora = obtener_eventos_ultima_hora(limite=500)
+    resultado = detectar_anomalias(eventos_hora)
+    _cache_anomalias["datos"] = resultado
+    _cache_anomalias["actualizado_en"] = ahora_naive()
+    return jsonify({"desde_cache": False, **resultado})
+
+
+@aplicacion.get("/monitor/api/alertas")
+@requiere_autenticacion_monitor
+def monitor_api_alertas():
+    """
+    Últimas alertas graves sin filtro de período (panel en tiempo real).
+
+    Devuelve hasta 10 eventos Crítica o Alta, ordenados por timestamp DESC.
+    Cada elemento incluye: ip, ruta, tipo_ataque, gravedad, timestamp.
+    """
+    alertas = obtener_alertas_graves_monitor(limite=10, periodo=None)
+    return jsonify(alertas)
 
 
 @aplicacion.get("/monitor/exportar")
@@ -1447,7 +2382,7 @@ def monitor_exportar_csv():
     Columnas: IP, Ruta Atacada, Tipo de Ataque, Payload, User Agent,
     Gravedad, Fecha y Hora.
     """
-    lista_eventos = obtener_eventos(limite=9999)
+    lista_eventos = obtener_eventos(limite=9999, ambito="todo")
 
     buffer_csv = io.StringIO()
     escritor_csv = csv.writer(buffer_csv)
@@ -1483,6 +2418,82 @@ def monitor_exportar_csv():
     respuesta = make_response(contenido_csv, 200)
     respuesta.mimetype = "text/csv; charset=utf-8"
     respuesta.headers["Content-Disposition"] = "attachment; filename=flypaper_forense.csv"
+    return respuesta
+
+
+@aplicacion.get("/monitor/exportar/actividad-publica/csv")
+@requiere_autenticacion_monitor
+def monitor_exportar_actividad_publica_csv():
+    """CSV de peticiones públicas filtradas por IP y un día exacto."""
+    datos, error = _validar_exportacion_actividad_publica()
+    if error:
+        return jsonify({"error": error}), 400
+
+    ip, fecha = datos
+    peticiones = obtener_peticiones_publicas_por_ip_y_fecha(ip, fecha)
+
+    buffer_csv = io.StringIO()
+    escritor_csv = csv.writer(buffer_csv)
+    escritor_csv.writerow(
+        [
+            "IP",
+            "Ruta",
+            "Método",
+            "Código HTTP",
+            "Tipo de ataque",
+            "Usuario activo",
+            "ID sesión",
+            "Tiempo (ms)",
+            "Tamaño respuesta (bytes)",
+            "Puerto origen",
+            "Payload",
+            "User-Agent",
+            "Fecha y Hora",
+        ]
+    )
+    for fila in peticiones:
+        escritor_csv.writerow(
+            [
+                fila.get("ip", ""),
+                fila.get("ruta", ""),
+                fila.get("metodo", ""),
+                fila.get("codigo_http", ""),
+                fila.get("tipo_ataque", ""),
+                fila.get("usuario_activo", ""),
+                fila.get("sesion_id_corto", ""),
+                fila.get("tiempo_ms", ""),
+                fila.get("tamano_respuesta_bytes", ""),
+                fila.get("puerto_origen", ""),
+                _campo_evento_a_texto(fila.get("payload")),
+                fila.get("user_agent", ""),
+                _timestamp_evento_formato_api(fila.get("timestamp")),
+            ]
+        )
+
+    contenido_csv = buffer_csv.getvalue()
+    buffer_csv.close()
+    nombre = f"flypaper_actividad_{ip.replace(':', '_')}_{fecha}.csv"
+    respuesta = make_response(contenido_csv, 200)
+    respuesta.mimetype = "text/csv; charset=utf-8"
+    respuesta.headers["Content-Disposition"] = f"attachment; filename={nombre}"
+    return respuesta
+
+
+@aplicacion.get("/monitor/exportar/actividad-publica/headers")
+@requiere_autenticacion_monitor
+def monitor_exportar_actividad_publica_headers():
+    """Headers estilo Wireshark para peticiones públicas (IP + día exacto)."""
+    datos, error = _validar_exportacion_actividad_publica()
+    if error:
+        return jsonify({"error": error}), 400
+
+    ip, fecha = datos
+    peticiones = obtener_peticiones_publicas_por_ip_y_fecha(ip, fecha)
+    contenido_txt = generar_exportacion_wireshark_peticiones(peticiones)
+    nombre = f"flypaper_actividad_{ip.replace(':', '_')}_{fecha}_headers.txt"
+    respuesta = make_response(contenido_txt, 200)
+    respuesta.mimetype = "text/plain; charset=utf-8"
+    respuesta.headers["Content-Disposition"] = f"attachment; filename={nombre}"
     return respuesta
 
 

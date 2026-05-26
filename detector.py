@@ -277,28 +277,108 @@ def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
     return "Otro"
 
 
+# Escala SOC del monitor (tres niveles + sin gravedad para tráfico «Otro»).
+GRAVEDAD_CRITICA = "Crítica"
+GRAVEDAD_ALTA = "Alta"
+GRAVEDAD_SOSPECHOSO = "Sospechoso"
+GRAVEDADES_MONITOR = (GRAVEDAD_CRITICA, GRAVEDAD_ALTA, GRAVEDAD_SOSPECHOSO)
+
+# Alias legacy almacenados antes de la migración.
+_MAPA_GRAVEDAD_LEGACY = {
+    "CRÍTICO": GRAVEDAD_CRITICA,
+    "CRITICO": GRAVEDAD_CRITICA,
+    "ALTO": GRAVEDAD_ALTA,
+    "MEDIO": GRAVEDAD_SOSPECHOSO,
+    "BAJO": GRAVEDAD_SOSPECHOSO,
+}
+
+
+def normalizar_gravedad_almacenada(gravedad):
+    """
+    Devuelve la etiqueta canónica (Crítica/Alta/Sospechoso) o None si no aplica.
+
+    Args:
+        gravedad (str|None): Valor en BD o respuesta del detector.
+
+    Returns:
+        str | None
+    """
+    if gravedad is None:
+        return None
+    texto = str(gravedad).strip()
+    if not texto:
+        return None
+    if texto in GRAVEDADES_MONITOR:
+        return texto
+    clave = texto.upper()
+    if clave in _MAPA_GRAVEDAD_LEGACY:
+        return _MAPA_GRAVEDAD_LEGACY[clave]
+    baja = clave.replace("Í", "I")
+    if baja in _MAPA_GRAVEDAD_LEGACY:
+        return _MAPA_GRAVEDAD_LEGACY[baja]
+    return texto
+
+
+def normalizar_gravedad_filtro_api(valor):
+    """
+    Normaliza ?gravedad= del monitor a un nivel canónico o None (ver todos los incidentes).
+
+    Args:
+        valor (str|None): Parámetro de query.
+
+    Returns:
+        str | None: Crítica, Alta, Sospechoso, o None para «todos».
+    """
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    if not texto or texto.lower() in ("todos", "todas", "all", ""):
+        return None
+    canon = normalizar_gravedad_almacenada(texto)
+    if canon in GRAVEDADES_MONITOR:
+        return canon
+    alias = {
+        "critica": GRAVEDAD_CRITICA,
+        "crítica": GRAVEDAD_CRITICA,
+        "critico": GRAVEDAD_CRITICA,
+        "alta": GRAVEDAD_ALTA,
+        "alto": GRAVEDAD_ALTA,
+        "sospechoso": GRAVEDAD_SOSPECHOSO,
+        "sospechosa": GRAVEDAD_SOSPECHOSO,
+    }
+    return alias.get(texto.lower())
+
+
+def prioridad_gravedad(gravedad):
+    """Entero para ordenar de mayor a menor severidad (0 = sin gravedad)."""
+    canon = normalizar_gravedad_almacenada(gravedad)
+    return {"Crítica": 3, "Alta": 2, "Sospechoso": 1}.get(canon, 0)
+
+
 def calcular_gravedad(tipo_ataque):
     """
-    Asigna un nivel de gravedad al tipo de ataque clasificado.
+    Asigna severidad al tipo de ataque clasificado.
 
-    - CRÍTICO: SQLi, Path Traversal, RCE
-    - ALTO: XSS, Fuerza Bruta, CSRF
-    - MEDIO: Scanner Automatizado
-    - BAJO: Reconocimiento, Otro y cualquier otro valor
+    - Crítica: SQLi, Path Traversal, RCE (explotación confirmada).
+    - Alta: XSS, Fuerza Bruta, CSRF, escaneos automatizados.
+    - Sospechoso: reconocimiento y anomalías a revisar.
+    - None: tráfico «Otro» (sin etiqueta de riesgo).
 
     Args:
         tipo_ataque (str): Categoría devuelta por `clasificar_ataque`.
 
     Returns:
-        str: "CRÍTICO", "ALTO", "MEDIO" o "BAJO".
+        str | None: Crítica, Alta, Sospechoso, o None.
     """
+    if not tipo_ataque or tipo_ataque == "Otro":
+        return None
     if tipo_ataque in ("SQLi", "Path Traversal", "RCE"):
-        return "CRÍTICO"
-    if tipo_ataque in ("XSS", "Fuerza Bruta", "CSRF"):
-        return "ALTO"
-    if tipo_ataque == "Scanner Automatizado":
-        return "MEDIO"
-    return "BAJO"
+        return GRAVEDAD_CRITICA
+    if tipo_ataque in ("XSS", "Fuerza Bruta", "CSRF", "Scanner Automatizado"):
+        return GRAVEDAD_ALTA
+    if tipo_ataque == "Reconocimiento":
+        return GRAVEDAD_SOSPECHOSO
+    return GRAVEDAD_SOSPECHOSO
 
 
 def es_ataque_grave(tipo_ataque):
@@ -321,4 +401,6 @@ def es_ataque_grave(tipo_ataque):
         "Path Traversal",
         "Fuerza Bruta",
         "CSRF",
+        "RCE",
+        "Scanner Automatizado",
     }

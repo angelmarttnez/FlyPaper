@@ -14,11 +14,35 @@ import string
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from detector import (
+    GRAVEDAD_ALTA,
+    GRAVEDAD_CRITICA,
+    GRAVEDAD_SOSPECHOSO,
+    normalizar_gravedad_almacenada,
+    normalizar_gravedad_filtro_api,
+    prioridad_gravedad,
+)
+from timezone_fp import (
+    ZONA_NOMBRE,
+    ahora_naive,
+    fecha_hoy,
+    formatear_marca,
+    hace as hace_tiempo,
+    marca_ahora,
+    minutos_desde_marca,
+)
+
 # Nombres canónicos de los dos retos CTF del laboratorio.
-RETO_CTF_SQLI = "SQLi"
+RETO_CTF_SQLI = "Inyección de Datos (UNION)"
+RETO_CTF_SQLI_LEGACY = "SQLi"
 RETO_CTF_PATH_TRAVERSAL = "Path Traversal"
-# Usuario señuelo en tabla `usuarios` (pública): nombre engañoso, sin privilegios reales.
-USUARIO_SENUELO_SQLI = "admin"
+# Único usuario público del reto UNION: password_hash = cuerpo de la flag SQLi.
+USUARIO_CTF_SQLI = "SQLi_flag"
+PISTA_CTF_SQLI_BREVE = (
+    "Usa UNION en /search para leer la tabla usuarios y localizar al usuario SQLi_flag."
+)
+ROL_USUARIO_NORMAL = "usuario"
+ROL_USUARIO_ADMIN_BD = "admin"
 # Cuentas reales de panel / monitor viven solo en `usuarios_privados`.
 ROL_PRIV_ADMIN_PANEL = "admin_panel"
 ROL_PRIV_MONITOR = "monitor"
@@ -75,6 +99,48 @@ def _asegurar_columna_gravedad(cursor):
         )
 
 
+def _asegurar_columnas_registro_peticiones(cursor):
+    """Añade metadatos HTTP a `registro_peticiones` en bases de datos antiguas."""
+    cursor.execute("PRAGMA table_info(registro_peticiones);")
+    columnas = {fila[1] for fila in cursor.fetchall()}
+    nuevas = (
+        ("user_agent", "TEXT"),
+        ("payload", "TEXT"),
+        ("headers", "TEXT"),
+        ("tipo_ataque", "TEXT"),
+        ("gravedad", "TEXT"),
+        ("evento_id", "INTEGER"),
+        ("usuario_activo", "TEXT"),
+        ("sesion_id_corto", "TEXT"),
+        ("tiempo_ms", "INTEGER"),
+        ("tamano_respuesta_bytes", "INTEGER"),
+        ("puerto_origen", "TEXT"),
+    )
+    for nombre, tipo_sql in nuevas:
+        if nombre not in columnas:
+            cursor.execute(
+                f"ALTER TABLE registro_peticiones ADD COLUMN {nombre} {tipo_sql};"
+            )
+
+
+def _asegurar_columna_rol_usuarios(cursor):
+    """Añade la columna `rol` a `usuarios` en bases de datos creadas antes del panel admin."""
+    cursor.execute("PRAGMA table_info(usuarios);")
+    columnas = {fila[1] for fila in cursor.fetchall()}
+    if "rol" not in columnas:
+        cursor.execute(
+            f"ALTER TABLE usuarios ADD COLUMN rol TEXT DEFAULT '{ROL_USUARIO_NORMAL}';"
+        )
+    cursor.execute(
+        f"UPDATE usuarios SET rol = '{ROL_USUARIO_NORMAL}' WHERE rol IS NULL OR rol = '';"
+    )
+
+
+def _hash_md5_password(password):
+    """Hash MD5 de contraseña (formato almacenado para usuarios corporativos)."""
+    return hashlib.md5(password.encode("utf-8")).hexdigest()
+
+
 def inicializar_db():
     """
     Crea todas las tablas del modelo relacional si no existen.
@@ -91,7 +157,7 @@ def inicializar_db():
         metodo TEXT,
         payload TEXT,
         tipo_ataque TEXT,
-        gravedad TEXT DEFAULT 'BAJO',
+        gravedad TEXT,
         user_agent TEXT,
         timestamp DATETIME,
         pais TEXT DEFAULT '',
@@ -106,7 +172,8 @@ def inicializar_db():
         apellido TEXT,
         departamento TEXT,
         email TEXT,
-        avatar_url TEXT
+        avatar_url TEXT,
+        rol TEXT DEFAULT 'usuario'
     );
 
     CREATE TABLE IF NOT EXISTS posts (
@@ -146,6 +213,15 @@ def inicializar_db():
         FOREIGN KEY (flag_id) REFERENCES flags(id)
     );
 
+    CREATE TABLE IF NOT EXISTS objetivos_completados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id TEXT NOT NULL,
+        flag_id INTEGER NOT NULL,
+        fecha DATETIME,
+        UNIQUE(usuario_id, flag_id),
+        FOREIGN KEY (flag_id) REFERENCES flags(id)
+    );
+
     CREATE TABLE IF NOT EXISTS reportes_enviados (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ip_atacante TEXT,
@@ -159,21 +235,54 @@ def inicializar_db():
         fecha DATETIME,
         motivo TEXT DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS resumenes_diarios_ia (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT UNIQUE NOT NULL,
+        resumen TEXT NOT NULL,
+        total_eventos INTEGER DEFAULT 0,
+        generado_en DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS registro_peticiones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT,
+        ruta TEXT,
+        metodo TEXT,
+        codigo_http INTEGER,
+        user_agent TEXT,
+        payload TEXT,
+        headers TEXT,
+        tipo_ataque TEXT,
+        gravedad TEXT,
+        evento_id INTEGER,
+        usuario_activo TEXT,
+        sesion_id_corto TEXT,
+        tiempo_ms INTEGER,
+        tamano_respuesta_bytes INTEGER,
+        puerto_origen TEXT,
+        timestamp DATETIME
+    );
     """
 
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.executescript(ddl_tablas)
         _asegurar_columna_gravedad(cursor)
+        _asegurar_columna_rol_usuarios(cursor)
+        _asegurar_columnas_registro_peticiones(cursor)
         conexion.commit()
 
     _inicializar_bd_privada()
     _migrar_privados_desde_bd_publica_si_existe()
     poblar_entorno_simulacion()
     asegurar_flags_ctf_dinamicas()
-    asegurar_usuario_senuelo_sqli()
+    _migrar_reto_sqli_legacy()
+    asegurar_usuario_ctf_sqli_flag()
+    asegurar_usuarios_corporativos_extendidos()
     asegurar_cuentas_privilegiadas()
     _migrar_cuentas_privilegiadas_fuera_de_usuarios()
+    _migrar_gravedades_eventos_legacy()
 
 
 def generar_flag_ctf_aleatoria():
@@ -208,11 +317,36 @@ def obtener_flag_string_por_reto(reto_nombre):
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
-            "SELECT flag_string FROM flags WHERE reto_nombre = ?;",
+            """
+            SELECT flag_string FROM flags
+            WHERE reto_nombre = ?
+            ORDER BY id ASC
+            LIMIT 1;
+            """,
             (reto_nombre,),
         )
         fila = cursor.fetchone()
         return fila["flag_string"] if fila else None
+
+
+def _consolidar_flags_reto_duplicadas(reto_nombre):
+    """Elimina filas duplicadas en `flags` para un mismo reto (conserva la de menor id)."""
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT id FROM flags WHERE reto_nombre = ? ORDER BY id ASC;",
+            (reto_nombre,),
+        )
+        ids = [fila["id"] for fila in cursor.fetchall()]
+        if len(ids) <= 1:
+            return
+        for dup_id in ids[1:]:
+            cursor.execute(
+                "DELETE FROM flags_resueltas WHERE flag_id = ?;",
+                (dup_id,),
+            )
+            cursor.execute("DELETE FROM flags WHERE id = ?;", (dup_id,))
+        conexion.commit()
 
 
 def asegurar_flags_ctf_dinamicas():
@@ -221,11 +355,14 @@ def asegurar_flags_ctf_dinamicas():
 
     Inserta retos faltantes o sustituye flags legacy (p. ej. FLAG{...} estáticas).
     """
+    _migrar_reto_sqli_legacy()
+    _consolidar_flags_reto_duplicadas(RETO_CTF_SQLI)
+
     definicion_retos = [
         (
             RETO_CTF_SQLI,
             100,
-            "Explota la inyección SQL en un formulario para leer datos sensibles de la BD.",
+            PISTA_CTF_SQLI_BREVE,
         ),
         (
             RETO_CTF_PATH_TRAVERSAL,
@@ -257,18 +394,71 @@ def asegurar_flags_ctf_dinamicas():
                 )
         conexion.commit()
 
-    # Si la flag SQLi cambió, la contraseña del usuario señuelo debe coincidir.
-    asegurar_usuario_senuelo_sqli()
+    _consolidar_flags_reto_duplicadas(RETO_CTF_SQLI)
+    asegurar_usuario_ctf_sqli_flag()
 
 
-def asegurar_usuario_senuelo_sqli():
+def _es_username_admin_publico(username):
+    """True si el username sugiere admin/administrador (no válido como vector del reto)."""
+    u = (username or "").strip().lower()
+    if not u or u == USUARIO_CTF_SQLI.lower():
+        return False
+    if u in ("admin", "administrador"):
+        return True
+    return "admin" in u or "administrador" in u
+
+
+def purgar_usuarios_admin_de_tabla_publica():
     """
-    Usuario «admin» en BD (señuelo CTF): password_hash = 10 caracteres de la flag SQLi.
+    Elimina de `usuarios` (BD pública) cuentas admin/administrador o variantes.
 
-    No otorga acceso a /monitor ni /admin (esas cuentas están en `usuarios_privados`).
-    Se actualiza siempre que exista o cambie la flag del reto SQLi.
+    Las cuentas reales de panel viven solo en flypaper_priv.db.
     """
-    flag_sqli = obtener_flag_string_por_reto(RETO_CTF_SQLI)
+    eliminados = 0
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("SELECT id, username FROM usuarios;")
+        for fila in cursor.fetchall():
+            if _es_username_admin_publico(fila["username"]):
+                cursor.execute("DELETE FROM usuarios WHERE id = ?;", (fila["id"],))
+                eliminados += 1
+        conexion.commit()
+    return eliminados
+
+
+def _migrar_reto_sqli_legacy():
+    """Renombra el reto SQLi legacy y actualiza la pista breve en flags."""
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            UPDATE flags
+            SET reto_nombre = ?, pista = ?
+            WHERE reto_nombre IN (?, ?);
+            """,
+            (RETO_CTF_SQLI, PISTA_CTF_SQLI_BREVE, RETO_CTF_SQLI_LEGACY, "sqli"),
+        )
+        conexion.commit()
+    _consolidar_flags_reto_duplicadas(RETO_CTF_SQLI)
+
+
+def _obtener_flag_sqli_activa():
+    """Flag del reto UNION (nombre actual o legacy en BD)."""
+    flag = obtener_flag_string_por_reto(RETO_CTF_SQLI)
+    if flag:
+        return flag
+    return obtener_flag_string_por_reto(RETO_CTF_SQLI_LEGACY)
+
+
+def asegurar_usuario_ctf_sqli_flag():
+    """
+    Usuario SQLi_flag en tabla pública: password_hash = cuerpo de la flag del reto UNION.
+
+    Purga usuarios admin/administrador y deja este como vector de resolución del reto.
+    """
+    purgar_usuarios_admin_de_tabla_publica()
+
+    flag_sqli = _obtener_flag_sqli_activa()
     if not flag_sqli:
         return
 
@@ -280,36 +470,217 @@ def asegurar_usuario_senuelo_sqli():
         cursor = conexion.cursor()
         cursor.execute(
             "SELECT id FROM usuarios WHERE username = ?;",
-            (USUARIO_SENUELO_SQLI,),
+            (USUARIO_CTF_SQLI,),
         )
         if cursor.fetchone():
             cursor.execute(
                 """
                 UPDATE usuarios
-                SET password_hash = ?, departamento = ?
+                SET password_hash = ?, nombre = ?, apellido = ?,
+                    departamento = ?, email = ?, avatar_url = ?, rol = ?
                 WHERE username = ?;
                 """,
-                (password_dinamica, "Soporte", USUARIO_SENUELO_SQLI),
+                (
+                    password_dinamica,
+                    "Usuario",
+                    "CTF",
+                    "Seguridad",
+                    "sqli_flag@flypaper.internal",
+                    "/static/avatars/sqli.png",
+                    ROL_USUARIO_NORMAL,
+                    USUARIO_CTF_SQLI,
+                ),
             )
         else:
             cursor.execute(
                 """
                 INSERT INTO usuarios (
                     username, password_hash, nombre, apellido,
-                    departamento, email, avatar_url
-                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                    departamento, email, avatar_url, rol
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
-                    USUARIO_SENUELO_SQLI,
+                    USUARIO_CTF_SQLI,
                     password_dinamica,
                     "Usuario",
-                    "Señuelo",
-                    "Soporte",
-                    "admin.ctf@flypaper.io",
-                    "/static/avatars/admin.png",
+                    "CTF",
+                    "Seguridad",
+                    "sqli_flag@flypaper.internal",
+                    "/static/avatars/sqli.png",
+                    ROL_USUARIO_NORMAL,
                 ),
             )
         conexion.commit()
+
+
+def asegurar_usuarios_corporativos_extendidos():
+    """
+    Inserta o actualiza usuarios corporativos (MD5) en tabla `usuarios` (sin cuentas admin).
+
+    El vector del reto UNION lo gestiona asegurar_usuario_ctf_sqli_flag (SQLi_flag).
+    """
+    usuarios_nuevos = [
+        (
+            "elena.mora",
+            "Kp9#mora2026",
+            "Elena",
+            "Mora",
+            "IT",
+            "elena.mora@flypaper.io",
+            "/static/avatars/it.png",
+            ROL_USUARIO_NORMAL,
+        ),
+        (
+            "pablo.soto",
+            "S0t0Fly!88",
+            "Pablo",
+            "Soto",
+            "Ventas",
+            "pablo.soto@flypaper.io",
+            "/static/avatars/ventas.png",
+            ROL_USUARIO_NORMAL,
+        ),
+        (
+            "ines.calvo",
+            "InesCalvo77",
+            "Inés",
+            "Calvo",
+            "RRHH",
+            "ines.calvo@flypaper.io",
+            "/static/avatars/rrhh.png",
+            ROL_USUARIO_NORMAL,
+        ),
+        (
+            "ruben.fuentes",
+            "RbFu3nt3s",
+            "Rubén",
+            "Fuentes",
+            "IT",
+            "ruben.fuentes@flypaper.io",
+            "/static/avatars/it.png",
+            ROL_USUARIO_NORMAL,
+        ),
+        (
+            "clara.diaz",
+            "ClaraD1az55",
+            "Clara",
+            "Díaz",
+            "Ventas",
+            "clara.diaz@flypaper.io",
+            "/static/avatars/ventas.png",
+            ROL_USUARIO_NORMAL,
+        ),
+    ]
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        for (
+            username,
+            password_plano,
+            nombre,
+            apellido,
+            departamento,
+            email,
+            avatar_url,
+            rol,
+        ) in usuarios_nuevos:
+            if _es_username_admin_publico(username) or username == USUARIO_CTF_SQLI:
+                continue
+            hash_md5 = _hash_md5_password(password_plano)
+            cursor.execute(
+                "SELECT id FROM usuarios WHERE username = ?;",
+                (username,),
+            )
+            if cursor.fetchone():
+                cursor.execute(
+                    """
+                    UPDATE usuarios
+                    SET password_hash = ?, nombre = ?, apellido = ?,
+                        departamento = ?, email = ?, avatar_url = ?, rol = ?
+                    WHERE username = ?;
+                    """,
+                    (
+                        hash_md5,
+                        nombre,
+                        apellido,
+                        departamento,
+                        email,
+                        avatar_url,
+                        rol,
+                        username,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO usuarios (
+                        username, password_hash, nombre, apellido,
+                        departamento, email, avatar_url, rol
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        username,
+                        hash_md5,
+                        nombre,
+                        apellido,
+                        departamento,
+                        email,
+                        avatar_url,
+                        rol,
+                    ),
+                )
+        conexion.commit()
+
+
+def obtener_usuarios_para_panel_admin():
+    """
+    Lista usuarios públicos para /admin/usuarios (sin password_hash).
+
+    Returns:
+        list[dict]: id, username, nombre, apellido, departamento, email, avatar_url, rol.
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, username, nombre, apellido, departamento, email, avatar_url, rol
+            FROM usuarios
+            ORDER BY departamento, username;
+            """
+        )
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def verificar_credencial_usuario_bd(username, password):
+    """
+    Valida usuario/contraseña contra la tabla `usuarios` (hash MD5).
+
+    El señuelo CTF guarda la flag en texto plano; no coincide con MD5 del formulario.
+
+    Returns:
+        dict | None: username y rol ('admin' | 'usuario').
+    """
+    if not username or password is None:
+        return None
+
+    hash_md5 = _hash_md5_password(password)
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT username, rol
+            FROM usuarios
+            WHERE username = ? AND password_hash = ?;
+            """,
+            (username.strip(), hash_md5),
+        )
+        fila = cursor.fetchone()
+        if not fila:
+            return None
+        rol = (fila["rol"] or ROL_USUARIO_NORMAL).strip().lower()
+        if rol not in (ROL_USUARIO_ADMIN_BD, ROL_USUARIO_NORMAL):
+            rol = ROL_USUARIO_NORMAL
+        return {"username": fila["username"], "rol": rol}
 
 
 def _inicializar_bd_privada():
@@ -424,7 +795,7 @@ def _migrar_cuentas_privilegiadas_fuera_de_usuarios():
     """
     En BDs antiguas, quita de `usuarios` filas que duplican cuentas de `usuarios_privados`.
 
-    Conserva el señuelo `admin` en `usuarios` (mismo username, tabla distinta para el CTF).
+    También elimina usuarios admin/administrador de la tabla pública (vector: SQLi_flag).
     """
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
@@ -432,18 +803,10 @@ def _migrar_cuentas_privilegiadas_fuera_de_usuarios():
             "DELETE FROM usuarios WHERE username = ?;",
             ("analyst",),
         )
-        # Admin legacy con departamento Admin y hash MD5 (semilla antigua): dejar solo el señuelo.
-        cursor.execute(
-            """
-            DELETE FROM usuarios
-            WHERE username = ?
-              AND departamento = 'Admin'
-              AND length(password_hash) = 32;
-            """,
-            (USUARIO_SENUELO_SQLI,),
-        )
         conexion.commit()
-    asegurar_usuario_senuelo_sqli()
+    purgar_usuarios_admin_de_tabla_publica()
+    _migrar_reto_sqli_legacy()
+    asegurar_usuario_ctf_sqli_flag()
 
 
 def verificar_usuario_privado(username, password):
@@ -501,6 +864,23 @@ def reiniciar_progreso_ctf_por_ip(ip):
         return eliminadas
 
 
+def reiniciar_progreso_ctf_por_usuario(usuario_id):
+    """
+    Borra el progreso CTF de un usuario (QA / repetir pruebas en /objetivos).
+    """
+    if not usuario_id:
+        return 0
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "DELETE FROM objetivos_completados WHERE usuario_id = ?;",
+            (usuario_id,),
+        )
+        eliminadas = cursor.rowcount
+        conexion.commit()
+        return eliminadas
+
+
 def poblar_entorno_simulacion():
     """
     Inserta datos falsos del entorno corporativo y flags del CTF.
@@ -511,7 +891,7 @@ def poblar_entorno_simulacion():
     - 3 posts de blog sobre FlyPaper con comentarios de empleados.
     - 2 flags: SQLi (100 pts) y Path Traversal / LFI (150 pts).
     """
-    marca = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    marca = marca_ahora()
 
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
@@ -557,10 +937,11 @@ def poblar_entorno_simulacion():
         cursor.executemany(
             """
             INSERT INTO usuarios (
-                username, password_hash, nombre, apellido, departamento, email, avatar_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                username, password_hash, nombre, apellido,
+                departamento, email, avatar_url, rol
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
-            usuarios_seed,
+            [(*fila, ROL_USUARIO_NORMAL) for fila in usuarios_seed],
         )
 
         cursor.execute("SELECT id, username FROM usuarios ORDER BY id;")
@@ -674,7 +1055,7 @@ def poblar_entorno_simulacion():
                 RETO_CTF_SQLI,
                 generar_flag_ctf_aleatoria(),
                 100,
-                "Explota la inyección SQL en un formulario para leer datos sensibles de la BD.",
+                PISTA_CTF_SQLI_BREVE,
             ),
             (
                 RETO_CTF_PATH_TRAVERSAL,
@@ -712,7 +1093,7 @@ def guardar_evento(
     user_agent,
     tipo_ataque,
     headers,
-    gravedad="BAJO",
+    gravedad=None,
 ):
     """
     Inserta un evento capturado por el honeypot en la tabla `eventos`.
@@ -725,11 +1106,12 @@ def guardar_evento(
         user_agent (str): User-Agent.
         tipo_ataque (str): Clasificación del detector.
         headers: Cabeceras HTTP (dict o texto).
-        gravedad (str): CRÍTICO, ALTO, MEDIO o BAJO.
+        gravedad (str|None): Crítica, Alta, Sospechoso; None para tráfico «Otro».
     """
+    gravedad_guardar = normalizar_gravedad_almacenada(gravedad)
     payload_texto = _serializar_campo_json(payload)
     headers_texto = _serializar_campo_json(headers) if headers is not None else "{}"
-    marca_tiempo = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    marca_tiempo = marca_ahora()
 
     consulta = """
     INSERT INTO eventos (
@@ -745,7 +1127,7 @@ def guardar_evento(
         metodo,
         payload_texto,
         tipo_ataque,
-        gravedad,
+        gravedad_guardar,
         user_agent,
         marca_tiempo,
         "",
@@ -756,118 +1138,1002 @@ def guardar_evento(
         cursor = conexion.cursor()
         cursor.execute(consulta, valores)
         conexion.commit()
+        return cursor.lastrowid
 
 
-def obtener_eventos(limite=100):
+def vincular_registro_peticion_evento(peticion_id, evento_id):
+    """Asocia una fila de actividad HTTP con su alerta en `eventos`."""
+    try:
+        id_pet = int(peticion_id)
+        id_ev = int(evento_id)
+    except (TypeError, ValueError):
+        return
+    if id_pet < 1 or id_ev < 1:
+        return
+    consulta = """
+    UPDATE registro_peticiones
+    SET evento_id = ?
+    WHERE id = ? AND (evento_id IS NULL OR evento_id = 0);
     """
-    Devuelve los últimos eventos ordenados por fecha descendente.
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (id_ev, id_pet))
+        conexion.commit()
+
+
+def _ruta_es_zona_administracion(ruta):
+    """True si la ruta pertenece a /admin o /monitor (y subrutas)."""
+    path = (ruta or "").strip()
+    return path.startswith("/admin") or path.startswith("/monitor")
+
+
+def _sql_filtro_ambito_peticiones(ambito, prefijo=""):
+    """
+    Fragmento SQL para filtrar registro_peticiones por ámbito.
+
+    ambito «publico»: todo excepto /admin y /monitor.
+    ambito «admin»: solo /admin y /monitor.
+    """
+    col = f"{prefijo}." if prefijo else ""
+    if ambito == "admin":
+        return (
+            f"({col}ruta LIKE '/admin%' OR {col}ruta LIKE '/monitor%')"
+        )
+    if ambito == "publico":
+        return (
+            f"({col}ruta NOT LIKE '/admin%' AND {col}ruta NOT LIKE '/monitor%')"
+        )
+    raise ValueError(f"Ámbito de peticiones no válido: {ambito}")
+
+
+_CAMPOS_REGISTRO_PETICIONES = """
+    id, ip, ruta, metodo, codigo_http, user_agent, payload, headers,
+    tipo_ataque, gravedad, evento_id, usuario_activo, sesion_id_corto, tiempo_ms,
+    tamano_respuesta_bytes, puerto_origen, timestamp
+"""
+
+_FROM_REGISTRO_PETICIONES_CON_ALERTA = """
+FROM registro_peticiones rp
+LEFT JOIN eventos e ON e.id = (
+    SELECT COALESCE(
+        rp.evento_id,
+        (
+            SELECT e2.id
+            FROM eventos e2
+            WHERE TRIM(COALESCE(e2.ip, '')) = TRIM(COALESCE(rp.ip, ''))
+              AND TRIM(COALESCE(e2.ruta, '')) = TRIM(COALESCE(rp.ruta, ''))
+              AND TRIM(COALESCE(e2.metodo, '')) = TRIM(COALESCE(rp.metodo, ''))
+              AND datetime(e2.timestamp) = datetime(rp.timestamp)
+            ORDER BY e2.id DESC
+            LIMIT 1
+        )
+    )
+)
+"""
+
+_SELECT_REGISTRO_PETICIONES_CORRELADO = f"""
+    rp.id,
+    rp.ip,
+    rp.ruta,
+    rp.metodo,
+    rp.codigo_http,
+    rp.user_agent,
+    rp.payload,
+    rp.headers,
+    CASE
+        WHEN COALESCE(TRIM(rp.tipo_ataque), '') NOT IN ('', 'Otro')
+            THEN TRIM(rp.tipo_ataque)
+        WHEN e.tipo_ataque IS NOT NULL AND TRIM(e.tipo_ataque) NOT IN ('', 'Otro')
+            THEN TRIM(e.tipo_ataque)
+        ELSE COALESCE(NULLIF(TRIM(rp.tipo_ataque), ''), 'Otro')
+    END AS tipo_ataque,
+    COALESCE(NULLIF(TRIM(rp.gravedad), ''), NULLIF(TRIM(e.gravedad), '')) AS gravedad,
+    COALESCE(rp.evento_id, e.id) AS evento_id,
+    rp.usuario_activo,
+    rp.sesion_id_corto,
+    rp.tiempo_ms,
+    rp.tamano_respuesta_bytes,
+    rp.puerto_origen,
+    rp.timestamp
+"""
+
+
+def guardar_registro_peticion(
+    ip,
+    ruta,
+    metodo,
+    codigo_http=None,
+    user_agent=None,
+    payload=None,
+    headers=None,
+    tipo_ataque=None,
+    usuario_activo=None,
+    sesion_id_corto=None,
+    tiempo_ms=None,
+    tamano_respuesta_bytes=None,
+    puerto_origen=None,
+    gravedad=None,
+    evento_id=None,
+):
+    """Registra cada petición HTTP para el panel de actividad por IP del monitor."""
+    payload_texto = _serializar_campo_json(payload) if payload is not None else ""
+    headers_texto = _serializar_campo_json(headers) if headers is not None else ""
+    tipo_norm = (tipo_ataque or "Otro").strip() or "Otro"
+    gravedad_guardar = ""
+    if tipo_norm != "Otro":
+        gravedad_guardar = normalizar_gravedad_almacenada(gravedad) or ""
+    consulta = """
+    INSERT INTO registro_peticiones (
+        ip, ruta, metodo, codigo_http, user_agent, payload, headers,
+        tipo_ataque, gravedad, evento_id, usuario_activo, sesion_id_corto, tiempo_ms,
+        tamano_respuesta_bytes, puerto_origen, timestamp
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            consulta,
+            (
+                ip or "",
+                ruta or "",
+                metodo or "",
+                codigo_http,
+                user_agent or "",
+                payload_texto,
+                headers_texto,
+                tipo_norm,
+                gravedad_guardar,
+                int(evento_id) if evento_id else None,
+                usuario_activo or "Invitado",
+                sesion_id_corto or "",
+                tiempo_ms,
+                tamano_respuesta_bytes,
+                puerto_origen or "",
+                marca_ahora(),
+            ),
+        )
+        conexion.commit()
+        return cursor.lastrowid
+
+
+def obtener_registros_peticiones(limite=2000, periodo=None, ambito="publico"):
+    """
+    Devuelve peticiones HTTP del período, filtradas por ámbito (publico | admin).
 
     Args:
-        limite (int): Máximo de filas (mínimo 1).
+        limite (int): Máximo de filas.
+        periodo (str|None): hoy | ayer | semana | mes | todo
+        ambito (str): «publico» (sin admin/monitor) o «admin» (solo esas rutas).
 
     Returns:
-        list[dict]: Eventos como diccionarios.
+        list[dict]: Filas con id, ip, ruta, metodo, codigo_http, timestamp.
     """
     limite_norm = max(int(limite), 1)
+    rangos = _rangos_periodo_monitor(periodo)
+    where_sql, params = _where_periodo_sql(
+        rangos["desde"], rangos["hasta"], prefijo="rp"
+    )
+    filtro_ambito = _sql_filtro_ambito_peticiones(ambito, prefijo="rp")
+
+    partes = [filtro_ambito]
+    if where_sql:
+        partes.insert(0, where_sql)
+
+    consulta = f"""
+    SELECT {_SELECT_REGISTRO_PETICIONES_CORRELADO}
+    {_FROM_REGISTRO_PETICIONES_CON_ALERTA}
+    WHERE {" AND ".join(partes)}
+    ORDER BY rp.timestamp DESC, rp.id DESC
+    LIMIT ?;
+    """
+    params = list(params) + [limite_norm]
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, params)
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def obtener_registro_peticion_por_id(peticion_id):
+    """Devuelve una petición HTTP por id o None."""
+    try:
+        id_norm = int(peticion_id)
+    except (TypeError, ValueError):
+        return None
+
+    consulta = f"""
+    SELECT {_SELECT_REGISTRO_PETICIONES_CORRELADO}
+    {_FROM_REGISTRO_PETICIONES_CON_ALERTA}
+    WHERE rp.id = ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (id_norm,))
+        fila = cursor.fetchone()
+        return dict(fila) if fila else None
+
+
+def _where_peticion_dia_exacto_sql(fecha, prefijo=""):
+    """Filtro de un solo día calendario (YYYY-MM-DD) sobre timestamp."""
+    fecha_limpia = (fecha or "").strip()
+    if len(fecha_limpia) != 10:
+        return None, []
+    col = f"{prefijo}." if prefijo else ""
+    return (
+        f"strftime('%Y-%m-%d', {col}timestamp) = ?",
+        [fecha_limpia],
+    )
+
+
+def listar_ips_peticiones_publicas():
+    """IPs distintas con tráfico público (sin /admin ni /monitor)."""
+    consulta = f"""
+    SELECT DISTINCT TRIM(ip) AS ip
+    FROM registro_peticiones
+    WHERE {_sql_filtro_ambito_peticiones("publico")}
+      AND ip IS NOT NULL AND TRIM(ip) != ''
+    ORDER BY ip ASC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        return [fila["ip"] for fila in cursor.fetchall() if fila["ip"]]
+
+
+def listar_fechas_peticiones_publicas_por_ip(ip):
+    """
+    Días con peticiones públicas para una IP (YYYY-MM-DD, más reciente primero).
+    """
+    ip_limpia = (ip or "").strip()
+    if not ip_limpia:
+        return []
+
+    consulta = f"""
+    SELECT strftime('%Y-%m-%d', timestamp) AS fecha, COUNT(*) AS total
+    FROM registro_peticiones
+    WHERE {_sql_filtro_ambito_peticiones("publico")}
+      AND TRIM(ip) = ?
+      AND timestamp IS NOT NULL
+    GROUP BY fecha
+    ORDER BY fecha DESC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (ip_limpia,))
+        return [
+            {"fecha": fila["fecha"], "total": int(fila["total"] or 0)}
+            for fila in cursor.fetchall()
+            if fila["fecha"]
+        ]
+
+
+def obtener_peticiones_publicas_por_ip_y_fecha(ip, fecha, limite=10000):
+    """
+    Peticiones públicas de una IP en un único día (24 h calendario).
+
+    Args:
+        ip (str): Dirección IP exacta.
+        fecha (str): YYYY-MM-DD.
+        limite (int): Tope de filas.
+
+    Returns:
+        list[dict]: Filas completas de registro_peticiones.
+    """
+    ip_limpia = (ip or "").strip()
+    where_dia, params_dia = _where_peticion_dia_exacto_sql(fecha, prefijo="rp")
+    if not ip_limpia or where_dia is None:
+        return []
+
+    limite_norm = max(int(limite), 1)
+    partes = [
+        _sql_filtro_ambito_peticiones("publico", prefijo="rp"),
+        "TRIM(rp.ip) = ?",
+        where_dia,
+    ]
+    params = [ip_limpia] + params_dia
+
+    consulta = f"""
+    SELECT {_SELECT_REGISTRO_PETICIONES_CORRELADO}
+    {_FROM_REGISTRO_PETICIONES_CON_ALERTA}
+    WHERE {" AND ".join(partes)}
+    ORDER BY rp.timestamp ASC, rp.id ASC
+    LIMIT ?;
+    """
+    params.append(limite_norm)
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, params)
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+# Períodos admitidos en los APIs del monitor (query ?periodo=).
+PERIODOS_MONITOR_VALIDOS = ("hoy", "ayer", "semana", "mes", "todo")
+
+
+def normalizar_periodo_monitor(periodo):
+    """
+    Normaliza el parámetro ?periodo= del monitor a un valor canónico.
+
+    Acepta alias legacy del dashboard: 7d → semana, 30d → mes.
+    """
+    clave = (periodo or "todo").lower().strip()
+    alias = {
+        "todos": "todo",
+        "7d": "semana",
+        "30d": "mes",
+        "semanal": "semana",
+        "mensual": "mes",
+    }
+    clave = alias.get(clave, clave)
+    if clave not in PERIODOS_MONITOR_VALIDOS:
+        return "todo"
+    return clave
+
+
+def _rangos_periodo_monitor(periodo):
+    """
+    Calcula ventanas en Europe/Madrid para el período actual y el anterior (tarjetas).
+
+    Returns:
+        dict: claves periodo, desde, hasta, anterior_desde, anterior_hasta,
+              etiqueta_variacion, modo_actividad ('hora' | 'dia').
+    """
+    clave = normalizar_periodo_monitor(periodo)
+    ahora = ahora_naive()
+    inicio_hoy = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if clave == "hoy":
+        return {
+            "periodo": "hoy",
+            "desde": inicio_hoy,
+            "hasta": ahora,
+            "anterior_desde": inicio_hoy - timedelta(days=1),
+            "anterior_hasta": inicio_hoy,
+            "etiqueta_variacion": "vs ayer",
+            "modo_actividad": "hora",
+        }
+    if clave == "ayer":
+        fin_ayer = inicio_hoy
+        inicio_ayer = fin_ayer - timedelta(days=1)
+        return {
+            "periodo": "ayer",
+            "desde": inicio_ayer,
+            "hasta": fin_ayer,
+            "anterior_desde": inicio_ayer - timedelta(days=1),
+            "anterior_hasta": inicio_ayer,
+            "etiqueta_variacion": "vs antierior",
+            "modo_actividad": "hora",
+        }
+    if clave == "semana":
+        return {
+            "periodo": "semana",
+            "desde": ahora - timedelta(days=7),
+            "hasta": ahora,
+            "anterior_desde": ahora - timedelta(days=14),
+            "anterior_hasta": ahora - timedelta(days=7),
+            "etiqueta_variacion": "vs semana anterior",
+            "modo_actividad": "dia",
+        }
+    if clave == "mes":
+        return {
+            "periodo": "mes",
+            "desde": ahora - timedelta(days=30),
+            "hasta": ahora,
+            "anterior_desde": ahora - timedelta(days=60),
+            "anterior_hasta": ahora - timedelta(days=30),
+            "etiqueta_variacion": "vs mes anterior",
+            "modo_actividad": "dia",
+        }
+
+    return {
+        "periodo": "todo",
+        "desde": None,
+        "hasta": None,
+        "anterior_desde": ahora - timedelta(days=30),
+        "anterior_hasta": ahora,
+        "etiqueta_variacion": "vs últimos 30 días",
+        "modo_actividad": "dia",
+    }
+
+
+def _fmt_ts_sql(dt):
+    """Formatea datetime (Madrid) para comparar con columnas timestamp en SQLite."""
+    if dt is None:
+        return None
+    return formatear_marca(dt)
+
+
+def _where_periodo_sql(desde, hasta, prefijo=""):
+    """Fragmento WHERE y parámetros para filtrar por rango temporal."""
+    col = f"{prefijo}." if prefijo else ""
+    if desde is None and hasta is None:
+        return "", []
+    if hasta is None:
+        return f"{col}timestamp >= ?", [_fmt_ts_sql(desde)]
+    return (
+        f"{col}timestamp >= ? AND {col}timestamp < ?",
+        [_fmt_ts_sql(desde), _fmt_ts_sql(hasta)],
+    )
+
+
+def _es_tipo_otro(tipo):
+    """True si el tipo corresponde a actividad normal / ruido no clasificado como ataque."""
+    return str(tipo or "").strip().lower() == "otro"
+
+
+def _filtrar_mapa_sin_otro(diccionario):
+    """Elimina la clave 'Otro' de agregaciones por tipo de ataque."""
+    return {
+        clave: valor
+        for clave, valor in (diccionario or {}).items()
+        if not _es_tipo_otro(clave)
+    }
+
+
+def _sql_excluir_rutas_zona_admin(prefijo=""):
+    """Excluye tráfico de paneles /admin y /monitor (aislamiento SOC público)."""
+    col = f"{prefijo}." if prefijo else ""
+    return (
+        f"({col}ruta NOT LIKE '/admin%' AND {col}ruta NOT LIKE '/monitor%')"
+    )
+
+
+def _sql_solo_rutas_zona_admin(prefijo=""):
+    """Solo rutas de administración y monitor."""
+    col = f"{prefijo}." if prefijo else ""
+    return f"({col}ruta LIKE '/admin%' OR {col}ruta LIKE '/monitor%')"
+
+
+def _sql_condicion_amenazas_reales(prefijo=""):
+    """
+    Incidentes con severidad en tráfico público (sin /admin ni /monitor).
+
+    Excluye tráfico «Otro», gravedad vacía y rutas de paneles internos.
+    """
+    col = f"{prefijo}." if prefijo else ""
+    return (
+        f"({col}gravedad IS NOT NULL AND TRIM({col}gravedad) <> '') "
+        f"AND LOWER(TRIM(COALESCE({col}tipo_ataque, ''))) <> 'otro' "
+        f"AND {_sql_excluir_rutas_zona_admin(prefijo)}"
+    )
+
+
+def _migrar_gravedades_eventos_legacy():
+    """Normaliza gravedades antiguas (CRÍTICO/ALTO/MEDIO/BAJO) y limpia eventos «Otro»."""
+    mapa = [
+        (GRAVEDAD_CRITICA, ("CRÍTICO", "CRITICO", "Crítica")),
+        (GRAVEDAD_ALTA, ("ALTO", "Alta")),
+        (GRAVEDAD_SOSPECHOSO, ("MEDIO", "BAJO", "Sospechoso")),
+    ]
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        for canon, variantes in mapa:
+            for variante in variantes:
+                cursor.execute(
+                    "UPDATE eventos SET gravedad = ? WHERE gravedad = ?;",
+                    (canon, variante),
+                )
+        cursor.execute(
+            """
+            UPDATE eventos
+            SET gravedad = NULL
+            WHERE LOWER(TRIM(COALESCE(tipo_ataque, ''))) = 'otro'
+               OR TRIM(COALESCE(gravedad, '')) = '';
+            """
+        )
+        conexion.commit()
+
+
+def _where_gravedad_monitor_sql(gravedad_filtro=None):
+    """
+    Fragmento WHERE + parámetros para listados del monitor.
+
+    Sin filtro concreto: solo amenazas reales. Con filtro: gravedad exacta (canónica).
+    """
+    condicion = _sql_condicion_amenazas_reales()
+    canon = normalizar_gravedad_filtro_api(gravedad_filtro)
+    if canon:
+        return f"{condicion} AND gravedad = ?", [canon]
+    return condicion, []
+
+
+def _filtro_sql_graficos_sin_otro(filtro_periodo):
+    """
+    Añade exclusión de ruido al fragmento WHERE del período (métricas SOC).
+
+    Excluye tipo «Otro» y filas sin gravedad asignada.
+    """
+    excl = _sql_condicion_amenazas_reales()
+    if filtro_periodo:
+        return f"{filtro_periodo} AND {excl}"
+    return f" WHERE {excl}"
+
+
+def _contar_eventos_rango(cursor, desde, hasta):
+    """Cuenta eventos en un rango; sin rango cuenta toda la tabla."""
+    where_sql, params = _where_periodo_sql(desde, hasta)
+    if where_sql:
+        cursor.execute(f"SELECT COUNT(*) AS n FROM eventos WHERE {where_sql};", params)
+    else:
+        cursor.execute("SELECT COUNT(*) AS n FROM eventos;")
+    return cursor.fetchone()["n"]
+
+
+def _contar_eventos_amenazas_rango(cursor, desde, hasta):
+    """Cuenta solo incidentes con severidad (excluye «Otro» y gravedad vacía)."""
+    where_sql, params = _where_periodo_sql(desde, hasta)
+    amenazas = _sql_condicion_amenazas_reales()
+    if where_sql:
+        cursor.execute(
+            f"SELECT COUNT(*) AS n FROM eventos WHERE {where_sql} AND {amenazas};",
+            params,
+        )
+    else:
+        cursor.execute(f"SELECT COUNT(*) AS n FROM eventos WHERE {amenazas};")
+    return cursor.fetchone()["n"]
+
+
+def obtener_evento_por_id(evento_id):
+    """
+    Devuelve un único evento por su identificador o None si no existe.
+
+    Args:
+        evento_id (int): ID en la tabla `eventos`.
+
+    Returns:
+        dict | None: Fila del evento como diccionario.
+    """
+    try:
+        id_norm = int(evento_id)
+    except (TypeError, ValueError):
+        return None
 
     consulta = """
     SELECT
         id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
         user_agent, timestamp, pais, headers
     FROM eventos
+    WHERE id = ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (id_norm,))
+        fila = cursor.fetchone()
+        return dict(fila) if fila else None
+
+
+def obtener_eventos_ultima_hora(limite=500):
+    """
+    Eventos registrados en la última hora (Europe/Madrid), más recientes primero.
+
+    Args:
+        limite (int): Máximo de filas a devolver.
+
+    Returns:
+        list[dict]: Eventos de la ventana temporal.
+    """
+    limite_norm = max(int(limite), 1)
+    desde = formatear_marca(hace_tiempo(hours=1))
+    consulta = f"""
+    SELECT
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        user_agent, timestamp, pais, headers
+    FROM eventos
+    WHERE timestamp >= ?
+      AND {_sql_condicion_amenazas_reales()}
     ORDER BY timestamp DESC, id DESC
     LIMIT ?;
     """
-
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
-        cursor.execute(consulta, (limite_norm,))
+        cursor.execute(consulta, (desde, limite_norm))
         return [dict(fila) for fila in cursor.fetchall()]
 
 
-def obtener_estadisticas():
+def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
     """
-    Calcula métricas agregadas para el dashboard del monitor.
+    Devuelve los últimos eventos ordenados por fecha descendente.
+
+    Args:
+        limite (int): Máximo de filas (mínimo 1).
+        periodo (str|None): hoy | ayer | semana | mes | todo
+        gravedad (str|None): Filtro exacto (Crítica/Alta/Sospechoso); None = todas las amenazas.
+        ambito (str): «publico» (sin /admin,/monitor), «admin» (solo esas rutas),
+            «todo» (sin filtro de ruta; exportación forense).
 
     Returns:
-        dict: total_eventos, ips_unicas, ataques_por_tipo, ataques_por_gravedad,
-              eventos_por_hora_ultimas_24h.
+        list[dict]: Eventos como diccionarios.
     """
+    limite_norm = max(int(limite), 1)
+    rangos = _rangos_periodo_monitor(periodo)
+    where_sql, params = _where_periodo_sql(rangos["desde"], rangos["hasta"])
+
+    consulta = """
+    SELECT
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        user_agent, timestamp, pais, headers
+    FROM eventos
+    """
+    partes = []
+    grav_params = []
+    if where_sql:
+        partes.append(where_sql)
+
+    if ambito == "admin":
+        partes.append(_sql_solo_rutas_zona_admin())
+        partes.append(
+            "(gravedad IS NOT NULL AND TRIM(gravedad) <> '') "
+            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) <> 'otro'"
+        )
+        canon = normalizar_gravedad_filtro_api(gravedad)
+        if canon:
+            partes.append("gravedad = ?")
+            grav_params = [canon]
+    elif ambito == "todo":
+        cond_base = (
+            "(gravedad IS NOT NULL AND TRIM(gravedad) <> '') "
+            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) <> 'otro'"
+        )
+        canon = normalizar_gravedad_filtro_api(gravedad)
+        if canon:
+            partes.append(f"{cond_base} AND gravedad = ?")
+            grav_params = [canon]
+        else:
+            partes.append(cond_base)
+    else:
+        grav_sql, grav_params = _where_gravedad_monitor_sql(gravedad)
+        partes.append(grav_sql)
+
+    consulta += " WHERE " + " AND ".join(partes)
+    consulta += " ORDER BY timestamp DESC, id DESC LIMIT ?;"
+    params = list(params) + list(grav_params) + [limite_norm]
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, params)
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def obtener_estadisticas(periodo=None):
+    """
+    Calcula métricas agregadas para el dashboard del monitor (filtradas por período).
+
+    Returns:
+        dict: métricas de tarjetas, gráficas, top rutas, alertas y serie temporal.
+    """
+    rangos = _rangos_periodo_monitor(periodo)
+    where_sql, params = _where_periodo_sql(rangos["desde"], rangos["hasta"])
+    filtro = f" WHERE {where_sql}" if where_sql else ""
+    filtro_graficos = _filtro_sql_graficos_sin_otro(filtro)
+
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
 
-        cursor.execute("SELECT COUNT(*) AS total FROM eventos;")
-        total_eventos = cursor.fetchone()["total"]
+        total_eventos = _contar_eventos_amenazas_rango(
+            cursor, rangos["desde"], rangos["hasta"]
+        )
+        total_anterior = _contar_eventos_amenazas_rango(
+            cursor, rangos["anterior_desde"], rangos["anterior_hasta"]
+        )
+
+        if where_sql:
+            variacion_pct = None
+            if total_anterior > 0:
+                variacion_pct = round(
+                    ((total_eventos - total_anterior) / total_anterior) * 100, 1
+                )
+            elif total_eventos > 0:
+                variacion_pct = 100.0
+        else:
+            variacion_pct = None
+            if total_anterior > 0:
+                variacion_pct = round(
+                    ((total_eventos - total_anterior) / total_anterior) * 100, 1
+                )
 
         cursor.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT ip) AS total_ips_unicas
             FROM eventos
-            WHERE ip IS NOT NULL AND TRIM(ip) != '';
-            """
+            {filtro_graficos}
+              AND ip IS NOT NULL AND TRIM(ip) != '';
+            """,
+            params,
         )
         total_ips_unicas = cursor.fetchone()["total_ips_unicas"]
 
+        # IPs que no habían aparecido antes del inicio del período seleccionado
+        ips_nuevas = 0
+        if rangos["desde"] is not None and where_sql:
+            cursor.execute(
+                f"""
+                SELECT COUNT(*) AS n FROM (
+                    SELECT DISTINCT ip FROM eventos
+                    WHERE {where_sql} AND {_sql_condicion_amenazas_reales()}
+                      AND ip IS NOT NULL AND TRIM(ip) != ''
+                    EXCEPT
+                    SELECT DISTINCT ip FROM eventos
+                    WHERE timestamp < ? AND ip IS NOT NULL AND TRIM(ip) != ''
+                );
+                """,
+                params + [_fmt_ts_sql(rangos["desde"])],
+            )
+            ips_nuevas = cursor.fetchone()["n"]
+
         cursor.execute(
-            """
+            f"""
             SELECT
                 COALESCE(NULLIF(TRIM(tipo_ataque), ''), 'sin_clasificar') AS tipo_ataque,
                 COUNT(*) AS cantidad
             FROM eventos
+            {filtro_graficos}
             GROUP BY COALESCE(NULLIF(TRIM(tipo_ataque), ''), 'sin_clasificar')
             ORDER BY cantidad DESC, tipo_ataque ASC;
-            """
-        )
-        ataques_por_tipo = {
-            fila["tipo_ataque"]: fila["cantidad"] for fila in cursor.fetchall()
-        }
-
-        cursor.execute(
-            """
-            SELECT
-                COALESCE(NULLIF(TRIM(gravedad), ''), 'BAJO') AS gravedad,
-                COUNT(*) AS cantidad
-            FROM eventos
-            GROUP BY COALESCE(NULLIF(TRIM(gravedad), ''), 'BAJO')
-            ORDER BY cantidad DESC;
-            """
-        )
-        ataques_por_gravedad = {
-            fila["gravedad"]: fila["cantidad"] for fila in cursor.fetchall()
-        }
-
-        hora_actual_utc = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
-        hora_inicio_utc = hora_actual_utc - timedelta(hours=23)
-
-        eventos_por_hora = {}
-        for desplazamiento in range(24):
-            hora_bucket = hora_inicio_utc + timedelta(hours=desplazamiento)
-            clave = hora_bucket.strftime("%Y-%m-%d %H:00:00")
-            eventos_por_hora[clave] = 0
-
-        cursor.execute(
-            """
-            SELECT
-                strftime('%Y-%m-%d %H:00:00', timestamp) AS hora,
-                COUNT(*) AS cantidad
-            FROM eventos
-            WHERE timestamp >= ?
-            GROUP BY hora
-            ORDER BY hora ASC;
             """,
-            (hora_inicio_utc.strftime("%Y-%m-%d %H:%M:%S"),),
+            params,
         )
+        ataques_por_tipo = _filtrar_mapa_sin_otro(
+            {fila["tipo_ataque"]: fila["cantidad"] for fila in cursor.fetchall()}
+        )
+
+        cursor.execute(
+            f"""
+            SELECT TRIM(gravedad) AS gravedad, COUNT(*) AS cantidad
+            FROM eventos
+            {filtro_graficos}
+            GROUP BY TRIM(gravedad)
+            ORDER BY cantidad DESC;
+            """,
+            params,
+        )
+        ataques_por_gravedad = {}
         for fila in cursor.fetchall():
-            if fila["hora"] in eventos_por_hora:
-                eventos_por_hora[fila["hora"]] = fila["cantidad"]
+            g = normalizar_gravedad_almacenada(fila["gravedad"])
+            if not g:
+                continue
+            ataques_por_gravedad[g] = ataques_por_gravedad.get(g, 0) + fila["cantidad"]
+
+        # Gravedad dominante por tipo (para colorear barras)
+        cursor.execute(
+            f"""
+            SELECT
+                COALESCE(NULLIF(TRIM(tipo_ataque), ''), 'sin_clasificar') AS tipo_ataque,
+                TRIM(gravedad) AS gravedad,
+                COUNT(*) AS cantidad
+            FROM eventos
+            {filtro_graficos}
+            GROUP BY tipo_ataque, gravedad;
+            """,
+            params,
+        )
+        tipos_con_gravedad = {}
+        for fila in cursor.fetchall():
+            tipo = fila["tipo_ataque"]
+            if _es_tipo_otro(tipo):
+                continue
+            grav = normalizar_gravedad_almacenada(fila["gravedad"])
+            if not grav:
+                continue
+            peso = prioridad_gravedad(grav)
+            if tipo not in tipos_con_gravedad or peso > tipos_con_gravedad[tipo]["peso"]:
+                tipos_con_gravedad[tipo] = {"gravedad": grav, "peso": peso}
+        ataques_tipo_gravedad = _filtrar_mapa_sin_otro(
+            {t: v["gravedad"] for t, v in tipos_con_gravedad.items() if not _es_tipo_otro(t)}
+        )
+
+        # Top 5 rutas
+        cursor.execute(
+            f"""
+            SELECT COALESCE(NULLIF(TRIM(ruta), ''), '/') AS ruta, COUNT(*) AS cantidad
+            FROM eventos
+            {filtro_graficos}
+            GROUP BY ruta
+            ORDER BY cantidad DESC
+            LIMIT 5;
+            """,
+            params,
+        )
+        top_rutas = [
+            {"ruta": fila["ruta"], "cantidad": fila["cantidad"]}
+            for fila in cursor.fetchall()
+        ]
+
+        # Serie temporal: por hora o por día
+        actividad_labels = []
+        actividad_valores = []
+        if rangos["modo_actividad"] == "hora" and rangos["desde"]:
+            for h in range(24):
+                actividad_labels.append(f"{h:02d}h")
+                actividad_valores.append(0)
+            cursor.execute(
+                f"""
+                SELECT CAST(strftime('%H', timestamp) AS INTEGER) AS hora, COUNT(*) AS cantidad
+                FROM eventos
+                {filtro_graficos}
+                GROUP BY hora
+                ORDER BY hora;
+                """,
+                params,
+            )
+            for fila in cursor.fetchall():
+                h = int(fila["hora"])
+                if 0 <= h < 24:
+                    actividad_valores[h] = fila["cantidad"]
+        elif rangos["desde"]:
+            cursor.execute(
+                f"""
+                SELECT strftime('%Y-%m-%d', timestamp) AS dia, COUNT(*) AS cantidad
+                FROM eventos
+                {filtro_graficos}
+                GROUP BY dia
+                ORDER BY dia ASC;
+                """,
+                params,
+            )
+            for fila in cursor.fetchall():
+                actividad_labels.append(fila["dia"])
+                actividad_valores.append(fila["cantidad"])
+        else:
+            cursor.execute(
+                f"""
+                SELECT strftime('%Y-%m-%d', timestamp) AS dia, COUNT(*) AS cantidad
+                FROM eventos
+                WHERE timestamp >= ?
+                  AND {_sql_condicion_amenazas_reales()}
+                GROUP BY dia
+                ORDER BY dia ASC;
+                """,
+                (formatear_marca(hace_tiempo(days=30)),),
+            )
+            for fila in cursor.fetchall():
+                actividad_labels.append(fila["dia"])
+                actividad_valores.append(fila["cantidad"])
+
+        pico_indice = 0
+        if actividad_valores:
+            pico_indice = max(range(len(actividad_valores)), key=lambda i: actividad_valores[i])
+
+        # Último incidente con severidad en el período
+        ultimo_filtro = filtro_graficos if filtro_graficos else f" WHERE {_sql_condicion_amenazas_reales()}"
+        cursor.execute(
+            f"""
+            SELECT gravedad, timestamp FROM eventos
+            {ultimo_filtro}
+            ORDER BY timestamp DESC
+            LIMIT 1;
+            """,
+            params,
+        )
+        fila_ult = cursor.fetchone()
+        ultimo_gravedad = None
+        ultimo_hace_min = None
+        if fila_ult:
+            ultimo_gravedad = normalizar_gravedad_almacenada(fila_ult["gravedad"])
+            ultimo_hace_min = minutos_desde_marca(fila_ult["timestamp"])
+
+        # Alertas recientes (Crítica / Alta) dentro del período
+        partes_alerta = [_sql_condicion_amenazas_reales(), f"gravedad IN ('{GRAVEDAD_CRITICA}', '{GRAVEDAD_ALTA}')"]
+        if where_sql:
+            partes_alerta.insert(0, where_sql)
+        grav_where = " AND ".join(partes_alerta)
+        cursor.execute(
+            f"""
+            SELECT ip, tipo_ataque, gravedad, timestamp, ruta
+            FROM eventos
+            WHERE {grav_where}
+            ORDER BY timestamp DESC
+            LIMIT 10;
+            """,
+            params if where_sql else [],
+        )
+        alertas_graves = []
+        for fila in cursor.fetchall():
+            g = normalizar_gravedad_almacenada(fila["gravedad"]) or GRAVEDAD_ALTA
+            hace_min = minutos_desde_marca(fila["timestamp"])
+            alertas_graves.append(
+                {
+                    "ip": fila["ip"] or "—",
+                    "ruta": fila["ruta"] or "/",
+                    "tipo_ataque": fila["tipo_ataque"] or "Otro",
+                    "gravedad": g,
+                    "timestamp": fila["timestamp"],
+                    "hace_min": hace_min,
+                }
+            )
+
+        # ¿Hubo severidad Crítica en los últimos 5 minutos?
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) AS n FROM eventos
+            WHERE gravedad = ?
+              AND timestamp >= ?
+              AND {_sql_excluir_rutas_zona_admin()};
+            """,
+            (GRAVEDAD_CRITICA, formatear_marca(hace_tiempo(minutes=5))),
+        )
+        alertas_criticas_recientes = cursor.fetchone()["n"] > 0
 
     return {
+        "periodo": rangos["periodo"],
         "total_eventos": total_eventos,
+        "total_eventos_variacion_pct": variacion_pct,
+        "total_eventos_variacion_etiqueta": rangos["etiqueta_variacion"],
         "ips_unicas": total_ips_unicas,
+        "ips_nuevas": ips_nuevas,
         "ataques_por_tipo": ataques_por_tipo,
         "ataques_por_gravedad": ataques_por_gravedad,
-        "eventos_por_hora_ultimas_24h": eventos_por_hora,
+        "ataques_tipo_gravedad": ataques_tipo_gravedad,
+        "ataques_detectados": sum(ataques_por_tipo.values()),
+        "top_rutas": top_rutas,
+        "actividad_modo": rangos["modo_actividad"],
+        "actividad_labels": actividad_labels,
+        "actividad_valores": actividad_valores,
+        "actividad_pico_indice": pico_indice,
+        "ultimo_ataque_hace": ultimo_hace_min,
+        "ultimo_ataque_gravedad": ultimo_gravedad,
+        "alertas_graves": alertas_graves,
+        "alertas_criticas_recientes": alertas_criticas_recientes,
+        "variacion_eventos": variacion_pct,
+        "actividad_por_periodo": {
+            "modo": rangos["modo_actividad"],
+            "etiquetas": actividad_labels,
+            "valores": actividad_valores,
+            "pico_indice": pico_indice,
+        },
+        "eventos_por_hora_ultimas_24h": {},
+        "zona_horaria": ZONA_NOMBRE,
     }
+
+
+def obtener_alertas_graves_monitor(limite=10, periodo=None):
+    """
+    Devuelve las últimas alertas Crítica o Alta (orden timestamp DESC).
+
+    Args:
+        limite (int): Máximo de filas (por defecto 10).
+        periodo (str|None): Si se indica, filtra al rango; None = sin filtro temporal.
+
+    Returns:
+        list[dict]: ip, ruta, tipo_ataque, gravedad, timestamp.
+    """
+    limite_norm = max(int(limite), 1)
+    rangos = _rangos_periodo_monitor(periodo) if periodo else {
+        "desde": None,
+        "hasta": None,
+    }
+    where_sql, params = _where_periodo_sql(rangos["desde"], rangos["hasta"])
+    partes = [_sql_condicion_amenazas_reales(), f"gravedad IN ('{GRAVEDAD_CRITICA}', '{GRAVEDAD_ALTA}')"]
+    if where_sql:
+        partes.insert(0, where_sql)
+    grav_where = " AND ".join(partes)
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            f"""
+            SELECT ip, ruta, tipo_ataque, gravedad, timestamp
+            FROM eventos
+            WHERE {grav_where}
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?;
+            """,
+            (params if where_sql else []) + [limite_norm],
+        )
+        resultado = []
+        for fila in cursor.fetchall():
+            g = normalizar_gravedad_almacenada(fila["gravedad"]) or GRAVEDAD_ALTA
+            resultado.append(
+                {
+                    "ip": fila["ip"] or "—",
+                    "ruta": fila["ruta"] or "/",
+                    "tipo_ataque": fila["tipo_ataque"] or "Otro",
+                    "gravedad": g,
+                    "timestamp": fila["timestamp"],
+                }
+            )
+        return resultado
 
 
 def obtener_flags_publicas():
@@ -903,6 +2169,23 @@ def contar_flags_resueltas_por_ip(ip):
         return cursor.fetchone()["total"]
 
 
+def contar_flags_resueltas_por_usuario(usuario_id):
+    """Cuenta cuántas flags distintas ha resuelto un usuario."""
+    if not usuario_id:
+        return 0
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT flag_id) AS total
+            FROM objetivos_completados
+            WHERE usuario_id = ?;
+            """,
+            (usuario_id,),
+        )
+        return cursor.fetchone()["total"]
+
+
 def obtener_ids_flags_resueltas_por_ip(ip):
     """Conjunto de id de flags ya resueltas por esta IP."""
     with obtener_conexion() as conexion:
@@ -910,6 +2193,19 @@ def obtener_ids_flags_resueltas_por_ip(ip):
         cursor.execute(
             "SELECT DISTINCT flag_id FROM flags_resueltas WHERE ip_atacante = ?;",
             (ip,),
+        )
+        return {fila["flag_id"] for fila in cursor.fetchall()}
+
+
+def obtener_ids_flags_resueltas_por_usuario(usuario_id):
+    """Conjunto de id de flags ya resueltas por este usuario."""
+    if not usuario_id:
+        return set()
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT DISTINCT flag_id FROM objetivos_completados WHERE usuario_id = ?;",
+            (usuario_id,),
         )
         return {fila["flag_id"] for fila in cursor.fetchall()}
 
@@ -925,6 +2221,17 @@ def obtener_flags_con_estado_por_ip(ip):
     resueltos = obtener_ids_flags_resueltas_por_ip(ip)
     for flag in flags:
         flag["resuelta"] = flag["id"] in resueltos
+    return flags
+
+
+def obtener_flags_con_estado_por_usuario(usuario_id):
+    """
+    Lista retos públicos marcando cuáles ya resolvió el usuario (para ticks en /objetivos).
+    """
+    flags = obtener_flags_publicas()
+    resueltas = obtener_ids_flags_resueltas_por_usuario(usuario_id)
+    for flag in flags:
+        flag["resuelta"] = flag["id"] in resueltas
     return flags
 
 
@@ -989,7 +2296,7 @@ def enviar_flag(ip, flag_texto):
                 "ya_resuelta": True,
             }
 
-        marca = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        marca = marca_ahora()
         cursor.execute(
             """
             INSERT INTO flags_resueltas (ip_atacante, flag_id, fecha)
@@ -1000,6 +2307,94 @@ def enviar_flag(ip, flag_texto):
         conexion.commit()
 
     resueltas = contar_flags_resueltas_por_ip(ip)
+    return {
+        "exito": True,
+        "mensaje": f"¡Reto «{reto_nombre}» completado!",
+        "puntos": fila_flag["puntos"],
+        "reto_nombre": reto_nombre,
+        "flag_id": flag_id,
+        "resueltas": resueltas,
+        "total": total_retos,
+        "ya_resuelta": False,
+    }
+
+
+def enviar_flag_por_usuario(usuario_id, flag_texto):
+    """
+    Valida y registra una flag enviada por el usuario y la persiste en `objetivos_completados`.
+
+    Returns:
+        dict: Igual que `enviar_flag` pero con progreso individual por usuario.
+    """
+    usuario_key = (usuario_id or "").strip()
+    flag_limpia = (flag_texto or "").strip()
+    total_retos = len(obtener_flags_publicas())
+
+    if not flag_limpia:
+        return {
+            "exito": False,
+            "mensaje": "La flag introducida es incorrecta",
+            "puntos": None,
+            "reto_nombre": None,
+            "flag_id": None,
+            "resueltas": contar_flags_resueltas_por_usuario(usuario_key),
+            "total": total_retos,
+        }
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, puntos, reto_nombre FROM flags WHERE flag_string = ?;
+            """,
+            (flag_limpia,),
+        )
+        fila_flag = cursor.fetchone()
+        if fila_flag is None:
+            return {
+                "exito": False,
+                "mensaje": "La flag introducida es incorrecta",
+                "puntos": None,
+                "reto_nombre": None,
+                "flag_id": None,
+                "resueltas": contar_flags_resueltas_por_usuario(usuario_key),
+                "total": total_retos,
+            }
+
+        flag_id = fila_flag["id"]
+        reto_nombre = fila_flag["reto_nombre"]
+
+        cursor.execute(
+            """
+            SELECT id FROM objetivos_completados
+            WHERE usuario_id = ? AND flag_id = ?;
+            """,
+            (usuario_key, flag_id),
+        )
+        if cursor.fetchone() is not None:
+            resueltas = contar_flags_resueltas_por_usuario(usuario_key)
+            return {
+                "exito": True,
+                "mensaje": f"Ya habías resuelto el reto «{reto_nombre}»",
+                "puntos": fila_flag["puntos"],
+                "reto_nombre": reto_nombre,
+                "flag_id": flag_id,
+                "resueltas": resueltas,
+                "total": total_retos,
+                "ya_resuelta": True,
+            }
+
+        marca = marca_ahora()
+        cursor.execute(
+            """
+            INSERT INTO objetivos_completados (usuario_id, flag_id, fecha)
+            VALUES (?, ?, ?);
+            """,
+            (usuario_key, flag_id, marca),
+        )
+        conexion.commit()
+
+    resueltas = contar_flags_resueltas_por_usuario(usuario_key)
     return {
         "exito": True,
         "mensaje": f"¡Reto «{reto_nombre}» completado!",
@@ -1087,7 +2482,7 @@ def contar_comentarios_visibles_por_ip(ip):
 
 def insertar_comentario(post_id, ip_autor, autor_nombre, contenido):
     """Inserta un comentario visible en un post."""
-    marca = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    marca = marca_ahora()
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
@@ -1114,7 +2509,7 @@ def guardar_reporte_enviado(ip_atacante, datos_ataque):
     else:
         datos_serializados = str(datos_ataque or "")
 
-    marca = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    marca = marca_ahora()
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
@@ -1145,6 +2540,211 @@ def obtener_reportes_enviados():
         return [dict(fila) for fila in cursor.fetchall()]
 
 
+def obtener_reportes_filtrados(ip=None, fecha_inicio=None, fecha_fin=None):
+    """
+    Reportes manuales con filtros dinámicos.
+
+    Args:
+        ip (str|None): IP exacta; si se omite, debe indicarse rango de fechas (ambas).
+        fecha_inicio (str|None): YYYY-MM-DD inclusive.
+        fecha_fin (str|None): YYYY-MM-DD inclusive.
+
+    Returns:
+        list[dict]: Filas ordenadas por fecha descendente.
+    """
+    ip_norm = (ip or "").strip()
+    inicio = (fecha_inicio or "").strip() or None
+    fin = (fecha_fin or "").strip() or None
+
+    condiciones = []
+    params = []
+
+    if ip_norm:
+        condiciones.append("ip_atacante = ?")
+        params.append(ip_norm)
+
+    if inicio and fin:
+        condiciones.append("date(fecha) BETWEEN date(?) AND date(?)")
+        params.extend([inicio, fin])
+    elif inicio:
+        condiciones.append("date(fecha) >= date(?)")
+        params.append(inicio)
+    elif fin:
+        condiciones.append("date(fecha) <= date(?)")
+        params.append(fin)
+
+    if not condiciones:
+        return []
+
+    where = " AND ".join(condiciones)
+    consulta = f"""
+    SELECT id, ip_atacante, datos_ataque, fecha
+    FROM reportes_enviados
+    WHERE {where}
+    ORDER BY fecha DESC, id DESC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, params)
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def obtener_reportes_por_ip(ip, fecha_desde=None, fecha_hasta=None):
+    """Alias retrocompatible; delega en obtener_reportes_filtrados."""
+    return obtener_reportes_filtrados(
+        ip=ip, fecha_inicio=fecha_desde, fecha_fin=fecha_hasta
+    )
+
+
+def obtener_ips_distintas_eventos():
+    """
+    IPs únicas registradas en eventos (mismas fuentes que agrupa el monitor).
+
+    Returns:
+        list[str]: Direcciones ordenadas alfabéticamente.
+    """
+    consulta = """
+    SELECT DISTINCT ip
+    FROM eventos
+    WHERE ip IS NOT NULL AND TRIM(ip) != ''
+    ORDER BY ip ASC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        return [fila["ip"] for fila in cursor.fetchall()]
+
+
+def obtener_fechas_con_eventos():
+    """
+    Días calendario (Europe/Madrid en timestamp) con al menos un evento.
+
+    Returns:
+        list[dict]: {fecha: 'YYYY-MM-DD', total: int}, más reciente primero.
+    """
+    consulta = """
+    SELECT strftime('%Y-%m-%d', timestamp) AS fecha, COUNT(*) AS total
+    FROM eventos
+    WHERE timestamp IS NOT NULL
+    GROUP BY fecha
+    ORDER BY fecha DESC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        return [
+            {"fecha": fila["fecha"], "total": int(fila["total"] or 0)}
+            for fila in cursor.fetchall()
+            if fila["fecha"]
+        ]
+
+
+def obtener_ultima_fecha_con_eventos():
+    """Último día con eventos en BD, o None."""
+    filas = obtener_fechas_con_eventos()
+    return filas[0]["fecha"] if filas else None
+
+
+def contar_eventos_en_fecha(fecha):
+    """Cuenta eventos cuyo timestamp cae en la fecha YYYY-MM-DD (calendario Madrid)."""
+    if not fecha:
+        return 0
+    consulta = """
+    SELECT COUNT(*) AS total
+    FROM eventos
+    WHERE strftime('%Y-%m-%d', timestamp) = ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (fecha,))
+        fila = cursor.fetchone()
+        return int(fila["total"] or 0) if fila else 0
+
+
+def obtener_eventos_por_fecha(fecha, limite=500):
+    """
+    Eventos de un día concreto (fecha en formato YYYY-MM-DD).
+
+    Args:
+        fecha (str): Día calendario.
+        limite (int): Máximo de filas.
+
+    Returns:
+        list[dict]: Eventos del día, más recientes primero.
+    """
+    if not fecha:
+        return []
+    limite_norm = max(int(limite), 1)
+    consulta = """
+    SELECT
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        user_agent, timestamp, pais, headers
+    FROM eventos
+    WHERE strftime('%Y-%m-%d', timestamp) = ?
+    ORDER BY timestamp DESC, id DESC
+    LIMIT ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (fecha, limite_norm))
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def guardar_resumen_diario_ia(fecha, resumen, total_eventos=0):
+    """Persiste o actualiza el resumen IA de un día."""
+    if not fecha or not resumen:
+        return
+    marca = marca_ahora()
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            INSERT INTO resumenes_diarios_ia (fecha, resumen, total_eventos, generado_en)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(fecha) DO UPDATE SET
+                resumen = excluded.resumen,
+                total_eventos = excluded.total_eventos,
+                generado_en = excluded.generado_en;
+            """,
+            (fecha, resumen, int(total_eventos or 0), marca),
+        )
+        conexion.commit()
+
+
+def obtener_resumen_diario_ia(fecha):
+    """Resumen guardado para una fecha, o None."""
+    if not fecha:
+        return None
+    consulta = """
+    SELECT fecha, resumen, total_eventos, generado_en
+    FROM resumenes_diarios_ia
+    WHERE fecha = ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (fecha,))
+        fila = cursor.fetchone()
+        return dict(fila) if fila else None
+
+
+def listar_resumenes_diarios_ia():
+    """
+    Todos los resúmenes diarios IA guardados, del más reciente al más antiguo.
+
+    Returns:
+        list[dict]: fecha, resumen, total_eventos, generado_en.
+    """
+    consulta = """
+    SELECT fecha, resumen, total_eventos, generado_en
+    FROM resumenes_diarios_ia
+    ORDER BY fecha DESC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
 def registrar_ip_bloqueada(ip, motivo=""):
     """
     Persiste una IP en la lista negra (sobrevive reinicios del servidor).
@@ -1155,7 +2755,7 @@ def registrar_ip_bloqueada(ip, motivo=""):
     """
     if not ip:
         return
-    marca = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    marca = marca_ahora()
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
@@ -1206,3 +2806,24 @@ def listar_ips_bloqueadas():
         cursor = conexion.cursor()
         cursor.execute("SELECT ip FROM ips_bloqueadas ORDER BY fecha DESC;")
         return [fila["ip"] for fila in cursor.fetchall()]
+
+
+def limpiar_datos_monitor():
+    """
+    Borra eventos y resúmenes IA del monitor (útil tras migración de zona horaria).
+
+    Returns:
+        dict: conteos eliminados por tabla.
+    """
+    tablas = (
+        ("eventos", "DELETE FROM eventos;"),
+        ("resumenes_diarios_ia", "DELETE FROM resumenes_diarios_ia;"),
+    )
+    resultado = {}
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        for nombre, sql in tablas:
+            cursor.execute(sql)
+            resultado[nombre] = cursor.rowcount
+        conexion.commit()
+    return resultado

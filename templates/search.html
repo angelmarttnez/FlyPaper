@@ -47,11 +47,6 @@
   }
   .nav-links a:hover { background: #1a2138; color: #fff; }
   .nav-links a.active { background: #1a2138; color: #fff; }
-  .nav-links a.login {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: #fff;
-  }
-  .nav-links a.login:hover { opacity: 0.9; }
   main {
     padding: 40px 32px;
     max-width: 1100px;
@@ -133,6 +128,16 @@
   }
   tbody tr:hover { background: rgba(79, 124, 255, 0.05); }
   .empty { text-align: center; color: #8aa0c8; padding: 28px; }
+  .alert-acceso {
+    background: rgba(220, 50, 70, 0.12);
+    border: 1px solid rgba(220, 50, 70, 0.45);
+    border-left: 4px solid #ef4444;
+    color: #ff9aa8;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+  }
   .excerpt { color: #b8c8e8; max-width: 480px; }
   footer {
     text-align: center;
@@ -144,21 +149,15 @@
 </style>
 </head>
 <body>
-  <!-- Navegación global (enlaces alineados con blog.html; Buscar resaltado) -->
-  <nav class="navbar">
-    <div class="logo">FlyPaper</div>
-    <ul class="nav-links">
-      <li><a href="/">Inicio</a></li>
-      <li><a href="/blog">Blog</a></li>
-      <li><a href="/objetivos">Objetivos CTF</a></li>
-      <li><a href="/search" class="active">Buscar</a></li>
-      <li><a href="/login" class="login">Login</a></li>
-    </ul>
-  </nav>
+  {% include 'partials/navbar_publico.html' %}
 
   <main>
     <h1>Búsqueda interna</h1>
     <p class="subtitle">Busca en publicaciones del blog (columnas: id, título, contenido, fecha).</p>
+
+    {% if mensaje_acceso %}
+    <div class="alert-acceso" role="alert">{{ mensaje_acceso }}</div>
+    {% endif %}
 
     <form class="search" method="POST" action="/search">
       <input type="text" name="query" placeholder="Buscar en títulos y contenido..." value="{{ query or '' }}" autocomplete="off" />

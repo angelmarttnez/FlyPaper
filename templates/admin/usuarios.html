@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>FlyPaper Admin — Usuarios</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
+.sidebar{width:240px;background:#161b22;border-right:1px solid #21262d;padding:24px 0;display:flex;flex-direction:column;min-height:100vh}
+.logo{padding:0 24px 24px;font-size:20px;font-weight:700;color:#58a6ff;border-bottom:1px solid #21262d;margin-bottom:16px}
+.logo span{color:#e4e6eb}
+.nav{flex:1;display:flex;flex-direction:column;gap:4px;padding:0 12px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 14px;color:#8b949e;text-decoration:none;border-radius:6px;font-size:14px;transition:all .15s}
+.nav a:hover{background:#21262d;color:#e4e6eb}
+.nav a.active{background:#1f6feb22;color:#58a6ff;border-left:3px solid #58a6ff;padding-left:11px}
+.nav .icon{width:18px;height:18px;display:inline-block;text-align:center}
+.logout{margin-top:auto;padding:0 12px}
+.logout a{color:#f85149}
+.logout a:hover{background:#f8514922;color:#ff6b6b}
+.main{flex:1;padding:32px 40px;overflow-x:auto}
+.header{margin-bottom:8px}
+.header h1{font-size:24px;font-weight:600}
+.header p{color:#8b949e;font-size:14px;margin-top:4px}
+.card{background:#161b22;border:1px solid #21262d;border-radius:8px;margin-top:24px;overflow:hidden}
+.toolbar{padding:16px 20px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center}
+.toolbar span{color:#8b949e;font-size:13px}
+table{width:100%;border-collapse:collapse}
+th{background:#0d1117;text-align:left;padding:12px 20px;font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #21262d}
+td{padding:14px 20px;font-size:14px;border-bottom:1px solid #21262d;color:#e4e6eb}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1c2128}
+.user-cell{display:flex;align-items:center;gap:10px}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.avatar-it{background:linear-gradient(135deg,#1f6feb,#58a6ff)}
+.avatar-rrhh{background:linear-gradient(135deg,#238636,#3fb950)}
+.avatar-ventas{background:linear-gradient(135deg,#d29922,#f0883e)}
+.avatar-admin{background:linear-gradient(135deg,#da3633,#f85149)}
+.avatar-soporte{background:linear-gradient(135deg,#6e7681,#8b949e)}
+.avatar-default{background:linear-gradient(135deg,#58a6ff,#bc8cff)}
+.username{font-weight:600;color:#e4e6eb}
+.nombre-completo{color:#8b949e;font-size:12px;margin-top:2px}
+.email{color:#8b949e;font-size:13px}
+.id{color:#6e7681;font-family:"SF Mono",Menlo,monospace;font-size:13px}
+.badge-depto{display:inline-block;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600}
+.badge-it{background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55}
+.badge-rrhh{background:#23863633;color:#3fb950;border:1px solid #23863655}
+.badge-ventas{background:#d2992233;color:#f0883e;border:1px solid #d2992255}
+.badge-admin{background:#da363333;color:#f85149;border:1px solid #da363355}
+.badge-soporte{background:#6e768133;color:#8b949e;border:1px solid #6e768155}
+.badge-default{background:#8b949e33;color:#8b949e;border:1px solid #30363d}
+.empty{padding:40px;text-align:center;color:#8b949e}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo">Fly<span>Paper</span></div>
+  <nav class="nav">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/usuarios" class="active">Usuarios</a>
+    <a href="/admin/configuracion">Configuración</a>
+    <a href="/admin/reportes">Reportes</a>
+  </nav>
+  <div class="logout nav">
+    <a href="/logout">Logout</a>
+  </div>
+</aside>
+<main class="main">
+  <div class="header">
+    <h1>Usuarios</h1>
+    <p>Usuarios registrados en la base de datos corporativa (tabla pública)</p>
+  </div>
+  <div class="card">
+    <div class="toolbar">
+      <span>{{ total_usuarios }} usuario(s) en el directorio</span>
+    </div>
+    {% if usuarios and usuarios|length > 0 %}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Nombre completo</th>
+          <th>Departamento</th>
+          <th>Email</th>
+          <th>Avatar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for usuario in usuarios %}
+        {% set depto = usuario.departamento or '—' %}
+        {% set inicial = (usuario.nombre or usuario.username or '?')[0]|upper %}
+        {% if depto == 'IT' %}
+          {% set clase_avatar = 'avatar-it' %}
+          {% set clase_badge = 'badge-it' %}
+        {% elif depto == 'RRHH' %}
+          {% set clase_avatar = 'avatar-rrhh' %}
+          {% set clase_badge = 'badge-rrhh' %}
+        {% elif depto == 'Ventas' %}
+          {% set clase_avatar = 'avatar-ventas' %}
+          {% set clase_badge = 'badge-ventas' %}
+        {% elif depto == 'Admin' %}
+          {% set clase_avatar = 'avatar-admin' %}
+          {% set clase_badge = 'badge-admin' %}
+        {% elif depto == 'Soporte' %}
+          {% set clase_avatar = 'avatar-soporte' %}
+          {% set clase_badge = 'badge-soporte' %}
+        {% else %}
+          {% set clase_avatar = 'avatar-default' %}
+          {% set clase_badge = 'badge-default' %}
+        {% endif %}
+        <tr>
+          <td class="id">#{{ usuario.id }}</td>
+          <td><span class="username">{{ usuario.username }}</span></td>
+          <td>
+            <div class="user-cell">
+              <div class="avatar {{ clase_avatar }}" title="{{ usuario.nombre }} {{ usuario.apellido }}">{{ inicial }}</div>
+              <div>
+                <div class="username">{{ usuario.nombre }} {{ usuario.apellido }}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="badge-depto {{ clase_badge }}">{{ depto }}</span></td>
+          <td class="email">{{ usuario.email or '—' }}</td>
+          <td>
+            <div class="avatar {{ clase_avatar }}">{{ inicial }}</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No hay usuarios en la base de datos.</p>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

@@ -127,6 +127,14 @@
     <h1>FlyPaper</h1>
     <p class="subtitle">Inicia sesión en tu cuenta</p>
 
+    {% if mensaje_timeout %}
+    <div class="error">{{ mensaje_timeout }}</div>
+    {% endif %}
+    {% if mensaje_cierre %}
+    <div class="error" style="background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.45);color:#93c5fd">
+      {{ mensaje_cierre }}
+    </div>
+    {% endif %}
     <div id="error-msg" class="error" style="display:none;">
       Usuario o contraseña incorrectos. Acceso denegado.
     </div>

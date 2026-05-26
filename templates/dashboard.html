@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FlyPaper / Security Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -13,6 +14,8 @@
     min-height: 100vh;
     padding-top: 64px;
   }
+
+  /* ——— Cabecera fija ——— */
   header {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -26,14 +29,48 @@
     z-index: 100;
   }
   header .brand { font-size: 16px; font-weight: 600; }
-  header .right { display: flex; align-items: center; gap: 16px; }
+  header .right { display: flex; align-items: center; gap: 14px; }
+  .live-wrap { display: flex; align-items: center; gap: 10px; }
   .live {
     color: #22c55e;
     font-size: 13px;
     font-weight: 600;
-    animation: blink 1.2s infinite;
+    animation: pulse-live 1.2s infinite;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
-  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .live::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .tz-badge {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+    padding: 4px 8px;
+    border: 1px solid #334155;
+    border-radius: 4px;
+  }
+  @keyframes pulse-live { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .badge-critico-header {
+    display: none;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    animation: blink-critico 0.8s infinite;
+  }
+  .badge-critico-header.visible { display: inline-block; }
+  @keyframes blink-critico { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.6); } 50% { opacity: 0.7; box-shadow: 0 0 12px 2px rgba(239,68,68,0.5); } }
   .btn-logout {
     background: transparent;
     color: #e2e8f0;
@@ -47,45 +84,549 @@
   }
   .btn-logout:hover { background: #1e293b; }
 
-  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+  main { padding: 20px 24px 32px; max-width: 1600px; margin: 0 auto; }
 
+  /* ——— Barra global de período ——— */
+  .periodo-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 12px 14px;
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+  }
+  .periodo-bar .periodo-label {
+    width: 100%;
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 2px;
+  }
+  .btn-periodo {
+    background: #0a0e1a;
+    color: #94a3b8;
+    border: 1px solid #1e293b;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .btn-periodo:hover { color: #e2e8f0; border-color: #334155; }
+  .btn-periodo.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+
+  /* ——— Layout principal: contenido + alertas ——— */
+  .layout-monitor {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .layout-main { flex: 0 0 70%; min-width: 0; }
+  .panel-alertas {
+    flex: 0 0 calc(30% - 20px);
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 200px);
+    position: sticky;
+    top: 80px;
+  }
+  .panel-alertas-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid #1e293b;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-alertas-header span.sub { font-size: 11px; color: #64748b; font-weight: 400; }
+  .lista-alertas {
+    overflow-y: auto;
+    flex: 1;
+    padding: 8px;
+    min-height: 200px;
+  }
+  .alerta-item {
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    border-left: 3px solid #f97316;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    animation: slide-in-alerta 0.35s ease-out;
+  }
+  .alerta-item.grav-critico { border-left-color: #ef4444; }
+  .alerta-item.grav-alto { border-left-color: #f97316; }
+  .alerta-item .alerta-ip {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .alerta-item .alerta-meta { color: #94a3b8; margin-top: 4px; }
+  .alerta-item .alerta-ruta {
+    color: #64748b;
+    font-size: 11px;
+    margin-top: 4px;
+    word-break: break-all;
+  }
+  .alerta-vacio {
+    text-align: center;
+    color: #64748b;
+    padding: 24px 12px;
+    font-size: 13px;
+  }
+  @keyframes slide-in-alerta {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ——— Paneles de IA (resumen, anomalías, modal) ——— */
+  .card-ia {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .card-ia-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .card-ia-header h3 { font-size: 15px; font-weight: 600; color: #e2e8f0; }
+  .btn-ia {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-ia:hover { opacity: 0.92; }
+  .btn-ia:disabled { opacity: 0.55; cursor: wait; }
+  .resumen-controles {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .resumen-controles label {
+    font-size: 12px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .resumen-fecha-input {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .resumen-fecha-input:focus {
+    outline: none;
+    border-color: #6366f1;
+  }
+  .resumen-eventos-badge {
+    font-size: 11px;
+    color: #64748b;
+    padding: 4px 8px;
+    background: #1e293b;
+    border-radius: 4px;
+  }
+  .resumen-meta { font-size: 12px; color: #64748b; margin-bottom: 10px; }
+  .resumen-sin-datos { color: #f87171; font-style: normal; }
+  .resumen-contenido {
+    font-size: 14px;
+    line-height: 1.65;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .resumen-contenido.placeholder { color: #64748b; font-style: italic; }
+  .ia-spinner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #a5b4fc;
+    font-size: 14px;
+    padding: 16px 0;
+  }
+  .ia-spinner::before {
+    content: "";
+    width: 20px;
+    height: 20px;
+    border: 2px solid #334155;
+    border-top-color: #8b5cf6;
+    border-radius: 50%;
+    animation: spin-ia 0.8s linear infinite;
+  }
+  @keyframes spin-ia { to { transform: rotate(360deg); } }
+
+  .panel-anomalias-ia {
+    border-bottom: 1px solid #1e293b;
+    padding: 12px;
+    flex-shrink: 0;
+  }
+  .panel-anomalias-ia h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: #e2e8f0;
+  }
+  .anomalia-ok {
+    text-align: center;
+    color: #22c55e;
+    font-size: 13px;
+    padding: 12px 8px;
+  }
+  .anomalia-alerta {
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 12px;
+  }
+  .anomalia-alerta .anomalia-desc {
+    color: #cbd5e1;
+    line-height: 1.5;
+    margin: 8px 0;
+  }
+  .anomalia-ips {
+    margin-top: 8px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .anomalia-patron {
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 11px;
+  }
+
+  .btn-analizar-ia {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid #4f46e5;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-analizar-ia:hover { background: rgba(99, 102, 241, 0.35); }
+  .btn-analizar-ia:disabled { opacity: 0.5; cursor: wait; }
+
+  .modal-ia-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.78);
+    z-index: 250;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-ia-overlay.activo { display: flex; }
+  .modal-ia-panel {
+    background: #1a1f2e;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    max-width: 560px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 24px;
+    position: relative;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  }
+  .modal-ia-cerrar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .modal-ia-cerrar:hover { color: #fff; }
+  .modal-ia-titulo {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    padding-right: 28px;
+    color: #e2e8f0;
+  }
+  .modal-ia-seccion {
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #1e293b;
+  }
+  .modal-ia-seccion:last-child { border-bottom: none; margin-bottom: 0; }
+  .modal-ia-seccion .titulo-seccion {
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+  .modal-ia-seccion .cuerpo-seccion {
+    font-size: 14px;
+    line-height: 1.55;
+    color: #e2e8f0;
+  }
+  .badge-sofi-basico { background: #475569; color: #e2e8f0; }
+  .badge-sofi-intermedio { background: #eab308; color: #111827; }
+  .badge-sofi-avanzado { background: #7c3aed; color: #fff; }
+
+  /* ——— Tarjetas de estadísticas ——— */
   .stats-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin-bottom: 24px;
+    gap: 14px;
+    margin-bottom: 20px;
   }
   .stat-card {
     background: #111827;
     border: 1px solid #1e293b;
     border-radius: 8px;
-    padding: 18px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
   }
-  .stat-card .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
-  .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 8px; color: #e2e8f0; }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #3b82f6, #6366f1);
+    opacity: 0.6;
+  }
+  .stat-card .label {
+    font-size: 11px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stat-card .value-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .stat-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #e2e8f0;
+    line-height: 1.1;
+  }
+  .stat-var {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .stat-var.up { color: #22c55e; background: rgba(34,197,94,0.15); }
+  .stat-var.down { color: #ef4444; background: rgba(239,68,68,0.15); }
+  .stat-var.neutral { color: #94a3b8; background: rgba(148,163,184,0.1); }
+  .badge-nuevas {
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(59,130,246,0.2);
+    color: #60a5fa;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .mini-badges-grav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 10px;
+  }
+  .mini-grav {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .mini-grav.critico { background: rgba(239,68,68,0.25); color: #fca5a5; }
+  .mini-grav.alto { background: rgba(249,115,22,0.25); color: #fdba74; }
+  .mini-grav.medio { background: rgba(234,179,8,0.25); color: #fde047; }
+  .mini-grav.bajo { background: rgba(100,116,139,0.3); color: #cbd5e1; }
+  .stat-ultimo-sub {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
 
-  .charts-row {
+  /* ——— Gráficas colapsables ——— */
+  .charts-collapsible {
+    margin-bottom: 20px;
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .charts-collapsible-summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  .charts-collapsible-summary::-webkit-details-marker { display: none; }
+  .charts-collapsible-summary::marker { content: ""; }
+  .charts-collapsible-summary:hover { background: #1e293b; }
+  .charts-collapsible-text { flex: 1; }
+  .charts-collapsible-chevron {
+    flex-shrink: 0;
+    color: #94a3b8;
+    transition: transform 0.2s ease;
+  }
+  .charts-collapsible[open] .charts-collapsible-chevron {
+    transform: rotate(180deg);
+  }
+  .charts-collapsible-inner {
+    padding: 0 14px 14px;
+    border-top: 1px solid #1e293b;
+  }
+  .charts-collapsible:not([open]) .charts-collapsible-inner {
+    display: none;
+  }
+
+  /* ——— Registros de actividad (desplegables) ——— */
+  .actividad-collapsible {
+    margin-bottom: 16px;
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .actividad-collapsible-summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  .actividad-collapsible-summary::-webkit-details-marker { display: none; }
+  .actividad-collapsible-summary::marker { content: ""; }
+  .actividad-collapsible-summary:hover { background: #1e293b; }
+  .actividad-collapsible-chevron {
+    flex-shrink: 0;
+    color: #94a3b8;
+    transition: transform 0.2s ease;
+  }
+  .actividad-collapsible[open] .actividad-collapsible-chevron {
+    transform: rotate(180deg);
+  }
+  .actividad-collapsible-inner {
+    padding: 0 14px 14px;
+    border-top: 1px solid #1e293b;
+  }
+  .actividad-collapsible-desc {
+    font-size: 12px;
+    color: #64748b;
+    margin: 10px 0 12px;
+    line-height: 1.45;
+  }
+  .actividad-collapsible-inner .table-section-header {
+    margin-top: 8px;
+  }
+
+  /* ——— Grilla de gráficas 2×2 ——— */
+  .charts-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 24px;
+    gap: 14px;
+    margin-bottom: 0;
+    padding-top: 14px;
   }
   .chart-card {
     background: #111827;
     border: 1px solid #1e293b;
     border-radius: 8px;
-    padding: 18px;
+    padding: 16px;
+    min-height: 220px;
   }
-  .chart-card h3 { font-size: 14px; margin-bottom: 12px; color: #e2e8f0; }
-  .chart-card canvas { background: #111827; }
+  .chart-card h3 {
+    font-size: 13px;
+    margin-bottom: 10px;
+    color: #e2e8f0;
+    font-weight: 600;
+  }
+  .chart-card canvas { max-height: 200px; }
+  .chart-card-gravedad { min-height: 300px; }
+  .chart-card-gravedad canvas { max-height: 240px; }
 
+  /* ——— Tabla y filtros ——— */
   .table-section {
     background: #111827;
     border: 1px solid #1e293b;
     border-radius: 8px;
     padding: 18px;
   }
-  .table-section h3 { font-size: 14px; margin-bottom: 12px; }
+  .table-section-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .table-section h3 { font-size: 14px; margin: 0; }
+  .toggle-dia-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #94a3b8;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-dia-wrap input { accent-color: #3b82f6; width: 16px; height: 16px; cursor: pointer; }
+
   .filter-bar { margin-bottom: 14px; }
   .filter-row {
     display: flex;
@@ -94,8 +635,7 @@
     gap: 10px;
     margin-bottom: 12px;
   }
-  .filtro-ip-input,
-  .filtro-tiempo-select {
+  .filtro-ip-input {
     background: #0a0e1a;
     border: 1px solid #1e293b;
     color: #e2e8f0;
@@ -103,15 +643,12 @@
     border-radius: 6px;
     font-size: 13px;
     font-family: inherit;
-  }
-  .filtro-ip-input {
     flex: 1;
     min-width: 160px;
     max-width: 280px;
   }
   .filtro-ip-input::placeholder { color: #64748b; }
   .filtro-ip-input:focus { outline: none; border-color: #3b82f6; }
-  .filtro-tiempo-select { cursor: pointer; }
   .btn-limpiar-filtros {
     background: #0a0e1a;
     color: #94a3b8;
@@ -147,7 +684,20 @@
   th { color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; }
   .empty-row td { text-align: center; color: #94a3b8; padding: 28px; }
 
-  /* Filas agrupadas por IP — color según gravedad máxima */
+  /* Cabecera de día colapsable */
+  tr.fila-dia {
+    cursor: pointer;
+    background: #1e293b;
+    border-left: 4px solid #3b82f6;
+  }
+  tr.fila-dia:hover { background: #253045; }
+  tr.fila-dia td { font-weight: 600; font-size: 12px; }
+  tr.fila-dia .dia-resumen { color: #94a3b8; font-weight: 400; font-size: 11px; margin-left: 8px; }
+  tr.fila-dia-contenido td { padding: 0; background: #0d1117; border-bottom: none; }
+  .dia-grupos-inner { padding: 4px 0 8px 0; }
+  .dia-grupos-inner table { margin: 0; }
+  .dia-grupos-inner th { background: #0a0e1a; }
+
   tr.fila-grupo { cursor: pointer; transition: background 0.15s; }
   tr.fila-grupo:hover { filter: brightness(1.08); }
   tr.grav-critico { background: rgba(239, 68, 68, 0.18); border-left: 4px solid #ef4444; }
@@ -178,11 +728,170 @@
     font-weight: 500;
   }
   .btn-reportar-ip:hover { background: #334155; border-color: #3b82f6; }
+  .link-reportes-ip {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 11px;
+    color: #60a5fa;
+    text-decoration: none;
+  }
+  .link-reportes-ip:hover { text-decoration: underline; }
   .btn-reportar-ip.ok {
     background: rgba(34, 197, 94, 0.2);
     border-color: #22c55e;
     color: #22c55e;
   }
+
+  .export-actividad-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 12px 0 16px;
+    padding: 12px 14px;
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+  }
+  .export-actividad-bar .campo-export {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 160px;
+  }
+  .export-actividad-bar label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .export-actividad-bar select,
+  .export-actividad-bar input[type="date"] {
+    background: #111827;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  .export-actividad-acciones {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px 14px;
+    margin-left: auto;
+  }
+  .export-actividad-botones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .btn-export-actividad {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-export-actividad:hover:not(:disabled) {
+    border-color: #3b82f6;
+    background: #253045;
+  }
+  .btn-export-actividad:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .export-actividad-aviso {
+    width: 100%;
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 0;
+  }
+  .texto-normativo {
+    font-size: 11px;
+    line-height: 1.55;
+    color: #64748b;
+    margin: 0;
+  }
+  .texto-normativo strong {
+    color: #94a3b8;
+    font-weight: 600;
+  }
+  .aviso-normativo-iso {
+    font-size: 10px;
+    line-height: 1.5;
+    color: #64748b;
+    margin: 0;
+    max-width: 36rem;
+  }
+  .monitor-compliance-footer {
+    margin-top: 1.5rem;
+    padding: 1rem 0 0;
+    border-top: 1px solid #1e293b;
+  }
+  .fab-compliance {
+    text-align: right;
+    max-width: 16rem;
+    margin-bottom: 4px;
+  }
+  .modal-nis2-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: #94a3b8;
+    cursor: pointer;
+  }
+  .modal-nis2-check input {
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: #3b82f6;
+  }
+  .subtabla tr.fila-peticion {
+    cursor: pointer;
+  }
+  .subtabla tr.fila-peticion:hover {
+    background: rgba(59, 130, 246, 0.12);
+  }
+  .modal-evento-acciones {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid #1e293b;
+  }
+  .modal-evento-acciones-botones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .btn-reportar-peticion {
+    background: transparent;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-reportar-peticion:hover { color: #e2e8f0; border-color: #3b82f6; }
+  .btn-reportar-peticion.ok {
+    border-color: #22c55e;
+    color: #bbf7d0;
+  }
+
   .btn-bloquear-ip {
     background: rgba(239, 68, 68, 0.12);
     color: #fca5a5;
@@ -201,7 +910,6 @@
   }
   .btn-bloquear-ip:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* Subtabla de eventos al expandir un grupo */
   tr.fila-detalle td { padding: 0; background: #0a0e1a; border-bottom: 1px solid #1e293b; }
   .subtabla-wrap { padding: 12px 16px 16px 48px; }
   .subtabla { width: 100%; font-size: 12px; }
@@ -209,8 +917,8 @@
   .subtabla td { padding: 8px 10px; border-bottom: 1px solid #1e293b; }
   .subtabla tbody tr.fila-evento { cursor: pointer; transition: background 0.12s; }
   .subtabla tbody tr.fila-evento:hover td { background: #1e293b !important; }
+  .celda-accion-sub { white-space: nowrap; text-align: right; }
 
-  /* Modal de detalle de evento (sin position:fixed; debajo de la tabla) */
   .modal-evento-overlay {
     display: none;
     align-items: center;
@@ -254,6 +962,52 @@
     padding: 4px 8px;
   }
   .modal-evento-cerrar:hover { color: #e2e8f0; }
+  .modal-evento-panel.modal-peticion-activo { max-width: 760px; }
+  .modal-peticion-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #1e293b;
+  }
+  .modal-peticion-seccion h4 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.45px;
+    color: #64748b;
+    margin: 0 0 10px;
+  }
+  .modal-peticion-campo { margin-bottom: 10px; }
+  .modal-peticion-campo:last-child { margin-bottom: 0; }
+  .modal-peticion-campo .etiqueta {
+    color: #94a3b8;
+    font-size: 10px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+    letter-spacing: 0.35px;
+  }
+  .modal-peticion-campo .valor {
+    color: #e2e8f0;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .modal-peticion-campo .valor.mono {
+    font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+  }
+  @media (max-width: 640px) {
+    .modal-peticion-meta { grid-template-columns: 1fr; }
+  }
+  .modal-peticion-fila-doble {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 520px) {
+    .modal-peticion-fila-doble { grid-template-columns: 1fr; }
+  }
   .modal-evento-fila { margin-bottom: 12px; font-size: 13px; }
   .modal-evento-fila .etiqueta {
     color: #94a3b8;
@@ -302,10 +1056,34 @@
   .badge-scanner { background: #8b5cf6; color: #fff; }
   .badge-fuerza { background: #eab308; color: #111827; }
   .badge-otro { background: #1e293b; color: #e2e8f0; }
-  .badge-gravedad-critico { background: #ef4444; color: #fff; }
-  .badge-gravedad-alto { background: #f97316; color: #fff; }
-  .badge-gravedad-medio { background: #eab308; color: #111827; }
-  .badge-gravedad-bajo { background: #475569; color: #e2e8f0; }
+  .badge-gravedad-critica { background: #ef4444; color: #fff; }
+  .badge-gravedad-alta { background: #f97316; color: #fff; }
+  .badge-gravedad-sospechoso { background: #eab308; color: #111827; }
+  tr.grav-sospechoso { background: rgba(234, 179, 8, 0.1); border-left: 4px solid #eab308; }
+  .alerta-item.grav-sospechoso { border-left-color: #eab308; }
+  .mini-grav.sospechoso { background: rgba(234,179,8,0.25); color: #fde047; }
+  .filtro-gravedad-select {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    min-width: 200px;
+    cursor: pointer;
+  }
+  .filtro-gravedad-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+  .filtro-gravedad-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+  }
 
   .fab-container {
     position: fixed;
@@ -338,195 +1116,765 @@
   }
   .fab-secondary:hover { background: #475569; }
 
+  @media (max-width: 1100px) {
+    .layout-monitor { flex-direction: column; }
+    .layout-main { flex: 1 1 auto; width: 100%; }
+    .panel-alertas {
+      flex: 1 1 auto;
+      width: 100%;
+      max-height: 360px;
+      position: static;
+    }
+  }
   @media (max-width: 900px) {
     .stats-row { grid-template-columns: repeat(2, 1fr); }
-    .charts-row { grid-template-columns: 1fr; }
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 500px) {
+    .stats-row { grid-template-columns: 1fr; }
+    .periodo-bar { gap: 6px; }
+    .btn-periodo { padding: 6px 10px; font-size: 12px; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="brand">🪤 FlyPaper / Security Dashboard</div>
+  <div class="brand">FlyPaper / Security Dashboard</div>
   <div class="right">
-    <span class="live">● LIVE</span>
+    <div class="live-wrap">
+      <span class="live">LIVE</span>
+      <span id="badge-critico-header" class="badge-critico-header">Crítica reciente</span>
+      <span class="tz-badge" id="monitor-zona-horaria" title="Zona horaria de eventos y gráficos">Europe/Madrid</span>
+    </div>
     <a class="btn-logout" href="/monitor/logout">Cerrar sesión</a>
   </div>
 </header>
 
 <main>
-  <section class="stats-row">
-    <div class="stat-card"><div class="label">Total Eventos</div><div class="value" id="stat-total">...</div></div>
-    <div class="stat-card"><div class="label">IPs Únicas</div><div class="value" id="stat-ips">...</div></div>
-    <div class="stat-card"><div class="label">Ataques Detectados</div><div class="value" id="stat-ataques">...</div></div>
-    <div class="stat-card"><div class="label">Último ataque</div><div class="value" id="stat-ultimo">...</div></div>
-  </section>
+  <!-- Barra global de período -->
+  <nav class="periodo-bar" aria-label="Período de análisis">
+    <span class="periodo-label">Período</span>
+    <button type="button" class="btn-periodo active" data-periodo="hoy">Hoy</button>
+    <button type="button" class="btn-periodo" data-periodo="ayer">Ayer</button>
+    <button type="button" class="btn-periodo" data-periodo="semana">Últimos 7 días</button>
+    <button type="button" class="btn-periodo" data-periodo="mes">Últimos 30 días</button>
+    <button type="button" class="btn-periodo" data-periodo="todo">Todo</button>
+  </nav>
 
-  <section class="charts-row">
-    <div class="chart-card">
-      <h3>Ataques por Tipo</h3>
-      <canvas id="chart-tipos" height="180"></canvas>
+  <div class="layout-monitor">
+    <div class="layout-main">
+      <section class="stats-row">
+        <div class="stat-card">
+          <div class="label">Total eventos</div>
+          <div class="value-row">
+            <div class="value" id="stat-total">—</div>
+            <span id="stat-variacion" class="stat-var neutral" style="display:none"></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="label">IPs únicas</div>
+          <div class="value-row">
+            <div class="value" id="stat-ips">—</div>
+            <span id="stat-ips-nuevas" class="badge-nuevas" style="display:none"></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Eventos detectados</div>
+          <div class="value" id="stat-ataques">—</div>
+          <div class="mini-badges-grav" id="stat-gravedades"></div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Último ataque</div>
+          <div class="value" id="stat-ultimo-min">—</div>
+          <div class="stat-ultimo-sub" id="stat-ultimo-grav"></div>
+        </div>
+      </section>
+
+      <section class="card-ia card-resumen-diario" aria-label="Resumen diario IA">
+        <div class="card-ia-header">
+          <h3>Resumen Diario</h3>
+          <div class="resumen-controles">
+            <label for="resumen-fecha">
+              Día
+              <input type="date" id="resumen-fecha" class="resumen-fecha-input" aria-label="Fecha del resumen">
+            </label>
+            <span id="resumen-eventos-badge" class="resumen-eventos-badge"></span>
+            <button type="button" class="btn-ia" id="btn-resumen-diario">Generar resumen</button>
+          </div>
+        </div>
+        <div id="resumen-diario-meta" class="resumen-meta"></div>
+        <div id="resumen-diario-spinner" class="ia-spinner" style="display:none">Generando resumen con Claude...</div>
+        <div id="resumen-diario-contenido" class="resumen-contenido placeholder">
+          Elige un día con actividad y pulsa «Generar resumen», o cambia la fecha para cargar uno guardado.
+        </div>
+      </section>
+
+      <details class="charts-collapsible" id="charts-collapsible">
+        <summary class="charts-collapsible-summary">
+          <span id="charts-summary-label" class="charts-collapsible-text">Ver gráficos estadísticos</span>
+          <svg class="charts-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M4 6l4 4 4-4"/>
+          </svg>
+        </summary>
+        <div class="charts-collapsible-inner">
+          <section class="charts-grid" aria-label="Gráficos estadísticos">
+            <div class="chart-card">
+              <h3>Ataques por Tipo</h3>
+              <canvas id="chart-tipos" height="180"></canvas>
+            </div>
+            <div class="chart-card">
+              <h3 id="chart-actividad-titulo">Actividad por Hora</h3>
+              <canvas id="chart-actividad" height="180"></canvas>
+            </div>
+            <div class="chart-card chart-card-gravedad">
+              <h3>Distribución por Gravedad</h3>
+              <canvas id="chart-gravedad" height="220"></canvas>
+            </div>
+            <div class="chart-card">
+              <h3>Top 5 Rutas Atacadas</h3>
+              <canvas id="chart-rutas" height="180"></canvas>
+            </div>
+          </section>
+        </div>
+      </details>
+
+      <section class="actividad-registros" aria-label="Registros de actividad">
+
+        <details class="actividad-collapsible" id="panel-eventos-detectados" open>
+          <summary class="actividad-collapsible-summary">
+            <span>Eventos detectados por IP</span>
+            <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
+          </summary>
+          <div class="actividad-collapsible-inner">
+            <p class="actividad-collapsible-desc">
+              Alertas de seguridad clasificadas (amenazas con severidad). No incluye tráfico normal ni rutas de administración.
+            </p>
+            <div class="table-section-header">
+              <label class="toggle-dia-wrap">
+                <input type="checkbox" id="toggle-agrupar-dia">
+                Agrupar por día
+              </label>
+            </div>
+            <div class="filter-bar">
+              <div class="filter-row">
+                <input type="text" id="filtro-ip" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
+                <button type="button" id="btn-limpiar-filtros" class="btn-limpiar-filtros">Limpiar filtros</button>
+              </div>
+              <p class="filters-label">Tipo de ataque</p>
+              <div class="filters" id="filtros-tipo">
+                <button type="button" class="filter-btn active" data-filtro="Todos">Todos</button>
+                <button type="button" class="filter-btn" data-filtro="SQLi">SQLi</button>
+                <button type="button" class="filter-btn" data-filtro="XSS">XSS</button>
+                <button type="button" class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
+                <button type="button" class="filter-btn" data-filtro="Scanner">Scanner</button>
+                <button type="button" class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
+                <button type="button" class="filter-btn" data-filtro="Otro">Otro</button>
+              </div>
+              <p class="filters-label">Gravedad</p>
+              <div class="filtro-gravedad-wrap">
+                <select id="filtro-gravedad-select" class="filtro-gravedad-select" aria-label="Filtrar por gravedad">
+                  <option value="Todos" selected>Ver todos</option>
+                  <option value="Crítica">Solo críticos</option>
+                  <option value="Alta">Solo altos</option>
+                  <option value="Sospechoso">Solo sospechosos</option>
+                </select>
+                <div class="filters" id="filtros-gravedad">
+                  <button type="button" class="filter-btn active" data-gravedad="Todos">Ver todos</button>
+                  <button type="button" class="filter-btn" data-gravedad="Crítica">Crítica</button>
+                  <button type="button" class="filter-btn" data-gravedad="Alta">Alta</button>
+                  <button type="button" class="filter-btn" data-gravedad="Sospechoso">Sospechoso</button>
+                </div>
+              </div>
+            </div>
+            <table id="tabla-grupos">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>IP</th>
+                  <th>Eventos detectados</th>
+                  <th>Tipos detectados</th>
+                  <th>Gravedad máx.</th>
+                  <th>Primera vez</th>
+                  <th>Última vez</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-grupos">
+                <tr class="empty-row"><td colspan="8">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="actividad-collapsible" id="panel-actividad-publica">
+          <summary class="actividad-collapsible-summary">
+            <span>Actividad por IP</span>
+            <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
+          </summary>
+          <div class="actividad-collapsible-inner">
+            <p class="actividad-collapsible-desc">
+              Historial de peticiones HTTP hacia el sitio público (blog, búsqueda, objetivos, assets, etc.). Excluye rutas <code>/admin</code> y <code>/monitor</code>.
+            </p>
+            <div class="filter-bar">
+              <div class="filter-row">
+                <input type="text" id="filtro-ip-publica" class="filtro-ip-input" placeholder="Filtrar tabla por IP..." autocomplete="off">
+              </div>
+            </div>
+            <div class="export-actividad-bar" id="export-actividad-publica-bar">
+              <p class="export-actividad-aviso" id="export-actividad-aviso">
+                Debe seleccionar una IP y una fecha exacta de 1 día para exportar.
+              </p>
+              <div class="campo-export">
+                <label for="export-ip-publica">IP del listado</label>
+                <select id="export-ip-publica" aria-label="IP para exportación">
+                  <option value="">Seleccionar IP...</option>
+                </select>
+              </div>
+              <div class="campo-export">
+                <label for="export-fecha-publica">Fecha (1 día)</label>
+                <input type="date" id="export-fecha-publica" aria-label="Fecha exacta de exportación" disabled>
+              </div>
+              <div class="export-actividad-acciones">
+                <div class="export-actividad-botones">
+                  <button type="button" class="btn-export-actividad" id="btn-export-csv-publica" disabled>
+                    Exportar CSV
+                  </button>
+                  <button type="button" class="btn-export-actividad" id="btn-export-headers-publica" disabled>
+                    Exportar Headers
+                  </button>
+                </div>
+                <p class="aviso-normativo-iso" role="note">
+                  <strong>Aviso de Auditoría (ISO 27001):</strong> De acuerdo con la política de gestión de incidentes, esta exportación quedará registrada en el log de auditoría del sistema con el timestamp local y el usuario de administración activo.
+                </p>
+              </div>
+            </div>
+            <table id="tabla-actividad-publica">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>IP</th>
+                  <th>Total peticiones</th>
+                  <th>Primera vez</th>
+                  <th>Última vez</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-actividad-publica">
+                <tr class="empty-row"><td colspan="6">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="actividad-collapsible" id="panel-actividad-admin">
+          <summary class="actividad-collapsible-summary">
+            <span>Actividad de administración</span>
+            <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
+          </summary>
+          <div class="actividad-collapsible-inner">
+            <p class="actividad-collapsible-desc">
+              Peticiones y alertas de seguridad en <code>/admin</code> y <code>/monitor</code> (panel, APIs internas y login de analista). Incluye incidentes con tipo y severidad; excluidas del listado público de eventos.
+            </p>
+            <div class="filter-bar">
+              <div class="filter-row">
+                <input type="text" id="filtro-ip-admin" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
+              </div>
+            </div>
+            <table id="tabla-actividad-admin">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>IP</th>
+                  <th>Total peticiones</th>
+                  <th>Primera vez</th>
+                  <th>Última vez</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-actividad-admin">
+                <tr class="empty-row"><td colspan="6">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <div id="modal-evento-overlay" class="modal-evento-overlay" aria-hidden="true">
+          <div class="modal-evento-panel" id="modal-evento-panel" role="dialog" aria-labelledby="modal-evento-titulo" onclick="event.stopPropagation()">
+            <button type="button" class="modal-evento-cerrar" id="modal-evento-cerrar" aria-label="Cerrar">×</button>
+            <h3 id="modal-evento-titulo">Detalle del evento</h3>
+
+            <div id="modal-cuerpo-peticion" hidden>
+              <div class="modal-peticion-meta">
+                <div class="modal-peticion-seccion">
+                  <h4>Sesión</h4>
+                  <div class="modal-peticion-campo">
+                    <div class="etiqueta">Usuario activo</div>
+                    <div class="valor" id="modal-pet-usuario"></div>
+                  </div>
+                  <div class="modal-peticion-campo">
+                    <div class="etiqueta">ID de sesión</div>
+                    <div class="valor mono" id="modal-pet-sesion"></div>
+                  </div>
+                </div>
+                <div class="modal-peticion-seccion">
+                  <h4>Rendimiento</h4>
+                  <div class="modal-peticion-campo">
+                    <div class="etiqueta">Tiempo de procesamiento</div>
+                    <div class="valor mono" id="modal-pet-tiempo"></div>
+                  </div>
+                  <div class="modal-peticion-campo">
+                    <div class="etiqueta">Tamaño de respuesta</div>
+                    <div class="valor mono" id="modal-pet-tamano"></div>
+                  </div>
+                </div>
+                <div class="modal-peticion-seccion">
+                  <h4>Red</h4>
+                  <div class="modal-peticion-campo">
+                    <div class="etiqueta">IP</div>
+                    <div class="valor mono" id="modal-pet-ip"></div>
+                  </div>
+                  <div class="modal-peticion-campo">
+                    <div class="etiqueta">Puerto origen</div>
+                    <div class="valor mono" id="modal-pet-puerto"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-evento-fila modal-peticion-fila-doble">
+                <div>
+                  <div class="etiqueta">Ruta</div>
+                  <div class="valor" id="modal-pet-ruta"></div>
+                </div>
+                <div>
+                  <div class="etiqueta">Método</div>
+                  <div class="valor" id="modal-pet-metodo"></div>
+                </div>
+              </div>
+              <div class="modal-evento-fila modal-peticion-fila-doble">
+                <div>
+                  <div class="etiqueta">Código HTTP</div>
+                  <div class="valor" id="modal-pet-codigo"></div>
+                </div>
+                <div>
+                  <div class="etiqueta">Timestamp</div>
+                  <div class="valor" id="modal-pet-ts"></div>
+                </div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Tipo de ataque</div>
+                <div class="modal-evento-badges" id="modal-pet-badges"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Payload</div>
+                <pre class="modal-evento-payload" id="modal-pet-payload"></pre>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">User Agent</div>
+                <div class="valor" id="modal-pet-ua"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Headers HTTP</div>
+                <div class="modal-evento-headers" id="modal-pet-headers"></div>
+              </div>
+            </div>
+
+            <div id="modal-cuerpo-evento">
+              <div class="modal-evento-fila">
+                <div class="etiqueta">IP del atacante</div>
+                <div class="valor" id="modal-ev-ip"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Ruta atacada</div>
+                <div class="valor" id="modal-ev-ruta"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Método HTTP</div>
+                <div class="valor" id="modal-ev-metodo"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Tipo de ataque y gravedad</div>
+                <div class="modal-evento-badges" id="modal-ev-badges"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Timestamp</div>
+                <div class="valor" id="modal-ev-ts"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Payload</div>
+                <pre class="modal-evento-payload" id="modal-ev-payload"></pre>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">User Agent</div>
+                <div class="valor" id="modal-ev-ua"></div>
+              </div>
+              <div class="modal-evento-fila">
+                <div class="etiqueta">Headers HTTP</div>
+                <div class="modal-evento-headers" id="modal-ev-headers"></div>
+              </div>
+            </div>
+
+            <div class="modal-evento-acciones" id="modal-ev-acciones" hidden>
+              <label class="modal-nis2-check" for="modal-nis2-significativo">
+                <input type="checkbox" id="modal-nis2-significativo" name="nis2_significativo" value="1">
+                <span>Clasificar como incidente significativo (Directiva NIS 2 - Notificación prioritaria)</span>
+              </label>
+              <div class="modal-evento-acciones-botones">
+                <button type="button" class="btn-analizar-ia" id="modal-btn-analizar-ia">Analizar con IA</button>
+                <button type="button" class="btn-reportar-peticion" id="modal-btn-generar-reporte">Generar reporte</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="monitor-compliance-footer" aria-label="Cumplimiento normativo">
+          <p class="texto-normativo">
+            <strong>Cumplimiento RGPD (Art. 6.1.f):</strong> El registro de direcciones IP y metadatos de red se realiza bajo la base legal de interés legítimo para salvaguardar la seguridad de los activos y prevenir el fraude o ataques dirigidos.
+          </p>
+        </footer>
+      </section>
     </div>
-    <div class="chart-card">
-      <h3>Actividad por Hora</h3>
-      <canvas id="chart-horas" height="180"></canvas>
-    </div>
-  </section>
 
-  <section class="table-section">
-    <h3>Actividad agrupada por IP</h3>
-    <div class="filter-bar">
-      <div class="filter-row">
-        <input type="text" id="filtro-ip" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
-        <select id="filtro-tiempo" class="filtro-tiempo-select" aria-label="Filtrar por tiempo">
-          <option value="todo" selected>Todos</option>
-          <option value="15m">Últimos 15 minutos</option>
-          <option value="1h">Última hora</option>
-          <option value="6h">Últimas 6 horas</option>
-          <option value="24h">Últimas 24 horas</option>
-        </select>
-        <button type="button" id="btn-limpiar-filtros" class="btn-limpiar-filtros">Limpiar filtros</button>
-      </div>
-
-      <p class="filters-label">Tipo de ataque</p>
-      <div class="filters" id="filtros-tipo">
-        <button type="button" class="filter-btn active" data-filtro="Todos">Todos</button>
-        <button type="button" class="filter-btn" data-filtro="SQLi">SQLi</button>
-        <button type="button" class="filter-btn" data-filtro="XSS">XSS</button>
-        <button type="button" class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
-        <button type="button" class="filter-btn" data-filtro="Scanner">Scanner</button>
-        <button type="button" class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
-        <button type="button" class="filter-btn" data-filtro="Otro">Otro</button>
-      </div>
-
-      <p class="filters-label">Gravedad máxima</p>
-      <div class="filters" id="filtros-gravedad">
-        <button type="button" class="filter-btn active" data-gravedad="Todos">Todos</button>
-        <button type="button" class="filter-btn" data-gravedad="CRÍTICO">CRÍTICO</button>
-        <button type="button" class="filter-btn" data-gravedad="ALTO">ALTO</button>
-        <button type="button" class="filter-btn" data-gravedad="MEDIO">MEDIO</button>
-        <button type="button" class="filter-btn" data-gravedad="BAJO">BAJO</button>
-      </div>
-    </div>
-
-    <table id="tabla-grupos">
-      <thead>
-        <tr>
-          <th></th>
-          <th>IP</th>
-          <th>Total eventos</th>
-          <th>Tipos detectados</th>
-          <th>Gravedad máx.</th>
-          <th>Primera vez</th>
-          <th>Última vez</th>
-          <th>Acción</th>
-        </tr>
-      </thead>
-      <tbody id="tbody-grupos">
-        <tr class="empty-row"><td colspan="8">Cargando...</td></tr>
-      </tbody>
-    </table>
-
-    <!-- Modal de detalle al clic en fila de la subtabla (overlay inline, no fixed) -->
-    <div id="modal-evento-overlay" class="modal-evento-overlay" aria-hidden="true">
-      <div class="modal-evento-panel" role="dialog" aria-labelledby="modal-evento-titulo" onclick="event.stopPropagation()">
-        <button type="button" class="modal-evento-cerrar" id="modal-evento-cerrar" aria-label="Cerrar">×</button>
-        <h3 id="modal-evento-titulo">Detalle del evento</h3>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">IP del atacante</div>
-          <div class="valor" id="modal-ev-ip"></div>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">Ruta atacada</div>
-          <div class="valor" id="modal-ev-ruta"></div>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">Método HTTP</div>
-          <div class="valor" id="modal-ev-metodo"></div>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">Tipo de ataque y gravedad</div>
-          <div class="modal-evento-badges" id="modal-ev-badges"></div>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">Timestamp</div>
-          <div class="valor" id="modal-ev-ts"></div>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">Payload</div>
-          <pre class="modal-evento-payload" id="modal-ev-payload"></pre>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">User Agent</div>
-          <div class="valor" id="modal-ev-ua"></div>
-        </div>
-        <div class="modal-evento-fila">
-          <div class="etiqueta">Headers HTTP</div>
-          <div class="modal-evento-headers" id="modal-ev-headers"></div>
+    <aside class="panel-alertas" aria-label="Alertas y anomalías">
+      <div class="panel-anomalias-ia" id="panel-anomalias-ia">
+        <h4>Detector de Anomalías</h4>
+        <div id="panel-anomalias-contenido">
+          <div class="ia-spinner" style="padding:8px 0">Comprobando anomalías...</div>
         </div>
       </div>
-    </div>
-  </section>
+      <div class="panel-alertas-header">
+        Últimas alertas
+        <span class="sub">Crítica / Alta</span>
+      </div>
+      <div id="lista-alertas" class="lista-alertas">
+        <div class="alerta-vacio">Cargando alertas...</div>
+      </div>
+    </aside>
+  </div>
 </main>
 
-<!-- Exportaciones forenses -->
 <div class="fab-container">
-  <a class="fab fab-secondary" href="/monitor/exportar/headers">🔍 Exportar Headers</a>
-  <a class="fab" href="/monitor/exportar">📥 Exportar CSV</a>
+  <p class="aviso-normativo-iso fab-compliance" role="note">
+    <strong>Aviso de Auditoría (ISO 27001):</strong> De acuerdo con la política de gestión de incidentes, esta exportación quedará registrada en el log de auditoría del sistema con el timestamp local y el usuario de administración activo.
+  </p>
+  <a class="fab fab-secondary" href="/monitor/exportar/headers">Exportar Headers</a>
+  <a class="fab" href="/monitor/exportar">Exportar CSV</a>
+</div>
+
+<!-- Modal de análisis IA por evento (overlay fijo sobre toda la ventana) -->
+<div id="modal-ia-overlay" class="modal-ia-overlay" aria-hidden="true">
+  <div class="modal-ia-panel" role="dialog" aria-labelledby="modal-ia-titulo" onclick="event.stopPropagation()">
+    <button type="button" class="modal-ia-cerrar" id="modal-ia-cerrar" aria-label="Cerrar">×</button>
+    <h3 class="modal-ia-titulo" id="modal-ia-titulo">Análisis del evento</h3>
+    <div id="modal-ia-cuerpo"></div>
+  </div>
 </div>
 
 <script>
   /**
-   * Dashboard del monitor de FlyPaper (Fase 4).
-   * - Estadísticas: GET /monitor/api/stats
-   * - Tabla agrupada por IP: GET /monitor/api/eventos
-   * - Reportes por IP: POST /monitor/reportar
-   * - Bloqueo: GET /monitor/api/ips-activas, POST /monitor/bloquear
+   * Dashboard del monitor de seguridad FlyPaper.
+   * - Período global: periodoActual → ?periodo= en stats y eventos
+   * - Estadísticas y gráficas: GET /monitor/api/stats?periodo=X
+   * - Eventos detectados: GET /monitor/api/eventos?periodo=X
+   * - Actividad HTTP: GET /monitor/api/actividad-peticiones?periodo=X&ambito=publico|admin
+   * - IPs activas / bloqueo / reporte: endpoints existentes
+   * - IA: /monitor/api/analizar/<id>, /monitor/api/resumen-diario, /monitor/api/anomalias
    */
 
-  let gruposCache = [];              // Respuesta agrupada del API (lista de objetos por IP)
-  let ipsActivasCache = new Set();   // IPs con sesión/navegación activa (botón Bloquear)
-  let ipsExpandidas = new Set();     // IPs con la subtabla desplegada
+  /** Zona horaria unificada del backend (sin conversión del navegador). */
+  let zonaHorariaMonitor = 'Europe/Madrid';
+
+  /** Período seleccionado en la barra superior (hoy | ayer | semana | mes | todo). */
+  let periodoActual = 'hoy';
+
+  let gruposCache = [];
+  let gruposCachePublico = [];
+  let gruposCacheAdmin = [];
+  let ipsActivasCache = new Set();
+  let ipsExpandidas = new Set();
+  let ipsExpandidasPublico = new Set();
+  let ipsExpandidasAdmin = new Set();
+  let diasExpandidos = new Set();
   let filtroTipoActual = 'Todos';
   let filtroGravedadActual = 'Todos';
-  let chartTipos = null;
-  let chartHoras = null;
+  let agruparPorDia = false;
+  let alertasIdsAnteriores = new Set();
+  let ipsActividadPublica = [];
+  let fechasExportPublica = [];
+  let modalRegistroContext = { fuente: 'evento', registro: null, ip: '' };
 
-  // Tipos con botón propio; "Otro" agrupa el resto.
+  let chartTipos = null;
+  let chartActividad = null;
+  let chartGravedad = null;
+  let chartRutas = null;
+  /** Última respuesta de /monitor/api/stats (para pintar gráficos al abrir el panel). */
+  let cacheDatosGraficos = null;
+
   const TIPOS_CON_BOTON = ['sqli', 'xss', 'reconocimiento', 'scanner', 'fuerza bruta'];
 
+  /** Colores semánticos de gravedad (modo oscuro). */
+  const COLOR_GRAVEDAD = {
+    'Crítica': '#ef4444',
+    'Alta': '#f97316',
+    'Sospechoso': '#eab308',
+  };
+
+  const TOOLTIP_OSCURO = {
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
+    borderWidth: 1,
+    titleColor: '#f1f5f9',
+    bodyColor: '#cbd5e1',
+    footerColor: '#94a3b8',
+    padding: 12,
+    cornerRadius: 6,
+    displayColors: true,
+    boxPadding: 6,
+  };
+
+  /** Omite la categoría de ruido «Otro» en desgloses por tipo. */
+  function filtrarMapaSinOtro(mapa) {
+    const salida = {};
+    Object.entries(mapa || {}).forEach(([clave, valor]) => {
+      if (String(clave).trim().toLowerCase() !== 'otro') salida[clave] = valor;
+    });
+    return salida;
+  }
+
+  const ORDEN_GRAVEDAD = ['Crítica', 'Alta', 'Sospechoso'];
+
+  /** Construye query string con período y filtro de gravedad (API del monitor). */
+  function urlConPeriodo(ruta) {
+    const sep = ruta.includes('?') ? '&' : '?';
+    let url = `${ruta}${sep}periodo=${encodeURIComponent(periodoActual)}`;
+    if (filtroGravedadActual && filtroGravedadActual !== 'Todos') {
+      url += `&gravedad=${encodeURIComponent(filtroGravedadActual)}`;
+    }
+    return url;
+  }
+
+  function sincronizarControlesGravedad(valor) {
+    const sel = document.getElementById('filtro-gravedad-select');
+    if (sel) sel.value = valor;
+    document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.gravedad === valor);
+    });
+  }
+
+  function aplicarFiltroGravedad(valor) {
+    filtroGravedadActual = valor || 'Todos';
+    sincronizarControlesGravedad(filtroGravedadActual);
+    cargarEventos();
+  }
+
+  /** Color de barra según gravedad dominante del tipo de ataque. */
+  function colorPorGravedad(gravedad) {
+    const g = normalizarGravedad(gravedad);
+    return COLOR_GRAVEDAD[g] || '#64748b';
+  }
+
+  /** Plugin Chart.js: total en el centro del doughnut de gravedad. */
+  const pluginCentroDoughnut = {
+    id: 'centroTotal',
+    afterDraw(chart) {
+      const opts = chart.config.options.plugins.centroTotal;
+      if (!opts || !chart.getDatasetMeta(0).data.length) return;
+      const { ctx } = chart;
+      const { left, right, top, bottom } = chart.chartArea;
+      const cx = (left + right) / 2;
+      const cy = (top + bottom) / 2;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(String(opts.total ?? 0), cx, cy - 6);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('eventos', cx, cy + 14);
+      ctx.restore();
+    },
+  };
+
+  Chart.register(pluginCentroDoughnut);
+
   /**
-   * Descarga estadísticas y actualiza tarjetas + gráficas Chart.js.
+   * Cambia el período global y recarga stats, gráficas, tabla y alertas.
    */
-  async function cargarEstadisticas() {
-    try {
-      const res = await fetch('/monitor/api/stats');
-      if (!res.ok) throw new Error('respuesta no OK');
-      const data = await res.json();
+  function cambiarPeriodo(nuevoPeriodo) {
+    periodoActual = nuevoPeriodo;
+    alertasIdsAnteriores = new Set();
+    document.querySelectorAll('.btn-periodo').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.periodo === periodoActual);
+    });
+    recargarTodo();
+  }
 
-      document.getElementById('stat-total').textContent = data.total_eventos ?? 0;
-      document.getElementById('stat-ips').textContent = data.ips_unicas ?? 0;
-      document.getElementById('stat-ataques').textContent = data.ataques_detectados ?? 0;
-      const ultimoMin = data.ultimo_ataque_hace ?? data.ultimo_ataque_min;
-      const ultimoNum = ultimoMin !== undefined && ultimoMin !== null ? Number(ultimoMin) : NaN;
-      document.getElementById('stat-ultimo').textContent = !Number.isNaN(ultimoNum) ? `${ultimoNum} min` : '—';
+  /** Recarga completa del dashboard para el período activo. */
+  function recargarTodo() {
+    cargarEstadisticas();
+    cargarEventos();
+    cargarActividadPeticiones('publico');
+    cargarActividadPeticiones('admin');
+  }
 
-      const ataquesPorTipo = data.ataques_por_tipo ?? data.tipos_ataque ?? {};
-      const actividadPorHora = data.actividad_por_hora ?? data.actividad_horas ?? {};
-      renderChartTipos(ataquesPorTipo);
-      renderChartHoras(actividadPorHora);
-    } catch (e) {
-      ['stat-total', 'stat-ips', 'stat-ataques', 'stat-ultimo'].forEach((id) => {
-        document.getElementById(id).textContent = 'Error al cargar datos';
-      });
+  function urlActividadPeticiones(ambito) {
+    const base = urlConPeriodo('/monitor/api/actividad-peticiones');
+    return `${base}&ambito=${encodeURIComponent(ambito)}`;
+  }
+
+  function graficosPanelAbierto() {
+    return document.getElementById('charts-collapsible').open;
+  }
+
+  /** Fuerza el redimensionado de Chart.js tras mostrar el contenedor. */
+  function redimensionarGraficos() {
+    [chartTipos, chartActividad, chartGravedad, chartRutas].forEach((chart) => {
+      if (chart) chart.resize();
+    });
+  }
+
+  /** Crea o actualiza los cuatro gráficos con los datos en caché. */
+  function actualizarGraficosDesdeCache() {
+    if (!cacheDatosGraficos) return;
+    const data = cacheDatosGraficos;
+    renderChartTipos(
+      filtrarMapaSinOtro(data.ataques_por_tipo),
+      filtrarMapaSinOtro(data.ataques_tipo_gravedad)
+    );
+    renderChartActividad(data);
+    renderChartGravedad(data.ataques_por_gravedad || {});
+    renderChartRutas(data.top_rutas || []);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(redimensionarGraficos);
+    });
+  }
+
+  function actualizarEtiquetaPanelGraficos() {
+    const label = document.getElementById('charts-summary-label');
+    if (!label) return;
+    label.textContent = graficosPanelAbierto()
+      ? 'Ocultar gráficos estadísticos'
+      : 'Ver gráficos estadísticos';
+  }
+
+  function onPanelGraficosToggle() {
+    actualizarEtiquetaPanelGraficos();
+    if (graficosPanelAbierto()) {
+      actualizarGraficosDesdeCache();
     }
   }
 
-  /** Gráfico de barras por tipo de ataque. */
-  function renderChartTipos(tipos) {
+  /**
+   * Descarga estadísticas del API y actualiza tarjetas, gráficas y badge crítico.
+   */
+  async function cargarEstadisticas() {
+    try {
+      const res = await fetch(urlConPeriodo('/monitor/api/stats'));
+      if (!res.ok) throw new Error('respuesta no OK');
+      const data = await res.json();
+
+      if (data.zona_horaria) {
+        zonaHorariaMonitor = data.zona_horaria;
+        const tzEl = document.getElementById('monitor-zona-horaria');
+        if (tzEl) tzEl.textContent = zonaHorariaMonitor;
+      }
+
+      actualizarTarjetas(data);
+      actualizarBadgeCritico(data.alertas_criticas_recientes);
+      cacheDatosGraficos = data;
+      if (graficosPanelAbierto()) {
+        actualizarGraficosDesdeCache();
+      }
+      renderAlertas(data.alertas_graves || []);
+    } catch (e) {
+      ['stat-total', 'stat-ips', 'stat-ataques'].forEach((id) => {
+        document.getElementById(id).textContent = 'Error';
+      });
+      document.getElementById('stat-ultimo-min').textContent = '—';
+    }
+  }
+
+  /** Refresco del panel de alertas cada 10 s vía GET /monitor/api/alertas. */
+  async function refrescarAlertas() {
+    try {
+      const resStats = await fetch(urlConPeriodo('/monitor/api/stats'));
+      if (resStats.ok) {
+        const stats = await resStats.json();
+        actualizarBadgeCritico(stats.alertas_criticas_recientes);
+      }
+      const res = await fetch('/monitor/api/alertas');
+      if (!res.ok) return;
+      const alertas = await res.json();
+      renderAlertas(Array.isArray(alertas) ? alertas : []);
+    } catch (e) {
+      /* No interrumpir el panel si falla un refresco puntual */
+    }
+  }
+
+  /** Muestra u oculta el badge parpadeante de severidad Crítica reciente en la cabecera. */
+  function actualizarBadgeCritico(esCritico) {
+    const badge = document.getElementById('badge-critico-header');
+    badge.classList.toggle('visible', !!esCritico);
+  }
+
+  /** Rellena las cuatro tarjetas de métricas. */
+  function actualizarTarjetas(data) {
+    document.getElementById('stat-total').textContent = data.total_eventos ?? 0;
+
+    const varEl = document.getElementById('stat-variacion');
+    const pct = data.variacion_eventos ?? data.total_eventos_variacion_pct;
+    const etiqueta = data.variacion_eventos_etiqueta || data.total_eventos_variacion_etiqueta || '';
+    if (pct !== null && pct !== undefined && etiqueta) {
+      varEl.style.display = 'inline-block';
+      const signo = pct > 0 ? '+' : '';
+      varEl.textContent = `${signo}${pct}% vs ${etiqueta}`;
+      varEl.className = 'stat-var ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral');
+    } else {
+      varEl.style.display = 'none';
+    }
+
+    document.getElementById('stat-ips').textContent = data.ips_unicas ?? 0;
+    const nuevasEl = document.getElementById('stat-ips-nuevas');
+    const nuevas = data.ips_nuevas ?? 0;
+    if (nuevas > 0) {
+      nuevasEl.style.display = 'inline-block';
+      nuevasEl.textContent = `${nuevas} nuevas`;
+    } else {
+      nuevasEl.style.display = 'none';
+    }
+
+    document.getElementById('stat-ataques').textContent = data.ataques_detectados ?? 0;
+    const gravContainer = document.getElementById('stat-gravedades');
+    const porGrav = data.ataques_por_gravedad || {};
+    gravContainer.innerHTML = ORDEN_GRAVEDAD.filter((g) => porGrav[g])
+      .map((g) => {
+        const cls = g === 'Crítica' ? 'critico' : g.toLowerCase();
+        return `<span class="mini-grav ${cls}">${g}: ${porGrav[g]}</span>`;
+      })
+      .join('');
+
+    const ultimoMin = data.ultimo_ataque_hace ?? data.ultimo_ataque_min;
+    const ultimoNum = ultimoMin !== undefined && ultimoMin !== null ? Number(ultimoMin) : NaN;
+    document.getElementById('stat-ultimo-min').textContent = !Number.isNaN(ultimoNum)
+      ? `${ultimoNum} min`
+      : '—';
+
+    const gravUlt = normalizarGravedad(data.ultimo_ataque_gravedad);
+    document.getElementById('stat-ultimo-grav').innerHTML = gravUlt
+      ? `<span class="badge ${claseGravedadBadge(gravUlt)}">${escapeHtml(gravUlt)}</span>`
+      : '<span style="color:#64748b">—</span>';
+  }
+
+  /** Gráfico de barras por tipo (sin categoría «Otro») con color según gravedad. */
+  function renderChartTipos(tipos, tipoGravedad) {
     const ctx = document.getElementById('chart-tipos').getContext('2d');
-    const labels = Object.keys(tipos || {});
-    const valores = labels.map((k) => tipos[k]);
+    const tiposFiltrados = filtrarMapaSinOtro(tipos);
+    const gravedadFiltrada = filtrarMapaSinOtro(tipoGravedad);
+    const labels = Object.keys(tiposFiltrados);
+    const valores = labels.map((k) => tiposFiltrados[k]);
+    const total = valores.reduce((a, b) => a + b, 0) || 1;
+    const colores = labels.map((t) => colorPorGravedad(gravedadFiltrada[t] || 'Sospechoso'));
+
     if (chartTipos) chartTipos.destroy();
     chartTipos = new Chart(ctx, {
       type: 'bar',
@@ -535,134 +1883,341 @@
         datasets: [{
           label: 'Ataques',
           data: labels.length ? valores : [0],
-          backgroundColor: '#3b82f6',
-          borderRadius: 4
-        }]
+          backgroundColor: labels.length ? colores : ['#334155'],
+          borderRadius: 4,
+        }],
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: false } },
+        animation: { duration: 800 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...TOOLTIP_OSCURO,
+            callbacks: {
+              label(ctx) {
+                const v = ctx.parsed.y ?? 0;
+                const pct = ((v / total) * 100).toFixed(1);
+                return `${v} eventos (${pct}% de amenazas)`;
+              },
+            },
+          },
+        },
         scales: {
           x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
-        }
-      }
-    });
-  }
-
-  /** Gráfico de líneas: actividad por hora del día. */
-  function renderChartHoras(horas) {
-    const ctx = document.getElementById('chart-horas').getContext('2d');
-    const claves = Object.keys(horas || {}).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-    const labels = claves.length ? claves.map((h) => `${h}h`) : ['Sin datos'];
-    const valores = claves.length ? claves.map((h) => horas[h]) : [0];
-    if (chartHoras) chartHoras.destroy();
-    chartHoras = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Eventos',
-          data: valores,
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59,130,246,0.15)',
-          tension: 0.3,
-          fill: true,
-          pointBackgroundColor: '#3b82f6'
-        }]
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
+        },
       },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
-        }
-      }
     });
   }
 
   /**
-   * Comprueba si el JSON del API es la estructura agrupada por IP (Fase 4).
+   * Gráfico de línea: actividad por hora o por día según actividad_modo.
+   * Resalta el punto pico en actividad_pico_indice.
    */
-  function esRespuestaAgrupadaPorIp(data) {
+  function renderChartActividad(data) {
+    const ctx = document.getElementById('chart-actividad').getContext('2d');
+    const serie = data.actividad_por_periodo || {};
+    const modo = serie.modo || data.actividad_modo || 'hora';
+    const labels = serie.etiquetas || data.actividad_labels || [];
+    const valores = serie.valores || data.actividad_valores || [];
+    const picoIdx = serie.pico_indice ?? data.actividad_pico_indice ?? 0;
+
+    document.getElementById('chart-actividad-titulo').textContent =
+      modo === 'dia'
+        ? `Actividad por Día (${zonaHorariaMonitor})`
+        : `Actividad por Hora (${zonaHorariaMonitor})`;
+
+    const pointRadii = valores.map((_, i) => (i === picoIdx ? 8 : 4));
+    const pointBorderColors = valores.map((_, i) => (i === picoIdx ? '#ef4444' : '#3b82f6'));
+    const pointBg = valores.map((_, i) => (i === picoIdx ? '#3b82f6' : '#3b82f6'));
+
+    if (chartActividad) chartActividad.destroy();
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+    gradient.addColorStop(0, 'rgba(59,130,246,0.35)');
+    gradient.addColorStop(1, 'rgba(59,130,246,0.02)');
+
+    chartActividad = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels.length ? labels : ['Sin datos'],
+        datasets: [{
+          label: 'Eventos',
+          data: valores.length ? valores : [0],
+          borderColor: '#3b82f6',
+          backgroundColor: gradient,
+          tension: 0.35,
+          fill: true,
+          pointRadius: pointRadii,
+          pointBorderWidth: valores.map((_, i) => (i === picoIdx ? 3 : 1)),
+          pointBorderColor: pointBorderColors,
+          pointBackgroundColor: pointBg,
+        }],
+      },
+      options: {
+        responsive: true,
+        animation: { duration: 800 },
+        plugins: {
+          legend: { display: false },
+          tooltip: TOOLTIP_OSCURO,
+        },
+        scales: {
+          x: { ticks: { color: '#94a3b8', maxRotation: 45 }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  /** Dona de distribución por gravedad (solo incidentes, sin tipo «Otro»). */
+  function renderChartGravedad(porGravedad) {
+    const ctx = document.getElementById('chart-gravedad').getContext('2d');
+    const labels = [];
+    const valores = [];
+    const colores = [];
+    ORDEN_GRAVEDAD.forEach((g) => {
+      const cant = porGravedad[g];
+      if (cant) {
+        labels.push(g);
+        valores.push(cant);
+        colores.push(COLOR_GRAVEDAD[g] || '#64748b');
+      }
+    });
+    const total = valores.reduce((a, b) => a + b, 0);
+    const hayDatos = labels.length > 0;
+
+    if (chartGravedad) chartGravedad.destroy();
+    chartGravedad = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: hayDatos ? labels : ['Sin datos'],
+        datasets: [{
+          data: hayDatos ? valores : [1],
+          backgroundColor: hayDatos ? colores : ['#334155'],
+          borderColor: '#0f172a',
+          borderWidth: 2,
+          hoverBorderColor: '#e2e8f0',
+          hoverOffset: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        animation: { duration: 800 },
+        cutout: '58%',
+        layout: { padding: { bottom: 8 } },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            align: 'start',
+            labels: {
+              color: '#cbd5e1',
+              boxWidth: 14,
+              boxHeight: 14,
+              padding: 14,
+              font: { size: 12, family: 'inherit' },
+              generateLabels(chart) {
+                const defs = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                if (!hayDatos) return defs;
+                return defs.map((item, i) => {
+                  const v = chart.data.datasets[0].data[i] || 0;
+                  const pct = total ? ((v / total) * 100).toFixed(0) : 0;
+                  const nombre = chart.data.labels[i] || item.text;
+                  return {
+                    ...item,
+                    text: `${nombre}: ${v} evento${v === 1 ? '' : 's'} (${pct}%)`,
+                  };
+                });
+              },
+            },
+          },
+          centroTotal: { total: total || 0 },
+          tooltip: {
+            ...TOOLTIP_OSCURO,
+            callbacks: {
+              title(items) {
+                return items[0]?.label || '';
+              },
+              label(ctx) {
+                const v = ctx.parsed || 0;
+                const pct = total ? ((v / total) * 100).toFixed(1) : 0;
+                return `${v} evento${v === 1 ? '' : 's'} (${pct}%)`;
+              },
+              afterLabel(ctx) {
+                const g = ctx.label || '';
+                if (g === 'Crítica') return 'Ataque confirmado o explotación efectiva';
+                if (g === 'Alta') return 'Intento de explotación o escaneo agresivo';
+                if (g === 'Sospechoso') return 'Anomalía; revisión manual recomendada';
+                return '';
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /** Barras horizontales estilo progreso para el top 5 de rutas atacadas. */
+  function renderChartRutas(topRutas) {
+    const ctx = document.getElementById('chart-rutas').getContext('2d');
+    const items = (topRutas || []).slice(0, 5);
+    const labels = items.map((r) => {
+      const txt = r.ruta || '/';
+      return txt.length > 28 ? txt.slice(0, 26) + '…' : txt;
+    });
+    const valores = items.map((r) => r.cantidad || 0);
+    const max = Math.max(...valores, 1);
+    const colores = valores.map((v) => {
+      const t = v / max;
+      if (t >= 0.8) return '#ef4444';
+      if (t >= 0.5) return '#f97316';
+      if (t >= 0.25) return '#eab308';
+      return '#64748b';
+    });
+
+    if (chartRutas) chartRutas.destroy();
+    chartRutas = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels.length ? labels : ['Sin datos'],
+        datasets: [{
+          label: 'Ataques',
+          data: labels.length ? valores : [0],
+          backgroundColor: labels.length ? colores : ['#334155'],
+          borderRadius: 4,
+          barThickness: 14,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        animation: { duration: 800 },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
+          y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  /** Identificador único de una alerta para detectar entradas nuevas. */
+  function idAlerta(a) {
+    const tipo = a.tipo_ataque || a.tipo || '';
+    return `${a.ip}|${tipo}|${a.gravedad}|${a.timestamp}|${a.ruta}`;
+  }
+
+  /** Pinta el panel lateral de alertas graves con animación en ítems nuevos. */
+  function renderAlertas(alertas) {
+    const cont = document.getElementById('lista-alertas');
+    const lista = (alertas || []).slice(0, 10);
+
+    if (!lista.length) {
+      cont.innerHTML = '<div class="alerta-vacio">Sin alertas Crítica/Alta en este período</div>';
+      alertasIdsAnteriores = new Set();
+      return;
+    }
+
+    cont.innerHTML = '';
+    lista.forEach((a) => {
+      const id = idAlerta(a);
+      // Solo animar entradas que no estaban en el refresco anterior (p. ej. cada 10 s)
+      const esNueva = alertasIdsAnteriores.size > 0 && !alertasIdsAnteriores.has(id);
+
+      const g = normalizarGravedad(a.gravedad);
+      const claseGrav = g === 'Crítica' ? 'grav-critico' : 'grav-alto';
+      const tipoAtaque = a.tipo_ataque || a.tipo || 'Otro';
+      const minTxt = a.hace_min != null
+        ? `hace ${a.hace_min} min`
+        : (a.timestamp ? String(a.timestamp) : 'reciente');
+
+      const div = document.createElement('div');
+      div.className = `alerta-item ${claseGrav}`;
+      if (esNueva) {
+        div.style.animation = 'slide-in-alerta 0.35s ease-out';
+      }
+      div.innerHTML = `
+        <div class="alerta-ip">${escapeHtml(a.ip || '—')}</div>
+        <div>
+          <span class="badge ${badgeClass(tipoAtaque)}">${escapeHtml(tipoAtaque)}</span>
+          <span class="badge ${claseGravedadBadge(g)}">${escapeHtml(g)}</span>
+        </div>
+        <div class="alerta-meta">${escapeHtml(minTxt)}</div>
+        <div class="alerta-ruta">${escapeHtml(a.ruta || '/')}</div>
+      `;
+      cont.appendChild(div);
+    });
+
+    alertasIdsAnteriores = new Set(lista.map(idAlerta));
+  }
+
+  /** True si el objeto parece un grupo de eventos por IP (formato legacy o dentro de grupos). */
+  function esGrupoPorIp(item) {
     return (
-      Array.isArray(data) &&
-      data.length > 0 &&
-      data[0] &&
-      typeof data[0].total_eventos === 'number' &&
-      Array.isArray(data[0].eventos)
+      item &&
+      typeof item.total_eventos === 'number' &&
+      Array.isArray(item.eventos)
     );
   }
 
-  /** Normaliza gravedad (acepta CRITICO sin tilde). */
-  function normalizarGravedad(g) {
-    const s = (g || 'BAJO').toUpperCase().trim();
-    return s === 'CRITICO' ? 'CRÍTICO' : s;
+  /**
+   * Extrae la lista de grupos del API de eventos.
+   * Soporta { periodo, grupos: [...] } y el array plano legacy.
+   */
+  function extraerGruposEventos(data) {
+    if (data && Array.isArray(data.grupos)) {
+      return data.grupos;
+    }
+    if (Array.isArray(data) && data.length > 0 && esGrupoPorIp(data[0])) {
+      return data;
+    }
+    return [];
   }
 
-  /** Clase CSS de fila según gravedad máxima del grupo. */
+  function normalizarGravedad(g) {
+    if (!g || !String(g).trim()) return '';
+    const s = String(g).trim().toLowerCase();
+    if (s.includes('crit')) return 'Crítica';
+    if (s === 'alto' || s === 'alta') return 'Alta';
+    if (s.includes('sospech') || s === 'medio' || s === 'bajo') return 'Sospechoso';
+    const canon = ['Crítica', 'Alta', 'Sospechoso'];
+    const hit = canon.find((c) => c.toLowerCase() === s);
+    return hit || String(g).trim();
+  }
+
   function claseFilaGravedad(gravedad) {
     const g = normalizarGravedad(gravedad);
-    if (g === 'CRÍTICO') return 'grav-critico';
-    if (g === 'ALTO') return 'grav-alto';
-    if (g === 'MEDIO') return 'grav-medio';
-    return 'grav-bajo';
+    if (g === 'Crítica') return 'grav-critico';
+    if (g === 'Alta') return 'grav-alto';
+    if (g === 'Sospechoso') return 'grav-sospechoso';
+    return '';
   }
 
-  /** Clase del badge de gravedad en subtabla. */
   function claseGravedadBadge(gravedad) {
     const g = normalizarGravedad(gravedad);
-    if (g === 'CRÍTICO') return 'badge-gravedad-critico';
-    if (g === 'ALTO') return 'badge-gravedad-alto';
-    if (g === 'MEDIO') return 'badge-gravedad-medio';
-    return 'badge-gravedad-bajo';
+    if (g === 'Crítica') return 'badge-gravedad-critica';
+    if (g === 'Alta') return 'badge-gravedad-alta';
+    if (g === 'Sospechoso') return 'badge-gravedad-sospechoso';
+    return 'badge-otro';
   }
 
   function tipoDeEvento(ev) {
     return (ev.tipo || ev.tipo_ataque || '').trim() || 'Otro';
   }
 
-  /**
-   * Filtra filas de IP por la columna ultima_vez (actividad reciente del grupo).
-   *
-   * @param {Array} filas - Grupos del API con campo ultima_vez ("YYYY-MM-DD HH:MM:SS").
-   * @param {string} valor - "todo" | "15m" | "1h" | "6h" | "24h"
-   * @returns {Array} Filas cuya última actividad cae dentro de la ventana indicada.
-   */
-  function filtrarPorTiempo(filas, valor) {
-    if (!valor || valor === 'todo') return filas;
-
-    const ventanasMs = {
-      '15m': 15 * 60 * 1000,
-      '1h': 60 * 60 * 1000,
-      '6h': 6 * 60 * 60 * 1000,
-      '24h': 24 * 60 * 60 * 1000,
-    };
-    const maxDiffMs = ventanasMs[valor];
-    if (maxDiffMs === undefined) return filas;
-
-    const ahora = new Date();
-    return filas.filter((fila) => {
-      if (!fila.ultima_vez) return false;
-      const ultimaVez = new Date(fila.ultima_vez.replace(' ', 'T'));
-      if (Number.isNaN(ultimaVez.getTime())) return false;
-      const diffMs = ahora - ultimaVez;
-      // Solo IPs cuya última vez vista está dentro del intervalo (y no en el futuro)
-      return diffMs >= 0 && diffMs <= maxDiffMs;
-    });
+  /** Extrae YYYY-MM-DD de ultima_vez del grupo. */
+  function fechaDiaDeGrupo(grupo) {
+    const uv = grupo.ultima_vez || '';
+    const m = String(uv).match(/^(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : 'Sin fecha';
   }
 
-  /** Filtro de texto parcial sobre la IP del grupo. */
   function pasaFiltroIpGrupo(grupo, textoBusqueda) {
     if (!textoBusqueda) return true;
     return String(grupo.ip || '').toLowerCase().includes(textoBusqueda);
   }
 
-  /**
-   * Filtro por tipo: el grupo debe incluir ese tipo en tipos_ataque
-   * (o algún evento del grupo si el array no viene del servidor).
-   */
   function pasaFiltroTipoGrupo(grupo, filtro) {
     if (!filtro || filtro === 'Todos') return true;
     const tiposGrupo = (grupo.tipos_ataque || []).map((t) => String(t).toLowerCase());
@@ -681,15 +2236,6 @@
     return (grupo.eventos || []).some((ev) => tipoDeEvento(ev).toLowerCase() === buscado);
   }
 
-  /** Filtro por gravedad máxima del grupo. */
-  function pasaFiltroGravedadGrupo(grupo, filtro) {
-    if (!filtro || filtro === 'Todos') return true;
-    return normalizarGravedad(grupo.gravedad_maxima) === normalizarGravedad(filtro);
-  }
-
-  /**
-   * Eventos visibles en la subtabla (solo filtro por tipo de ataque, no por tiempo).
-   */
   function eventosFiltradosDelGrupo(grupo, filtroTipo) {
     return (grupo.eventos || []).filter((ev) => {
       if (!filtroTipo || filtroTipo === 'Todos') return true;
@@ -701,27 +2247,35 @@
     });
   }
 
-  /**
-   * Aplica todos los filtros activos a la vez: IP, tipo, gravedad y tiempo (ultima_vez).
-   * Cada grupo incluye `_eventosVisibles` para la subtabla expandida.
-   */
+  /** Aplica filtros de IP y tipo (período y gravedad los filtra el backend). */
   function obtenerGruposFiltrados() {
     const textoIp = (document.getElementById('filtro-ip').value || '').trim().toLowerCase();
-    const valorTiempo = document.getElementById('filtro-tiempo').value;
 
-    let filas = gruposCache
+    return gruposCache
       .filter((grupo) => pasaFiltroIpGrupo(grupo, textoIp))
       .filter((grupo) => pasaFiltroTipoGrupo(grupo, filtroTipoActual))
-      .filter((grupo) => pasaFiltroGravedadGrupo(grupo, filtroGravedadActual));
-
-    filas = filtrarPorTiempo(filas, valorTiempo);
-
-    return filas
       .map((grupo) => {
         const eventos = eventosFiltradosDelGrupo(grupo, filtroTipoActual);
         return { ...grupo, _eventosVisibles: eventos };
       })
       .filter((grupo) => grupo._eventosVisibles.length > 0);
+  }
+
+  /** Tipo de ataque más frecuente en una lista de grupos (para resumen de día). */
+  function tipoMasComunEnGrupos(grupos) {
+    const conteo = {};
+    grupos.forEach((g) => {
+      (g._eventosVisibles || []).forEach((ev) => {
+        const t = tipoDeEvento(ev);
+        conteo[t] = (conteo[t] || 0) + 1;
+      });
+    });
+    let max = '—';
+    let maxN = 0;
+    Object.entries(conteo).forEach(([t, n]) => {
+      if (n > maxN) { maxN = n; max = t; }
+    });
+    return max;
   }
 
   function escapeHtml(str) {
@@ -740,7 +2294,6 @@
     return 'badge-otro';
   }
 
-  /** HTML de badges para la lista de tipos del grupo. */
   function htmlTiposGrupo(tipos) {
     if (!tipos || !tipos.length) return '<span class="badge badge-otro">—</span>';
     return tipos
@@ -748,7 +2301,6 @@
       .join(' ');
   }
 
-  /** HTML de la subtabla con eventos de una IP. */
   function htmlSubtabla(eventos) {
     if (!eventos.length) {
       return '<p style="color:#94a3b8;padding:8px">Sin eventos en este rango</p>';
@@ -756,32 +2308,32 @@
     const filas = eventos
       .map((ev) => {
         const tipo = tipoDeEvento(ev);
-        const grav = ev.gravedad || 'BAJO';
-        return `<tr class="fila-evento" title="Clic para ver detalle">
+        const grav = normalizarGravedad(ev.gravedad) || '—';
+        const eventoId = ev.id != null ? ev.id : '';
+        return `<tr class="fila-evento" title="Clic en la fila para ver detalle">
           <td>${escapeHtml(ev.ruta || '')}</td>
           <td>${escapeHtml(ev.metodo || '')}</td>
           <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
           <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
           <td>${escapeHtml(ev.timestamp || '')}</td>
+          <td class="celda-accion-sub">
+            <button type="button" class="btn-analizar-ia" data-evento-id="${eventoId}">Analizar</button>
+          </td>
         </tr>`;
       })
       .join('');
     return `<div class="subtabla-wrap">
       <table class="subtabla">
         <thead>
-          <tr><th>Ruta</th><th>Método</th><th>Tipo</th><th>Gravedad</th><th>Timestamp</th></tr>
+          <tr><th>Ruta</th><th>Método</th><th>Tipo</th><th>Gravedad</th><th>Timestamp</th><th>Análisis</th></tr>
         </thead>
         <tbody>${filas}</tbody>
       </table>
     </div>`;
   }
 
-  // Cabeceras HTTP que se resaltan en amarillo en el modal.
   const HEADERS_SENSIBLES = ['authorization', 'cookie', 'x-forwarded-for'];
 
-  /**
-   * Devuelve el texto del payload o "Sin payload" si viene vacío.
-   */
   function textoPayloadEvento(ev) {
     const raw = ev.payload;
     if (raw === null || raw === undefined || String(raw).trim() === '') {
@@ -795,10 +2347,6 @@
     }
   }
 
-  /**
-   * Convierte el campo headers (JSON string) en HTML de líneas clave: valor.
-   * Si JSON.parse falla, muestra el texto original en una sola línea.
-   */
   function htmlCabecerasEvento(headersRaw) {
     if (headersRaw === null || headersRaw === undefined || String(headersRaw).trim() === '') {
       return '<div class="headers-raw-vacio">Sin cabeceras</div>';
@@ -820,18 +2368,39 @@
           .join('');
       }
     } catch (err) {
-      /* Se muestra el raw más abajo */
+      /* Mostrar raw abajo */
     }
     return `<div class="header-line">${escapeHtml(texto)}</div>`;
   }
 
-  /**
-   * Rellena y muestra el modal de detalle de un evento de la subtabla.
-   */
+  function formatearTamanoBytes(numBytes) {
+    if (numBytes == null || numBytes === '') return '—';
+    const n = Number(numBytes);
+    if (!Number.isFinite(n) || n < 0) return '—';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function establecerVistaModal(fuente) {
+    const panel = document.getElementById('modal-evento-panel');
+    const cuerpoEvento = document.getElementById('modal-cuerpo-evento');
+    const cuerpoPeticion = document.getElementById('modal-cuerpo-peticion');
+    const esPeticion = fuente === 'peticion';
+    cuerpoEvento.hidden = esPeticion;
+    cuerpoPeticion.hidden = !esPeticion;
+    panel.classList.toggle('modal-peticion-activo', esPeticion);
+  }
+
   function abrirModalEvento(ev, ipAtacante) {
     const overlay = document.getElementById('modal-evento-overlay');
     const tipo = tipoDeEvento(ev);
-    const gravedad = ev.gravedad || 'BAJO';
+    const gravedad = normalizarGravedad(ev.gravedad);
+
+    modalRegistroContext = { fuente: 'evento', registro: ev, ip: ipAtacante || '' };
+    establecerVistaModal('evento');
+    document.getElementById('modal-ev-acciones').hidden = true;
+    document.getElementById('modal-evento-titulo').textContent = 'Detalle del evento';
 
     document.getElementById('modal-ev-ip').textContent = ipAtacante || '—';
     document.getElementById('modal-ev-ruta').textContent = ev.ruta || '—';
@@ -840,9 +2409,12 @@
     document.getElementById('modal-ev-payload').textContent = textoPayloadEvento(ev);
     document.getElementById('modal-ev-ua').textContent = ev.user_agent || '—';
 
+    const badgeGrav = gravedad
+      ? `<span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>`
+      : '';
     document.getElementById('modal-ev-badges').innerHTML = `
       <span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span>
-      <span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>
+      ${badgeGrav}
     `;
     document.getElementById('modal-ev-headers').innerHTML = htmlCabecerasEvento(ev.headers);
 
@@ -851,41 +2423,681 @@
     overlay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  /** Oculta el modal de detalle de evento. */
   function cerrarModalEvento() {
     const overlay = document.getElementById('modal-evento-overlay');
+    overlay.classList.remove('activo');
+    overlay.setAttribute('aria-hidden', 'true');
+    modalRegistroContext = { fuente: 'evento', registro: null, ip: '' };
+    const nis2 = document.getElementById('modal-nis2-significativo');
+    if (nis2) nis2.checked = false;
+  }
+
+  async function abrirModalPeticion(peticionId, ipGrupo, resumenLocal) {
+    const overlay = document.getElementById('modal-evento-overlay');
+    document.getElementById('modal-evento-titulo').textContent = 'Detalle de la petición';
+    establecerVistaModal('peticion');
+    document.getElementById('modal-ev-acciones').hidden = false;
+    const nis2 = document.getElementById('modal-nis2-significativo');
+    if (nis2) nis2.checked = false;
+
+    let pet = resumenLocal || null;
+    try {
+      const res = await fetch(`/monitor/api/peticion/${peticionId}`);
+      if (res.ok) {
+        pet = await res.json();
+      }
+    } catch (err) {
+      /* usar resumen local si falla la red */
+    }
+
+    if (!pet) {
+      alert('No se pudo cargar el detalle de la petición');
+      return;
+    }
+
+    modalRegistroContext = { fuente: 'peticion', registro: pet, ip: pet.ip || ipGrupo || '' };
+
+    const tipo = (pet.tipo_ataque || 'Otro').trim() || 'Otro';
+    const gravedad = normalizarGravedad(pet.gravedad);
+    const ipMostrar = modalRegistroContext.ip || '—';
+    const sesionId = (pet.sesion_id_corto || '').trim();
+    const tiempoLegible = pet.tiempo_ms_legible
+      || (pet.tiempo_ms != null ? `${pet.tiempo_ms} ms` : '—');
+    const tamanoLegible = pet.tamano_respuesta_legible
+      || formatearTamanoBytes(pet.tamano_respuesta_bytes);
+
+    document.getElementById('modal-pet-usuario').textContent = pet.usuario_activo || 'Invitado';
+    document.getElementById('modal-pet-sesion').textContent = sesionId || '—';
+    document.getElementById('modal-pet-tiempo').textContent = tiempoLegible;
+    document.getElementById('modal-pet-tamano').textContent = tamanoLegible;
+    document.getElementById('modal-pet-ip').textContent = ipMostrar;
+    document.getElementById('modal-pet-puerto').textContent =
+      (pet.puerto_origen || '').trim() || '—';
+    document.getElementById('modal-pet-ruta').textContent = pet.ruta || '—';
+    document.getElementById('modal-pet-metodo').textContent = pet.metodo || '—';
+    document.getElementById('modal-pet-ts').textContent = pet.timestamp || '—';
+    document.getElementById('modal-pet-codigo').textContent =
+      pet.codigo_http != null ? String(pet.codigo_http) : '—';
+    document.getElementById('modal-pet-payload').textContent = textoPayloadEvento(pet);
+    document.getElementById('modal-pet-ua').textContent = pet.user_agent || '—';
+    const badgeGrav =
+      tipo !== 'Otro' && gravedad
+        ? `<span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>`
+        : '';
+    document.getElementById('modal-pet-badges').innerHTML = `
+      <span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span>
+      ${badgeGrav}
+    `;
+    document.getElementById('modal-pet-headers').innerHTML = htmlCabecerasEvento(pet.headers);
+
+    overlay.classList.add('activo');
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function enlazarClicsSubtabla(contenedorFila, eventos, ipAtacante) {
+    const filas = contenedorFila.querySelectorAll('.subtabla tbody tr.fila-evento');
+    filas.forEach((fila, indice) => {
+      fila.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-analizar-ia')) return;
+        e.stopPropagation();
+        abrirModalEvento(eventos[indice], ipAtacante);
+      });
+    });
+
+    contenedorFila.querySelectorAll('.btn-analizar-ia').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const eventoId = parseInt(btn.dataset.eventoId, 10);
+        if (!eventoId) return;
+        analizarEventoConIA(eventoId, btn);
+      });
+    });
+  }
+
+  /** Clase CSS del badge según nivel de sofisticación devuelto por Claude. */
+  function claseBadgeSofisticacion(nivel) {
+    const n = String(nivel || '').toLowerCase();
+    if (n.includes('avan')) return 'badge-sofi-avanzado';
+    if (n.includes('inter')) return 'badge-sofi-intermedio';
+    return 'badge-sofi-basico';
+  }
+
+  /** Muestra el modal de IA en estado de carga, error o con el análisis completo. */
+  function mostrarModalIA(opciones) {
+    const overlay = document.getElementById('modal-ia-overlay');
+    const cuerpo = document.getElementById('modal-ia-cuerpo');
+    const titulo = document.getElementById('modal-ia-titulo');
+
+    if (opciones.cargando) {
+      titulo.textContent = 'Análisis del evento';
+      cuerpo.innerHTML = '<div class="ia-spinner">Analizando evento...</div>';
+    } else if (opciones.error) {
+      titulo.textContent = 'Análisis del evento';
+      cuerpo.innerHTML = `<p style="color:#f87171;font-size:14px">${escapeHtml(opciones.error)}</p>`;
+    } else if (opciones.analisis) {
+      const a = opciones.analisis;
+      titulo.textContent = 'Análisis del ataque';
+      cuerpo.innerHTML = `
+        <div class="modal-ia-seccion">
+          <div class="titulo-seccion">Intención del atacante</div>
+          <div class="cuerpo-seccion">${escapeHtml(a.intencion || '—')}</div>
+        </div>
+        <div class="modal-ia-seccion">
+          <div class="titulo-seccion">Técnica utilizada</div>
+          <div class="cuerpo-seccion">${escapeHtml(a.tecnica || '—')}</div>
+        </div>
+        <div class="modal-ia-seccion">
+          <div class="titulo-seccion">Daño potencial</div>
+          <div class="cuerpo-seccion">${escapeHtml(a.dano_potencial || '—')}</div>
+        </div>
+        <div class="modal-ia-seccion">
+          <div class="titulo-seccion">Nivel de sofisticación</div>
+          <div class="cuerpo-seccion">
+            <span class="badge ${claseBadgeSofisticacion(a.nivel_sofisticacion)}">${escapeHtml(a.nivel_sofisticacion || '—')}</span>
+          </div>
+        </div>
+        <div class="modal-ia-seccion">
+          <div class="titulo-seccion">Recomendación de defensa</div>
+          <div class="cuerpo-seccion">${escapeHtml(a.recomendacion || '—')}</div>
+        </div>
+      `;
+    }
+
+    overlay.classList.add('activo');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+
+  function cerrarModalIA() {
+    const overlay = document.getElementById('modal-ia-overlay');
     overlay.classList.remove('activo');
     overlay.setAttribute('aria-hidden', 'true');
   }
 
   /**
-   * Asocia clic en cada fila de la subtabla para abrir el modal con ese evento.
+   * Llama a GET /monitor/api/analizar/<id>?fuente= y muestra el análisis en el modal de IA.
    */
-  function enlazarClicsSubtabla(contenedorFila, eventos, ipAtacante) {
-    const filas = contenedorFila.querySelectorAll('.subtabla tbody tr.fila-evento');
-    filas.forEach((fila, indice) => {
+  async function analizarRegistroConIA(registroId, fuente, boton, etiquetaBoton) {
+    const textoOriginal = etiquetaBoton || 'Analizar con IA';
+    if (boton) {
+      boton.disabled = true;
+      boton.textContent = 'Analizando...';
+    }
+    mostrarModalIA({ cargando: true });
+
+    try {
+      const res = await fetch(
+        `/monitor/api/analizar/${registroId}?fuente=${encodeURIComponent(fuente)}`
+      );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.error) {
+        mostrarModalIA({ error: data.error || 'No se pudo completar el análisis' });
+        return;
+      }
+
+      mostrarModalIA({ analisis: data.analisis || data });
+    } catch (err) {
+      mostrarModalIA({ error: 'Error de red: ' + err.message });
+    } finally {
+      if (boton) {
+        boton.disabled = false;
+        boton.textContent = textoOriginal;
+      }
+    }
+  }
+
+  async function analizarEventoConIA(eventoId, boton) {
+    return analizarRegistroConIA(eventoId, 'evento', boton, 'Analizar');
+  }
+
+  function resumenPeticionParaReporte(pet) {
+    return {
+      origen: 'actividad_publica',
+      peticion_id: pet.id,
+      ip: pet.ip,
+      ruta: pet.ruta,
+      metodo: pet.metodo,
+      codigo_http: pet.codigo_http,
+      tipo_ataque: pet.tipo_ataque,
+      timestamp: pet.timestamp,
+      user_agent: pet.user_agent,
+      payload: pet.payload,
+    };
+  }
+
+  async function reportarPeticionDesdeModal(boton) {
+    const ctx = modalRegistroContext;
+    if (!ctx.registro || ctx.fuente !== 'peticion') return;
+
+    const textoOriginal = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = 'Enviando...';
+    boton.classList.remove('ok');
+
+    try {
+      const res = await fetch('/monitor/reportar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: ctx.ip || ctx.registro.ip,
+          datos_ataque: {
+            ...resumenPeticionParaReporte(ctx.registro),
+            nis2_incidente_significativo: Boolean(
+              document.getElementById('modal-nis2-significativo')?.checked
+            ),
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.exito) throw new Error(data.mensaje || 'Error al reportar');
+      boton.textContent = 'Reporte enviado';
+      boton.classList.add('ok');
+    } catch (err) {
+      boton.textContent = 'Error';
+      alert(err.message || 'No se pudo generar el reporte');
+      setTimeout(() => {
+        boton.textContent = textoOriginal;
+        boton.disabled = false;
+      }, 2000);
+      return;
+    }
+    boton.disabled = false;
+    setTimeout(() => {
+      boton.textContent = textoOriginal;
+      boton.classList.remove('ok');
+    }, 3000);
+  }
+
+  const MSG_EXPORT_ACTIVIDAD =
+    'Debe seleccionar una IP y una fecha exacta de 1 día para exportar';
+
+  function exportacionActividadPublicaValida() {
+    const ip = document.getElementById('export-ip-publica').value;
+    const fecha = document.getElementById('export-fecha-publica').value;
+    if (!ip || !fecha) return false;
+    if (!ipsActividadPublica.includes(ip)) return false;
+    return fechasExportPublica.some((f) => f.fecha === fecha);
+  }
+
+  function actualizarBotonesExportActividad() {
+    const valido = exportacionActividadPublicaValida();
+    document.getElementById('btn-export-csv-publica').disabled = !valido;
+    document.getElementById('btn-export-headers-publica').disabled = !valido;
+    const aviso = document.getElementById('export-actividad-aviso');
+    aviso.textContent = valido
+      ? `Exportación lista: ${document.getElementById('export-ip-publica').value} · ${document.getElementById('export-fecha-publica').value}`
+      : MSG_EXPORT_ACTIVIDAD;
+    aviso.style.color = valido ? '#7dd3a8' : '#94a3b8';
+  }
+
+  async function cargarIpsExportActividadPublica() {
+    try {
+      const res = await fetch('/monitor/api/actividad-publica/ips');
+      if (!res.ok) return;
+      const data = await res.json();
+      ipsActividadPublica = Array.isArray(data.ips) ? data.ips : [];
+      const sel = document.getElementById('export-ip-publica');
+      const valorPrev = sel.value;
+      sel.innerHTML = '<option value="">Seleccionar IP...</option>';
+      ipsActividadPublica.forEach((ip) => {
+        const opt = document.createElement('option');
+        opt.value = ip;
+        opt.textContent = ip;
+        sel.appendChild(opt);
+      });
+      if (valorPrev && ipsActividadPublica.includes(valorPrev)) {
+        sel.value = valorPrev;
+      }
+      await cargarFechasExportActividadPublica();
+    } catch (e) {
+      ipsActividadPublica = [];
+    }
+    actualizarBotonesExportActividad();
+  }
+
+  async function cargarFechasExportActividadPublica() {
+    const ip = document.getElementById('export-ip-publica').value;
+    const inputFecha = document.getElementById('export-fecha-publica');
+    inputFecha.value = '';
+    fechasExportPublica = [];
+
+    if (!ip) {
+      inputFecha.disabled = true;
+      actualizarBotonesExportActividad();
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/monitor/api/actividad-publica/fechas?ip=${encodeURIComponent(ip)}`
+      );
+      if (!res.ok) throw new Error('fechas');
+      const data = await res.json();
+      fechasExportPublica = Array.isArray(data.fechas) ? data.fechas : [];
+      const fechasSet = new Set(fechasExportPublica.map((f) => f.fecha));
+      inputFecha.disabled = fechasSet.size === 0;
+      if (fechasSet.size > 0) {
+        inputFecha.min = [...fechasSet].sort()[0];
+        inputFecha.max = [...fechasSet].sort().reverse()[0];
+      }
+    } catch (e) {
+      inputFecha.disabled = true;
+    }
+    actualizarBotonesExportActividad();
+  }
+
+  function abrirExportActividadPublica(formato) {
+    if (!exportacionActividadPublicaValida()) {
+      alert(MSG_EXPORT_ACTIVIDAD);
+      return;
+    }
+    const ip = document.getElementById('export-ip-publica').value;
+    const fecha = document.getElementById('export-fecha-publica').value;
+    const base =
+      formato === 'headers'
+        ? '/monitor/exportar/actividad-publica/headers'
+        : '/monitor/exportar/actividad-publica/csv';
+    const url = `${base}?ip=${encodeURIComponent(ip)}&fecha=${encodeURIComponent(fecha)}`;
+    window.location.href = url;
+  }
+
+  /** Fechas con eventos y totales (para el date picker del resumen diario). */
+  let fechasResumenDisponibles = [];
+  let mapaEventosPorFecha = {};
+
+  function fechaResumenSeleccionada() {
+    return document.getElementById('resumen-fecha').value || '';
+  }
+
+  function actualizarBadgeEventosResumen(fecha) {
+    const badge = document.getElementById('resumen-eventos-badge');
+    const total = mapaEventosPorFecha[fecha];
+    if (total === undefined) {
+      badge.textContent = '';
+      return;
+    }
+    badge.textContent = total === 0 ? 'Sin eventos' : `${total} evento(s)`;
+  }
+
+  async function inicializarSelectorResumenDiario() {
+    const input = document.getElementById('resumen-fecha');
+    try {
+      const res = await fetch('/monitor/api/fechas-con-datos');
+      const data = await res.json().catch(() => ({}));
+      fechasResumenDisponibles = (data.fechas || []).map((f) => f.fecha);
+      mapaEventosPorFecha = {};
+      (data.fechas || []).forEach((f) => {
+        mapaEventosPorFecha[f.fecha] = f.total;
+      });
+      if (fechasResumenDisponibles.length) {
+        const min = fechasResumenDisponibles[fechasResumenDisponibles.length - 1];
+        const max = fechasResumenDisponibles[0];
+        input.min = min;
+        input.max = max;
+      }
+      const defecto = data.defecto || data.hoy || '';
+      input.value = defecto;
+      actualizarBadgeEventosResumen(defecto);
+      await cargarResumenDiario(false);
+    } catch (err) {
+      console.warn('No se pudieron cargar fechas del resumen:', err);
+    }
+  }
+
+  /**
+   * Carga o genera el resumen diario para la fecha seleccionada.
+   * @param {boolean} regenerar - Si true, fuerza nueva generación con Claude.
+   */
+  async function cargarResumenDiario(regenerar = true) {
+    const btn = document.getElementById('btn-resumen-diario');
+    const spinner = document.getElementById('resumen-diario-spinner');
+    const contenido = document.getElementById('resumen-diario-contenido');
+    const meta = document.getElementById('resumen-diario-meta');
+    const fecha = fechaResumenSeleccionada();
+    if (!fecha) return;
+
+    actualizarBadgeEventosResumen(fecha);
+    const sinEventos = mapaEventosPorFecha[fecha] === 0;
+    if (sinEventos) {
+      contenido.classList.add('placeholder', 'resumen-sin-datos');
+      contenido.textContent = 'No hay datos para este día';
+      meta.textContent = `Día ${fecha} — sin eventos registrados`;
+      return;
+    }
+
+    btn.disabled = true;
+    if (regenerar) spinner.style.display = 'flex';
+    if (regenerar) {
+      contenido.classList.add('placeholder');
+      contenido.classList.remove('resumen-sin-datos');
+      contenido.textContent = '';
+    }
+
+    try {
+      const params = new URLSearchParams({ fecha });
+      if (regenerar) params.set('regenerar', '1');
+      const res = await fetch('/monitor/api/resumen-diario?' + params.toString());
+      const data = await res.json().catch(() => ({}));
+
+      if (data.sin_datos) {
+        contenido.classList.add('placeholder', 'resumen-sin-datos');
+        contenido.textContent = data.mensaje || 'No hay datos para este día';
+        meta.textContent = `Día ${fecha}`;
+        return;
+      }
+
+      if (!res.ok) {
+        contenido.classList.add('placeholder');
+        contenido.classList.remove('resumen-sin-datos');
+        contenido.textContent = data.error || 'Error al obtener el resumen';
+        meta.textContent = '';
+        return;
+      }
+
+      contenido.classList.remove('placeholder', 'resumen-sin-datos');
+      contenido.textContent = data.resumen || 'Sin contenido en la respuesta.';
+      const origen = data.desde_bd
+        ? ' (guardado en base de datos)'
+        : data.desde_cache
+          ? ' (desde caché del servidor)'
+          : ' (generado ahora)';
+      const gen = data.generado_en ? ` · Generado: ${data.generado_en}` : '';
+      meta.textContent = `Día ${data.fecha || fecha} · ${data.total_eventos ?? '—'} evento(s)${gen}${origen}`;
+    } catch (err) {
+      contenido.classList.add('placeholder');
+      contenido.textContent = 'Error de red: ' + err.message;
+      meta.textContent = '';
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+    }
+  }
+
+  /** Color de badge según nivel_alerta del detector de anomalías. */
+  function claseNivelAnomalia(nivel) {
+    const n = String(nivel || '').toLowerCase();
+    if (n.includes('crit')) return 'badge-gravedad-critica';
+    if (n === 'alto' || n === 'alta') return 'badge-gravedad-alta';
+    if (n.includes('sospech') || n === 'medio' || n === 'bajo') return 'badge-gravedad-sospechoso';
+    return 'badge-otro';
+  }
+
+  /**
+   * Pinta el panel lateral de anomalías según GET /monitor/api/anomalias.
+   */
+  function renderPanelAnomalias(data) {
+    const cont = document.getElementById('panel-anomalias-contenido');
+    if (!data) {
+      cont.innerHTML = '<div class="alerta-vacio">Sin datos de anomalías</div>';
+      return;
+    }
+
+    if (!data.hay_anomalia) {
+      cont.innerHTML = '<div class="anomalia-ok">Sin anomalías detectadas</div>';
+      return;
+    }
+
+    const ips = (data.ips_sospechosas || []).map((ip) => escapeHtml(ip)).join(', ') || '—';
+    const nivel = data.nivel_alerta || 'medio';
+
+    cont.innerHTML = `
+      <div class="anomalia-alerta">
+        <span class="badge ${claseNivelAnomalia(nivel)}">${escapeHtml(String(nivel).toUpperCase())}</span>
+        <div class="anomalia-desc">${escapeHtml(data.descripcion || '')}</div>
+        <div class="anomalia-ips"><strong>IPs sospechosas:</strong> ${ips}</div>
+        <div class="anomalia-patron"><strong>Patrón:</strong> ${escapeHtml(data.patron_detectado || '—')}</div>
+      </div>
+    `;
+  }
+
+  /** Refresco del detector de anomalías (cada 5 minutos en el panel lateral). */
+  async function cargarAnomalias() {
+    try {
+      const res = await fetch('/monitor/api/anomalias');
+      if (!res.ok) return;
+      const data = await res.json();
+      renderPanelAnomalias(data);
+    } catch (e) {
+      document.getElementById('panel-anomalias-contenido').innerHTML =
+        '<div class="alerta-vacio">Error al cargar anomalías</div>';
+    }
+  }
+
+  function esPeticionConAlerta(p) {
+    const tipo = (p.tipo_ataque || '').trim();
+    return tipo && tipo !== 'Otro';
+  }
+
+  function htmlCeldaEventoDetectadoPeticion(p) {
+    if (!esPeticionConAlerta(p)) return '—';
+    return `<span class="badge ${badgeClass(p.tipo_ataque)}">${escapeHtml(p.tipo_ataque)}</span>`;
+  }
+
+  function htmlCeldaSeveridadPeticion(p) {
+    const g = normalizarGravedad(p.gravedad);
+    if (!esPeticionConAlerta(p) || !g) return '—';
+    return `<span class="badge ${claseGravedadBadge(g)}">${escapeHtml(g)}</span>`;
+  }
+
+  function htmlSubtablaPeticiones(peticiones, ambito) {
+    if (!peticiones.length) {
+      return '<p style="color:#94a3b8;padding:8px">Sin peticiones en este rango</p>';
+    }
+    const filas = peticiones
+      .map((p) => {
+        const codigo = p.codigo_http != null ? String(p.codigo_http) : '—';
+        const peticionId = p.id != null ? p.id : '';
+        const claseFila = esPeticionConAlerta(p) ? ` ${claseFilaGravedad(p.gravedad)}` : '';
+        const colsAlerta = `<td>${htmlCeldaEventoDetectadoPeticion(p)}</td>
+             <td>${htmlCeldaSeveridadPeticion(p)}</td>`;
+        return `<tr class="fila-peticion${claseFila}" data-peticion-id="${peticionId}" title="Clic para ver detalle">
+          <td>${escapeHtml(p.ruta || '')}</td>
+          <td>${escapeHtml(p.metodo || '')}</td>
+          <td>${escapeHtml(codigo)}</td>
+          ${colsAlerta}
+          <td>${escapeHtml(p.timestamp || '')}</td>
+        </tr>`;
+      })
+      .join('');
+    const cabecerasAlerta = '<th>Evento detectado</th><th>Severidad</th>';
+    return `<div class="subtabla-wrap">
+      <table class="subtabla">
+        <thead>
+          <tr><th>Ruta</th><th>Método</th><th>HTTP</th>${cabecerasAlerta}<th>Timestamp</th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+  }
+
+  function enlazarClicsSubtablaPeticiones(contenedorFila, peticiones, ipGrupo) {
+    const mapaPorId = {};
+    (peticiones || []).forEach((p) => {
+      if (p.id != null) mapaPorId[String(p.id)] = p;
+    });
+
+    contenedorFila.querySelectorAll('.subtabla tbody tr.fila-peticion').forEach((fila) => {
       fila.addEventListener('click', (e) => {
         e.stopPropagation();
-        abrirModalEvento(eventos[indice], ipAtacante);
+        const id = parseInt(fila.dataset.peticionId, 10);
+        if (!id) return;
+        abrirModalPeticion(id, ipGrupo, mapaPorId[String(id)]);
       });
     });
   }
 
-  /**
-   * Alterna expandir/colapsar la fila de detalle de una IP.
-   */
-  function alternarExpansion(ip) {
-    if (ipsExpandidas.has(ip)) {
-      ipsExpandidas.delete(ip);
-    } else {
-      ipsExpandidas.add(ip);
+  function obtenerGruposPeticionesFiltrados(ambito) {
+    const cache = ambito === 'admin' ? gruposCacheAdmin : gruposCachePublico;
+    const inputId = ambito === 'admin' ? 'filtro-ip-admin' : 'filtro-ip-publica';
+    const textoIp = (document.getElementById(inputId).value || '').trim().toLowerCase();
+    return cache
+      .filter((grupo) => pasaFiltroIpGrupo(grupo, textoIp))
+      .map((grupo) => ({
+        ...grupo,
+        _peticionesVisibles: grupo.peticiones || [],
+      }))
+      .filter((grupo) => grupo._peticionesVisibles.length > 0);
+  }
+
+  function appendFilaGrupoPeticiones(tbody, grupo, ambito) {
+    const ip = grupo.ip || '';
+    const expandidas = ambito === 'admin' ? ipsExpandidasAdmin : ipsExpandidasPublico;
+    const expandido = expandidas.has(ip);
+    const peticiones = grupo._peticionesVisibles || grupo.peticiones || [];
+    const total = peticiones.length;
+    const accionHtml =
+      ambito === 'publico' && ipsActivasCache.has(ip)
+        ? `<button type="button" class="btn-bloquear-ip" data-ip="${escapeHtml(ip)}">Bloquear</button>`
+        : '<span style="color:#64748b">—</span>';
+
+    const tr = document.createElement('tr');
+    tr.className = 'fila-grupo';
+    tr.dataset.ip = ip;
+    tr.innerHTML = `
+      <td class="celda-expandir">${expandido ? '−' : '+'}</td>
+      <td class="ip-mono">${escapeHtml(ip)}</td>
+      <td>${total}</td>
+      <td>${escapeHtml(grupo.primera_vez || '')}</td>
+      <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+      <td class="celda-accion">${accionHtml}</td>
+    `;
+
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-bloquear-ip')) return;
+      if (expandidas.has(ip)) expandidas.delete(ip);
+      else expandidas.add(ip);
+      renderTablaActividadPeticiones(ambito);
+    });
+
+    const btnBloquear = tr.querySelector('.btn-bloquear-ip');
+    if (btnBloquear) {
+      btnBloquear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bloquearIp(ip, btnBloquear);
+      });
     }
+
+    tbody.appendChild(tr);
+
+    if (expandido) {
+      const trDet = document.createElement('tr');
+      trDet.className = 'fila-detalle';
+      trDet.innerHTML = `<td colspan="6">${htmlSubtablaPeticiones(peticiones, ambito)}</td>`;
+      enlazarClicsSubtablaPeticiones(trDet, peticiones, ip);
+      tbody.appendChild(trDet);
+    }
+  }
+
+  function renderTablaActividadPeticiones(ambito) {
+    const tbodyId = ambito === 'admin' ? 'tbody-actividad-admin' : 'tbody-actividad-publica';
+    const tbody = document.getElementById(tbodyId);
+    const grupos = obtenerGruposPeticionesFiltrados(ambito);
+    const cols = 6;
+
+    if (!grupos.length) {
+      tbody.innerHTML =
+        `<tr class="empty-row"><td colspan="${cols}">No hay actividad que coincida con el filtro</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = '';
+    grupos.forEach((grupo) => appendFilaGrupoPeticiones(tbody, grupo, ambito));
+  }
+
+  async function cargarActividadPeticiones(ambito) {
+    const tbodyId = ambito === 'admin' ? 'tbody-actividad-admin' : 'tbody-actividad-publica';
+    try {
+      const res = await fetch(urlActividadPeticiones(ambito));
+      if (!res.ok) throw new Error('respuesta no OK');
+      const data = await res.json();
+      const lista = Array.isArray(data.grupos) ? data.grupos : [];
+      if (ambito === 'admin') {
+        gruposCacheAdmin = lista;
+        renderTablaActividadPeticiones('admin');
+      } else {
+        gruposCachePublico = lista;
+        renderTablaActividadPeticiones('publico');
+        await cargarIpsExportActividadPublica();
+      }
+    } catch (e) {
+      document.getElementById(tbodyId).innerHTML =
+        `<tr class="empty-row"><td colspan="6">Error al cargar datos</td></tr>`;
+    }
+  }
+
+  function alternarExpansion(ip) {
+    if (ipsExpandidas.has(ip)) ipsExpandidas.delete(ip);
+    else ipsExpandidas.add(ip);
     renderTablaGrupos();
   }
 
-  /**
-   * Construye el resumen que se envía al reportar una IP completa.
-   */
+  function alternarExpansionDia(dia) {
+    if (diasExpandidos.has(dia)) diasExpandidos.delete(dia);
+    else diasExpandidos.add(dia);
+    renderTablaGrupos();
+  }
+
   function resumenAtaquesGrupo(grupo) {
     return {
       ip: grupo.ip,
@@ -898,9 +3110,6 @@
     };
   }
 
-  /**
-   * GET /monitor/api/ips-activas — IPs que están navegando ahora (ventana del servidor).
-   */
   async function cargarIpsActivas() {
     try {
       const res = await fetch('/monitor/api/ips-activas');
@@ -909,13 +3118,10 @@
       ipsActivasCache = new Set((data.ips || []).map((ip) => String(ip)));
       renderTablaGrupos();
     } catch (e) {
-      /* Sin interrumpir el dashboard si falla el endpoint auxiliar */
+      /* Endpoint auxiliar; no bloquear el dashboard */
     }
   }
 
-  /**
-   * POST /monitor/bloquear — blacklist + invalidación de sesión de la IP objetivo.
-   */
   async function bloquearIp(ip, boton) {
     if (!ip || !boton) return;
     if (!confirm(`¿Bloquear la IP ${ip} y expulsar su sesión activa?`)) return;
@@ -951,9 +3157,6 @@
     }, 2500);
   }
 
-  /**
-   * POST /monitor/reportar — envía IP y resumen de ataques; muestra confirmación en el botón.
-   */
   async function reportarIp(grupo, boton) {
     if (!grupo || !boton) return;
     const textoOriginal = boton.textContent;
@@ -989,7 +3192,64 @@
   }
 
   /**
-   * Pinta la tabla principal agrupada por IP (filas expandibles + subtabla).
+   * Crea una fila de grupo IP (expandible) y la añade al tbody indicado.
+   */
+  function appendFilaGrupo(tbody, grupo) {
+    const ip = grupo.ip || '';
+    const expandido = ipsExpandidas.has(ip);
+    const grav = normalizarGravedad(grupo.gravedad_maxima) || '—';
+    const eventosVisibles = grupo._eventosVisibles || [];
+
+    const tr = document.createElement('tr');
+    tr.className = `fila-grupo ${claseFilaGravedad(grav)}`;
+    tr.dataset.ip = ip;
+    tr.innerHTML = `
+      <td class="celda-expandir">${expandido ? '−' : '+'}</td>
+      <td class="ip-mono">${escapeHtml(ip)}</td>
+      <td>${eventosVisibles.length}</td>
+      <td><div class="tipos-lista">${htmlTiposGrupo(grupo.tipos_ataque)}</div></td>
+      <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
+      <td>${escapeHtml(grupo.primera_vez || '')}</td>
+      <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+      <td class="celda-accion">
+        <button type="button" class="btn-reportar-ip" data-ip="${escapeHtml(ip)}">Reportar</button>
+        <a href="/admin/reportes?tab=ip&ip=${encodeURIComponent(ip)}" class="link-reportes-ip" target="_blank" rel="noopener" title="Ver reportes de esta IP en admin">Reportes</a>
+        ${ipsActivasCache.has(ip) ? `<button type="button" class="btn-bloquear-ip" data-ip="${escapeHtml(ip)}">Bloquear</button>` : ''}
+      </td>
+    `;
+
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-reportar-ip') || e.target.closest('.btn-bloquear-ip')) return;
+      alternarExpansion(ip);
+    });
+
+    const btnReportar = tr.querySelector('.btn-reportar-ip');
+    btnReportar.addEventListener('click', (e) => {
+      e.stopPropagation();
+      reportarIp(grupo, btnReportar);
+    });
+
+    const btnBloquear = tr.querySelector('.btn-bloquear-ip');
+    if (btnBloquear) {
+      btnBloquear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bloquearIp(ip, btnBloquear);
+      });
+    }
+
+    tbody.appendChild(tr);
+
+    if (expandido) {
+      const trDet = document.createElement('tr');
+      trDet.className = 'fila-detalle';
+      trDet.innerHTML = `<td colspan="8">${htmlSubtabla(eventosVisibles)}</td>`;
+      enlazarClicsSubtabla(trDet, eventosVisibles, ip);
+      tbody.appendChild(trDet);
+    }
+  }
+
+  /**
+   * Renderiza la tabla: plana por IP o agrupada por día con cabeceras colapsables.
    */
   function renderTablaGrupos() {
     const tbody = document.getElementById('tbody-grupos');
@@ -1001,85 +3261,87 @@
     }
 
     tbody.innerHTML = '';
-    grupos.forEach((grupo) => {
-      const ip = grupo.ip || '';
-      const expandido = ipsExpandidas.has(ip);
-      const grav = grupo.gravedad_maxima || 'BAJO';
-      const eventosVisibles = grupo._eventosVisibles || [];
 
-      const tr = document.createElement('tr');
-      tr.className = `fila-grupo ${claseFilaGravedad(grav)}`;
-      tr.dataset.ip = ip;
-      tr.innerHTML = `
-        <td class="celda-expandir">${expandido ? '▼' : '▶'}</td>
-        <td class="ip-mono">${escapeHtml(ip)}</td>
-        <td>${eventosVisibles.length}</td>
-        <td><div class="tipos-lista">${htmlTiposGrupo(grupo.tipos_ataque)}</div></td>
-        <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
-        <td>${escapeHtml(grupo.primera_vez || '')}</td>
-        <td>${escapeHtml(grupo.ultima_vez || '')}</td>
-        <td class="celda-accion">
-          <button type="button" class="btn-reportar-ip" data-ip="${escapeHtml(ip)}">📋 Reportar</button>
-          ${ipsActivasCache.has(ip) ? `<button type="button" class="btn-bloquear-ip" data-ip="${escapeHtml(ip)}">Bloquear</button>` : ''}
+    if (!agruparPorDia) {
+      grupos.forEach((grupo) => appendFilaGrupo(tbody, grupo));
+      return;
+    }
+
+    // Agrupación por YYYY-MM-DD de ultima_vez
+    const porDia = {};
+    grupos.forEach((g) => {
+      const dia = fechaDiaDeGrupo(g);
+      if (!porDia[dia]) porDia[dia] = [];
+      porDia[dia].push(g);
+    });
+
+    const diasOrdenados = Object.keys(porDia).sort((a, b) => b.localeCompare(a));
+
+    diasOrdenados.forEach((dia) => {
+      const lista = porDia[dia];
+      const totalEv = lista.reduce((s, g) => s + (g._eventosVisibles || []).length, 0);
+      const ipsUnicas = lista.length;
+      const tipoComun = tipoMasComunEnGrupos(lista);
+      const expandidoDia = diasExpandidos.has(dia);
+
+      const trDia = document.createElement('tr');
+      trDia.className = 'fila-dia';
+      trDia.innerHTML = `
+        <td colspan="8">
+          <span>${expandidoDia ? '−' : '+'}</span>
+          <strong>${escapeHtml(dia)}</strong>
+          <span class="dia-resumen">
+            — ${totalEv} eventos · ${ipsUnicas} IPs · tipo más común: ${escapeHtml(tipoComun)}
+          </span>
         </td>
       `;
+      trDia.addEventListener('click', () => alternarExpansionDia(dia));
+      tbody.appendChild(trDia);
 
-      // Clic en la fila (no en botones de acción) expande/colapsa
-      tr.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-reportar-ip') || e.target.closest('.btn-bloquear-ip')) return;
-        alternarExpansion(ip);
-      });
-
-      const btnReportar = tr.querySelector('.btn-reportar-ip');
-      btnReportar.addEventListener('click', (e) => {
-        e.stopPropagation();
-        reportarIp(grupo, btnReportar);
-      });
-
-      const btnBloquear = tr.querySelector('.btn-bloquear-ip');
-      if (btnBloquear) {
-        btnBloquear.addEventListener('click', (e) => {
-          e.stopPropagation();
-          bloquearIp(ip, btnBloquear);
-        });
-      }
-
-      tbody.appendChild(tr);
-
-      if (expandido) {
-        const trDet = document.createElement('tr');
-        trDet.className = 'fila-detalle';
-        trDet.innerHTML = `<td colspan="8">${htmlSubtabla(eventosVisibles)}</td>`;
-        enlazarClicsSubtabla(trDet, eventosVisibles, ip);
-        tbody.appendChild(trDet);
+      if (expandidoDia) {
+        const trCont = document.createElement('tr');
+        trCont.className = 'fila-dia-contenido';
+        const td = document.createElement('td');
+        td.colSpan = 8;
+        const wrap = document.createElement('div');
+        wrap.className = 'dia-grupos-inner';
+        const innerTable = document.createElement('table');
+        const innerThead = document.createElement('thead');
+        innerThead.innerHTML = `
+          <tr>
+            <th></th><th>IP</th><th>Total</th><th>Tipos</th>
+            <th>Gravedad</th><th>Primera</th><th>Última</th><th>Acción</th>
+          </tr>
+        `;
+        const innerTbody = document.createElement('tbody');
+        lista.forEach((grupo) => appendFilaGrupo(innerTbody, grupo));
+        innerTable.appendChild(innerThead);
+        innerTable.appendChild(innerTbody);
+        wrap.appendChild(innerTable);
+        td.appendChild(wrap);
+        trCont.appendChild(td);
+        tbody.appendChild(trCont);
       }
     });
   }
 
-  /** Restablece todos los filtros y repinta. */
   function limpiarFiltros() {
     document.getElementById('filtro-ip').value = '';
-    document.getElementById('filtro-tiempo').value = 'todo';
     filtroTipoActual = 'Todos';
     filtroGravedadActual = 'Todos';
     document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.filtro === 'Todos');
     });
-    document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.gravedad === 'Todos');
-    });
-    renderTablaGrupos();
+    sincronizarControlesGravedad('Todos');
+    cargarEventos();
   }
 
-  /**
-   * GET /monitor/api/eventos — guarda grupos por IP y renderiza la tabla.
-   */
   async function cargarEventos() {
     try {
-      const res = await fetch('/monitor/api/eventos');
+      const res = await fetch(urlConPeriodo('/monitor/api/eventos'));
       if (!res.ok) throw new Error('respuesta no OK');
       const data = await res.json();
-      gruposCache = esRespuestaAgrupadaPorIp(data) ? data : [];
+      gruposCache = extraerGruposEventos(data);
       renderTablaGrupos();
     } catch (e) {
       document.getElementById('tbody-grupos').innerHTML =
@@ -1087,16 +3349,40 @@
     }
   }
 
-  // ——— Modal de detalle de evento (cerrar con X o clic en overlay) ———
+  // ——— Modal de detalle ———
   document.getElementById('modal-evento-cerrar').addEventListener('click', cerrarModalEvento);
   document.getElementById('modal-evento-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-evento-overlay') cerrarModalEvento();
   });
 
-  // ——— Listeners de filtros ———
+  document.getElementById('modal-ia-cerrar').addEventListener('click', cerrarModalIA);
+  document.getElementById('modal-ia-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-ia-overlay') cerrarModalIA();
+  });
+  document.getElementById('btn-resumen-diario').addEventListener('click', () => cargarResumenDiario(true));
+  document.getElementById('resumen-fecha').addEventListener('change', () => cargarResumenDiario(false));
+  inicializarSelectorResumenDiario();
+
+  const chartsCollapsible = document.getElementById('charts-collapsible');
+  chartsCollapsible.addEventListener('toggle', onPanelGraficosToggle);
+  actualizarEtiquetaPanelGraficos();
+
+  // ——— Período global ———
+  document.querySelectorAll('.btn-periodo').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.periodo !== periodoActual) {
+        cambiarPeriodo(btn.dataset.periodo);
+      }
+    });
+  });
+
+  // ——— Filtros de tabla ———
   document.getElementById('filtro-ip').addEventListener('input', renderTablaGrupos);
-  document.getElementById('filtro-tiempo').addEventListener('change', renderTablaGrupos);
   document.getElementById('btn-limpiar-filtros').addEventListener('click', limpiarFiltros);
+  document.getElementById('toggle-agrupar-dia').addEventListener('change', (e) => {
+    agruparPorDia = e.target.checked;
+    renderTablaGrupos();
+  });
 
   document.querySelectorAll('#filtros-tipo .filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1107,24 +3393,63 @@
     });
   });
 
+  document.getElementById('filtro-gravedad-select').addEventListener('change', (e) => {
+    aplicarFiltroGravedad(e.target.value);
+  });
+
   document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#filtros-gravedad .filter-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      filtroGravedadActual = btn.dataset.gravedad;
-      renderTablaGrupos();
+      aplicarFiltroGravedad(btn.dataset.gravedad);
     });
   });
 
-  // Carga inicial y refresco cada 30 s (incluye IPs activas para el botón Bloquear)
-  cargarEstadisticas();
+  // ——— Carga inicial y refrescos automáticos ———
+  recargarTodo();
   cargarIpsActivas();
-  cargarEventos();
+  cargarAnomalias();
+
+  document.getElementById('filtro-ip-publica').addEventListener('input', () => {
+    renderTablaActividadPeticiones('publico');
+  });
+  document.getElementById('filtro-ip-admin').addEventListener('input', () => {
+    renderTablaActividadPeticiones('admin');
+  });
+
+  document.getElementById('export-ip-publica').addEventListener('change', () => {
+    cargarFechasExportActividadPublica();
+  });
+  document.getElementById('export-fecha-publica').addEventListener('change', actualizarBotonesExportActividad);
+  document.getElementById('btn-export-csv-publica').addEventListener('click', () => {
+    abrirExportActividadPublica('csv');
+  });
+  document.getElementById('btn-export-headers-publica').addEventListener('click', () => {
+    abrirExportActividadPublica('headers');
+  });
+
+  document.getElementById('modal-btn-analizar-ia').addEventListener('click', () => {
+    const ctx = modalRegistroContext;
+    if (ctx.fuente !== 'peticion' || !ctx.registro?.id) return;
+    analizarRegistroConIA(
+      ctx.registro.id,
+      'peticion',
+      document.getElementById('modal-btn-analizar-ia'),
+      'Analizar con IA'
+    );
+  });
+  document.getElementById('modal-btn-generar-reporte').addEventListener('click', () => {
+    reportarPeticionDesdeModal(document.getElementById('modal-btn-generar-reporte'));
+  });
+
   setInterval(() => {
     cargarEstadisticas();
     cargarIpsActivas();
     cargarEventos();
+    cargarActividadPeticiones('publico');
+    cargarActividadPeticiones('admin');
   }, 30000);
+
+  setInterval(refrescarAlertas, 10000);
+  setInterval(cargarAnomalias, 5 * 60 * 1000);
 </script>
 </body>
 </html>

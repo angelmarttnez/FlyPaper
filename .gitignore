@@ -1,0 +1,19 @@
+# Base de datos (no subir datos reales de ataques)
+flypaper.db
+
+# Variables de entorno con API keys — NUNCA subir esto
+.env
+.env.local
+.env.production
+
+# Archivos de Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Cursor
+.cursor/

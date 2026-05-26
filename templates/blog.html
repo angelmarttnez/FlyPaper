@@ -45,11 +45,7 @@
     transition: all 0.2s;
   }
   .nav-links a:hover { background: #1a2138; color: #fff; }
-  .nav-links a.login {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: #fff;
-  }
-  .nav-links a.login:hover { opacity: 0.9; }
+  .nav-links a.active { background: #1a2138; color: #fff; }
 
   .container { max-width: 1280px; margin: 0 auto; padding: 48px 40px; }
   .page-header { margin-bottom: 40px; }
@@ -155,16 +151,7 @@
 </style>
 </head>
 <body>
-  <nav class="navbar">
-    <div class="logo">FlyPaper</div>
-    <ul class="nav-links">
-      <li><a href="/">Inicio</a></li>
-      <li><a href="/blog">Blog</a></li>
-      <li><a href="/objetivos">Objetivos CTF</a></li>
-      <li><a href="/search">Buscar</a></li>
-      <li><a href="/login" class="login">Login</a></li>
-    </ul>
-  </nav>
+  {% include 'partials/navbar_publico.html' %}
 
   <main class="container">
     <div class="page-header">

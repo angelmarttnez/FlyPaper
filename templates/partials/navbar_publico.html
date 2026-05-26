@@ -1,0 +1,88 @@
+{# Barra superior compartida: /search, /blog, /objetivos. Requiere sesion_logueado y sesion_etiqueta. #}
+<style>
+  .navbar-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .nav-sesion {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-left: 16px;
+    border-left: 1px solid rgba(120, 160, 255, 0.15);
+  }
+  .nav-sesion-label {
+    font-size: 13px;
+    color: #8b91a7;
+    white-space: nowrap;
+  }
+  .nav-sesion-label strong {
+    color: #e4e6eb;
+    font-weight: 600;
+  }
+  .nav-sesion-btn {
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 7px 14px;
+    border-radius: 8px;
+    transition: opacity 0.2s, background 0.2s;
+    white-space: nowrap;
+  }
+  .nav-sesion-login {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff;
+  }
+  .nav-sesion-login:hover { opacity: 0.92; }
+  .nav-sesion-logout {
+    background: transparent;
+    color: #b4b8c5;
+    border: 1px solid #3d4663;
+  }
+  .nav-sesion-logout:hover {
+    color: #fff;
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.12);
+  }
+  body.nav-tema-ctf .nav-sesion {
+    border-left-color: rgba(0, 255, 140, 0.15);
+  }
+  body.nav-tema-ctf .nav-sesion-label { color: #7a9b8a; }
+  body.nav-tema-ctf .nav-sesion-label strong { color: #c5e8d4; }
+  body.nav-tema-ctf .nav-sesion-login {
+    background: transparent;
+    border: 1px solid #00ff8c;
+    color: #00ff8c;
+  }
+  body.nav-tema-ctf .nav-sesion-login:hover { background: rgba(0, 255, 140, 0.1); }
+  body.nav-tema-ctf .nav-sesion-logout {
+    border-color: #1a3a2a;
+    color: #8aa89a;
+  }
+  body.nav-tema-ctf .nav-sesion-logout:hover {
+    color: #00ff8c;
+    border-color: #00ff8c;
+  }
+</style>
+<nav class="navbar">
+  <div class="logo">FlyPaper</div>
+  <div class="navbar-right">
+    <ul class="nav-links">
+      <li><a href="/blog"{% if nav_activo == 'blog' %} class="active"{% endif %}>Blog</a></li>
+      <li><a href="/objetivos"{% if nav_activo == 'objetivos' %} class="active"{% endif %}>Objetivos CTF</a></li>
+      <li><a href="/search"{% if nav_activo == 'search' %} class="active"{% endif %}>Buscar</a></li>
+    </ul>
+    <div class="nav-sesion" aria-label="Estado de sesión">
+      <span class="nav-sesion-label">Sesión: <strong>{{ sesion_etiqueta }}</strong></span>
+      {% if sesion_logueado %}
+      <a href="/logout" class="nav-sesion-btn nav-sesion-logout" rel="nofollow">Cerrar sesión</a>
+      {% else %}
+      <a href="/login" class="nav-sesion-btn nav-sesion-login">Iniciar sesión</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+{% include 'partials/sesion_inactividad.html' %}
