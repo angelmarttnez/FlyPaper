@@ -34,6 +34,9 @@ from flask import (
     session,
     url_for,
 )
+from flask_limiter import Limiter
+from flask_limiter.errors import RateLimitExceeded
+from flask_limiter.util import get_remote_address
 
 from database import (
     contar_flags_resueltas_por_usuario,
@@ -698,6 +701,28 @@ CLAVE_ULTIMA_ACTIVIDAD_PUBLICA = "ultima_actividad_publica_ts"
 aplicacion.config["PERMANENT_SESSION_LIFETIME"] = SESION_PUBLICA_INACTIVIDAD
 aplicacion.config["SESSION_REFRESH_EACH_REQUEST"] = True
 
+# Límite global por IP (resto de rutas públicas). Rutas /monitor/* quedan exentas más abajo.
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=aplicacion,
+    default_limits=["200 per minute"],
+)
+
+
+@limiter.request_filter
+def _exemptir_monitor_de_rate_limit():
+    """
+    El panel /monitor no lleva rate limit: el acceso ya está acotado por sesión de analista.
+    """
+    return request.path.startswith("/monitor")
+
+
+@aplicacion.errorhandler(RateLimitExceeded)
+def manejar_limite_peticiones(_exc):
+    """Respuesta JSON uniforme (429) cuando se supera cualquier límite de tasa."""
+    return jsonify({"error": "Demasiadas peticiones. Espera un momento."}), 429
+
+
 # Rol asignado en /search, /blog y /objetivos cuando no hay login.
 ROL_INVITADO = "invitado"
 
@@ -1328,6 +1353,7 @@ def _redirigir_si_no_es_admin():
 
 
 @aplicacion.post("/login")
+@limiter.limit("10 per minute")
 def procesar_login():
     """
     Valida credenciales en este orden: privados (admin/admin), demo Angel, tabla usuarios (MD5).
@@ -1700,6 +1726,7 @@ def simular_wp_admin():
 
 
 @aplicacion.get("/search")
+@limiter.limit("30 per minute")
 def mostrar_busqueda():
     """
     Búsqueda interna accesible con sesión de usuario o Invitado.
@@ -1717,6 +1744,7 @@ def mostrar_busqueda():
 
 
 @aplicacion.post("/search")
+@limiter.limit("30 per minute")
 def procesar_busqueda():
     """
     Búsqueda vulnerable a SQLi (concatenación directa sin sanitizar).
@@ -1778,6 +1806,7 @@ def procesar_busqueda():
 
 
 @aplicacion.get("/objetivos")
+@limiter.limit("30 per minute")
 @requiere_autenticacion_objetivos
 def pagina_objetivos():
     """
@@ -1799,6 +1828,7 @@ def pagina_objetivos():
 
 
 @aplicacion.post("/objetivos/submit")
+@limiter.limit("10 per minute")
 @requiere_autenticacion_objetivos
 def objetivos_submit():
     """
@@ -1839,6 +1869,7 @@ def objetivos_reset_progreso():
 
 
 @aplicacion.get("/blog")
+@limiter.limit("60 per minute")
 def blog_listado():
     """
     Blog público del honeypot: listado de posts reales desde la BD.
@@ -1870,6 +1901,7 @@ def blog_detalle(post_id):
 
 
 @aplicacion.post("/blog/<int:post_id>/comentar")
+@limiter.limit("5 per minute")
 def blog_comentar(post_id):
     """
     Publica un comentario volátil en la sesión del visitante (no en la BD global).
