@@ -3,3 +3,4 @@ flask-limiter==4.1.1
 python-dotenv==1.2.2
 gunicorn>=22.0.0
 groq
+tzdata==2026.2
