@@ -14,6 +14,7 @@ load_dotenv()
 import csv
 import io
 import json
+import logging
 import threading
 import time
 import uuid
@@ -78,6 +79,9 @@ from database import (
     guardar_resumen_diario_ia,
     obtener_resumen_diario_ia,
     listar_resumenes_diarios_ia,
+    registrar_resumen_log,
+    obtener_log_resumenes,
+    eliminar_resumen_diario_ia,
     registrar_ip_bloqueada,
     normalizar_periodo_monitor,
     obtener_alertas_graves_monitor,
@@ -86,6 +90,7 @@ from database import (
 )
 from ai_analyzer import analizar_payload, generar_resumen_diario, detectar_anomalias
 from detector import (
+    TIPO_TRAFICO_NORMAL,
     calcular_gravedad,
     clasificar_ataque,
     normalizar_gravedad_almacenada,
@@ -105,6 +110,9 @@ from timezone_fp import (
 
 # Intervalo entre ejecuciones del hilo de fondo (limpieza + anomalías IA, 30 minutos).
 INTERVALO_LIMPIEZA_COMENTARIOS_SEG = 30 * 60
+
+# Evita generar más de un resumen automático por día (ventana 23:59 Europe/Madrid).
+_ultima_fecha_resumen_auto = None
 
 # Caché en memoria del resumen diario por fecha (evita llamadas repetidas a la API).
 _cache_resumen_diario_por_fecha = {}
@@ -226,7 +234,7 @@ def agrupar_eventos_por_ip(limite_eventos=500, periodo=None, gravedad=None):
             }
         grupo = mapa_grupos[ip]
         grupo["total_eventos"] += 1
-        tipo = (fila.get("tipo_ataque") or "").strip() or "Otro"
+        tipo = (fila.get("tipo_ataque") or "").strip() or TIPO_TRAFICO_NORMAL
         grupo["tipos_set"].add(tipo)
         grav = normalizar_gravedad_almacenada(fila.get("gravedad"))
         if grav:
@@ -257,9 +265,9 @@ def agrupar_eventos_por_ip(limite_eventos=500, periodo=None, gravedad=None):
 
 def _peticion_detalle_agrupado(fila):
     """Petición HTTP anidada dentro de un grupo por IP (monitor)."""
-    tipo = (fila.get("tipo_ataque") or "Otro").strip() or "Otro"
+    tipo = (fila.get("tipo_ataque") or TIPO_TRAFICO_NORMAL).strip() or TIPO_TRAFICO_NORMAL
     gravedad = ""
-    if tipo != "Otro":
+    if tipo != TIPO_TRAFICO_NORMAL:
         gravedad = normalizar_gravedad_almacenada(fila.get("gravedad")) or ""
     return {
         "id": int(fila["id"]) if fila.get("id") is not None else 0,
@@ -422,7 +430,7 @@ def _respuesta_analisis_ia(registro_id, tipo_ataque, payload, ruta, fuente):
         return jsonify({"error": "Este registro no tiene payload para analizar"}), 400
 
     resultado = analizar_payload(
-        tipo_ataque or "Otro",
+        tipo_ataque or TIPO_TRAFICO_NORMAL,
         payload,
         ruta or "/",
     )
@@ -437,15 +445,16 @@ def _respuesta_analisis_ia(registro_id, tipo_ataque, payload, ruta, fuente):
     )
 
 
-def _ataques_detectados_sin_otro(estadisticas_bd):
+def _ataques_detectados_sin_trafico_normal(estadisticas_bd):
     """
-    Cuenta eventos cuyo tipo de ataque no es exactamente 'Otro' (sin distinguir mayúsculas).
+    Cuenta eventos cuyo tipo no es tráfico normal (sin distinguir mayúsculas).
 
     Se usa la agregación `ataques_por_tipo` de `obtener_estadisticas` para no duplicar SQL.
     """
     total = 0
     for tipo, cantidad in (estadisticas_bd.get("ataques_por_tipo") or {}).items():
-        if str(tipo).strip().lower() != "otro":
+        texto = str(tipo).strip().lower()
+        if texto not in ("otro", "tráfico normal"):
             total += int(cantidad)
     return total
 
@@ -499,6 +508,56 @@ def limpiar_comentarios_antiguos():
     return eliminados
 
 
+def _debe_generar_resumen_automatico_ahora():
+    """True en la ventana 23:59 si aún no hay resumen guardado para hoy."""
+    global _ultima_fecha_resumen_auto
+    ahora = ahora_naive()
+    if not (ahora.hour == 23 and ahora.minute == 59):
+        return False
+    hoy = fecha_hoy()
+    if _ultima_fecha_resumen_auto == hoy:
+        return False
+    if obtener_resumen_diario_ia(hoy):
+        _ultima_fecha_resumen_auto = hoy
+        return False
+    return True
+
+
+def _generar_y_guardar_resumen_automatico(fecha):
+    """
+    Genera el resumen diario con IA, lo persiste y registra en resumenes_log.
+
+    No lanza excepciones: errores se registran con logging para no detener el hilo.
+    """
+    global _ultima_fecha_resumen_auto
+    try:
+        total = contar_eventos_en_fecha(fecha)
+        texto = generar_resumen_diario(fecha)
+        if texto:
+            guardar_resumen_diario_ia(fecha, texto, total_eventos=total)
+            registrar_resumen_log(
+                fecha, "automatico", total, len(texto), ok=True
+            )
+            logging.info(
+                "[FlyPaper] Resumen automático generado para %s: %s caracteres",
+                fecha,
+                len(texto),
+            )
+            _ultima_fecha_resumen_auto = fecha
+        else:
+            registrar_resumen_log(fecha, "automatico", total, 0, ok=False)
+    except Exception as exc:
+        logging.error(
+            "[FlyPaper] Error al generar resumen automático para %s: %s",
+            fecha,
+            exc,
+        )
+        try:
+            registrar_resumen_log(fecha, "automatico", 0, 0, ok=False)
+        except Exception:
+            pass
+
+
 def ejecutar_deteccion_anomalias_fondo():
     """
     Ejecuta detectar_anomalias con eventos de la última hora y guarda el resultado en caché.
@@ -528,6 +587,13 @@ def tarea_periodica_fondo():
             ejecutar_deteccion_anomalias_fondo()
         except Exception as exc:
             print(f"[FlyPaper] Error en la detección periódica de anomalías: {exc}")
+        try:
+            if _debe_generar_resumen_automatico_ahora():
+                _generar_y_guardar_resumen_automatico(fecha_hoy())
+        except Exception as exc:
+            logging.error(
+                "[FlyPaper] Error en el scheduler de resumen diario: %s", exc
+            )
         time.sleep(INTERVALO_LIMPIEZA_COMENTARIOS_SEG)
 
 
@@ -542,7 +608,7 @@ def iniciar_hilo_limpieza_comentarios():
     )
     hilo.start()
     print(
-        "[FlyPaper] Hilo de fondo iniciado (limpieza de comentarios y anomalías IA, "
+        "[FlyPaper] Hilo de fondo iniciado (limpieza, anomalías IA y resumen 23:59, "
         "cada 30 minutos)."
     )
 
@@ -1563,7 +1629,21 @@ def admin_reportes():
                 "preview": preview,
                 "resumen_completo": texto,
                 "total_eventos": fila.get("total_eventos") or 0,
+                "caracteres": len(texto),
                 "generado_en": fila.get("generado_en") or "",
+            }
+        )
+
+    log_resumenes_vista = []
+    for entrada in obtener_log_resumenes(limite=50):
+        log_resumenes_vista.append(
+            {
+                "fecha": entrada.get("fecha") or "",
+                "tipo": entrada.get("tipo") or "",
+                "total_eventos": entrada.get("total_eventos") or 0,
+                "caracteres": entrada.get("caracteres") or 0,
+                "generado_en": entrada.get("generado_en") or "",
+                "ok": bool(entrada.get("ok")),
             }
         )
 
@@ -1577,6 +1657,7 @@ def admin_reportes():
         busqueda_enviada=busqueda_enviada,
         error_validacion=error_validacion,
         resumenes=resumenes_vista,
+        log_resumenes=log_resumenes_vista,
     )
 
 
@@ -2261,9 +2342,10 @@ def monitor_api_peticion_detalle(peticion_id):
 
     tamano_bytes = peticion.get("tamano_respuesta_bytes")
     tiempo_ms = peticion.get("tiempo_ms")
-    tipo_ataque = (peticion.get("tipo_ataque") or "Otro").strip() or "Otro"
+    tipo_ataque = (peticion.get("tipo_ataque") or TIPO_TRAFICO_NORMAL).strip()
+    tipo_ataque = tipo_ataque or TIPO_TRAFICO_NORMAL
     gravedad = ""
-    if tipo_ataque != "Otro":
+    if tipo_ataque != TIPO_TRAFICO_NORMAL:
         gravedad = normalizar_gravedad_almacenada(peticion.get("gravedad")) or ""
 
     return jsonify(
@@ -2328,16 +2410,8 @@ def monitor_api_fechas_con_datos():
     )
 
 
-@aplicacion.get("/monitor/api/resumen-diario")
-@requiere_autenticacion_monitor
-def monitor_api_resumen_diario():
-    """
-    Resumen ejecutivo en prosa de los ataques de un día (Claude).
-
-    Query: fecha=YYYY-MM-DD, regenerar=1 para forzar nueva generación.
-    """
-    fecha = _normalizar_fecha_resumen(request.args.get("fecha"))
-    regenerar = request.args.get("regenerar", "").lower() in ("1", "true", "si", "yes")
+def _json_respuesta_resumen_diario(fecha, regenerar=False, registrar_tipo_log=None):
+    """Construye la respuesta JSON del resumen diario (monitor y admin)."""
     resumen, desde_cache, total, sin_datos = _obtener_resumen_diario_con_cache(
         fecha, regenerar=regenerar
     )
@@ -2349,6 +2423,10 @@ def monitor_api_resumen_diario():
                 "fecha": fecha,
                 "total_eventos": 0,
             }
+        )
+    if registrar_tipo_log and resumen and not desde_cache:
+        registrar_resumen_log(
+            fecha, registrar_tipo_log, total, len(resumen), ok=True
         )
     guardado = obtener_resumen_diario_ia(fecha)
     return jsonify(
@@ -2362,6 +2440,110 @@ def monitor_api_resumen_diario():
             "cache_ttl_segundos": TTL_RESUMEN_DIARIO_SEG,
         }
     )
+
+
+@aplicacion.get("/admin/api/resumen-diario")
+def admin_api_resumen_diario():
+    """
+    Resumen diario IA (misma lógica que el monitor) accesible desde el panel admin.
+
+    Query: fecha=YYYY-MM-DD, regenerar=1 para forzar nueva generación (tipo log: manual).
+    """
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return jsonify({"error": "Acceso denegado"}), 403
+    fecha = _normalizar_fecha_resumen(request.args.get("fecha"))
+    regenerar = request.args.get("regenerar", "").lower() in ("1", "true", "si", "yes")
+    return _json_respuesta_resumen_diario(
+        fecha, regenerar=regenerar, registrar_tipo_log="manual"
+    )
+
+
+@aplicacion.get("/admin/api/resumen-preview")
+def admin_api_resumen_preview():
+    """Genera un resumen sin guardarlo en resumenes_diarios_ia (solo preview)."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return jsonify({"error": "Acceso denegado"}), 403
+    fecha = _normalizar_fecha_resumen(request.args.get("fecha"))
+    total = contar_eventos_en_fecha(fecha)
+    if total == 0:
+        return jsonify(
+            {
+                "sin_datos": True,
+                "mensaje": "No hay datos para este día",
+                "fecha": fecha,
+                "total_eventos": 0,
+            }
+        )
+    texto = generar_resumen_diario(fecha)
+    registrar_resumen_log(fecha, "preview", total, len(texto or ""), ok=bool(texto))
+    return jsonify(
+        {
+            "resumen": texto,
+            "fecha": fecha,
+            "total_eventos": total,
+            "es_preview": True,
+        }
+    )
+
+
+@aplicacion.delete("/admin/api/resumen-diario/<fecha>")
+def admin_api_eliminar_resumen_diario(fecha):
+    """Elimina el resumen guardado de una fecha."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return jsonify({"error": "Acceso denegado"}), 403
+    try:
+        datetime.strptime(fecha, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Fecha inválida"}), 400
+    eliminar_resumen_diario_ia(fecha)
+    return jsonify({"exito": True, "fecha": fecha})
+
+
+@aplicacion.get("/admin/api/resumen-diario/<fecha>/descargar")
+def admin_api_descargar_resumen_diario(fecha):
+    """Descarga el resumen guardado como archivo de texto."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return jsonify({"error": "Acceso denegado"}), 403
+    try:
+        datetime.strptime(fecha, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Fecha inválida"}), 400
+    guardado = obtener_resumen_diario_ia(fecha)
+    if not guardado or not guardado.get("resumen"):
+        return jsonify({"error": "No hay resumen guardado para esta fecha"}), 404
+    nombre = f"flypaper_resumen_{fecha}.txt"
+    respuesta = make_response(guardado["resumen"], 200)
+    respuesta.mimetype = "text/plain; charset=utf-8"
+    respuesta.headers["Content-Disposition"] = (
+        f'attachment; filename="{nombre}"'
+    )
+    return respuesta
+
+
+@aplicacion.get("/admin/api/resumenes-log")
+def admin_api_resumenes_log():
+    """Últimas entradas del log de generación de resúmenes."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return jsonify({"error": "Acceso denegado"}), 403
+    return jsonify({"entradas": obtener_log_resumenes(limite=50)})
+
+
+@aplicacion.get("/monitor/api/resumen-diario")
+@requiere_autenticacion_monitor
+def monitor_api_resumen_diario():
+    """
+    Resumen ejecutivo en prosa de los ataques de un día (Claude).
+
+    Query: fecha=YYYY-MM-DD, regenerar=1 para forzar nueva generación.
+    """
+    fecha = _normalizar_fecha_resumen(request.args.get("fecha"))
+    regenerar = request.args.get("regenerar", "").lower() in ("1", "true", "si", "yes")
+    return _json_respuesta_resumen_diario(fecha, regenerar=regenerar)
 
 
 @aplicacion.get("/monitor/api/anomalias")

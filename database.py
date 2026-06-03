@@ -244,6 +244,16 @@ def inicializar_db():
         generado_en DATETIME
     );
 
+    CREATE TABLE IF NOT EXISTS resumenes_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        tipo TEXT NOT NULL DEFAULT 'automatico',
+        total_eventos INTEGER DEFAULT 0,
+        caracteres INTEGER DEFAULT 0,
+        generado_en TEXT NOT NULL,
+        ok INTEGER DEFAULT 1
+    );
+
     CREATE TABLE IF NOT EXISTS registro_peticiones (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ip TEXT,
@@ -271,6 +281,13 @@ def inicializar_db():
         _asegurar_columna_gravedad(cursor)
         _asegurar_columna_rol_usuarios(cursor)
         _asegurar_columnas_registro_peticiones(cursor)
+        cursor.execute(
+            "UPDATE eventos SET tipo_ataque = 'Tráfico Normal' WHERE tipo_ataque = 'Otro';"
+        )
+        cursor.execute(
+            "UPDATE registro_peticiones SET tipo_ataque = 'Tráfico Normal' "
+            "WHERE tipo_ataque = 'Otro';"
+        )
         conexion.commit()
 
     _inicializar_bd_privada()
@@ -1106,7 +1123,7 @@ def guardar_evento(
         user_agent (str): User-Agent.
         tipo_ataque (str): Clasificación del detector.
         headers: Cabeceras HTTP (dict o texto).
-        gravedad (str|None): Crítica, Alta, Sospechoso; None para tráfico «Otro».
+        gravedad (str|None): Crítica, Alta, Sospechoso; None para tráfico normal.
     """
     gravedad_guardar = normalizar_gravedad_almacenada(gravedad)
     payload_texto = _serializar_campo_json(payload)
@@ -1221,11 +1238,11 @@ _SELECT_REGISTRO_PETICIONES_CORRELADO = f"""
     rp.payload,
     rp.headers,
     CASE
-        WHEN COALESCE(TRIM(rp.tipo_ataque), '') NOT IN ('', 'Otro')
+        WHEN COALESCE(TRIM(rp.tipo_ataque), '') NOT IN ('', 'Otro', 'Tráfico Normal')
             THEN TRIM(rp.tipo_ataque)
-        WHEN e.tipo_ataque IS NOT NULL AND TRIM(e.tipo_ataque) NOT IN ('', 'Otro')
+        WHEN e.tipo_ataque IS NOT NULL AND TRIM(e.tipo_ataque) NOT IN ('', 'Otro', 'Tráfico Normal')
             THEN TRIM(e.tipo_ataque)
-        ELSE COALESCE(NULLIF(TRIM(rp.tipo_ataque), ''), 'Otro')
+        ELSE COALESCE(NULLIF(TRIM(rp.tipo_ataque), ''), 'Tráfico Normal')
     END AS tipo_ataque,
     COALESCE(NULLIF(TRIM(rp.gravedad), ''), NULLIF(TRIM(e.gravedad), '')) AS gravedad,
     COALESCE(rp.evento_id, e.id) AS evento_id,
@@ -1258,9 +1275,9 @@ def guardar_registro_peticion(
     """Registra cada petición HTTP para el panel de actividad por IP del monitor."""
     payload_texto = _serializar_campo_json(payload) if payload is not None else ""
     headers_texto = _serializar_campo_json(headers) if headers is not None else ""
-    tipo_norm = (tipo_ataque or "Otro").strip() or "Otro"
+    tipo_norm = (tipo_ataque or "Tráfico Normal").strip() or "Tráfico Normal"
     gravedad_guardar = ""
-    if tipo_norm != "Otro":
+    if tipo_norm not in ("Otro", "Tráfico Normal"):
         gravedad_guardar = normalizar_gravedad_almacenada(gravedad) or ""
     consulta = """
     INSERT INTO registro_peticiones (
@@ -1558,17 +1575,18 @@ def _where_periodo_sql(desde, hasta, prefijo=""):
     )
 
 
-def _es_tipo_otro(tipo):
-    """True si el tipo corresponde a actividad normal / ruido no clasificado como ataque."""
-    return str(tipo or "").strip().lower() == "otro"
+def _es_tipo_trafico_normal(tipo):
+    """True si el tipo es tráfico legítimo (no incidente SOC)."""
+    texto = str(tipo or "").strip().lower()
+    return texto in ("otro", "tráfico normal")
 
 
-def _filtrar_mapa_sin_otro(diccionario):
-    """Elimina la clave 'Otro' de agregaciones por tipo de ataque."""
+def _filtrar_mapa_sin_trafico_normal(diccionario):
+    """Elimina tráfico normal de agregaciones por tipo de ataque."""
     return {
         clave: valor
         for clave, valor in (diccionario or {}).items()
-        if not _es_tipo_otro(clave)
+        if not _es_tipo_trafico_normal(clave)
     }
 
 
@@ -1590,18 +1608,18 @@ def _sql_condicion_amenazas_reales(prefijo=""):
     """
     Incidentes con severidad en tráfico público (sin /admin ni /monitor).
 
-    Excluye tráfico «Otro», gravedad vacía y rutas de paneles internos.
+    Excluye tráfico normal, gravedad vacía y rutas de paneles internos.
     """
     col = f"{prefijo}." if prefijo else ""
     return (
         f"({col}gravedad IS NOT NULL AND TRIM({col}gravedad) <> '') "
-        f"AND LOWER(TRIM(COALESCE({col}tipo_ataque, ''))) <> 'otro' "
+        f"AND LOWER(TRIM(COALESCE({col}tipo_ataque, ''))) NOT IN ('', 'otro', 'tráfico normal') "
         f"AND {_sql_excluir_rutas_zona_admin(prefijo)}"
     )
 
 
 def _migrar_gravedades_eventos_legacy():
-    """Normaliza gravedades antiguas (CRÍTICO/ALTO/MEDIO/BAJO) y limpia eventos «Otro»."""
+    """Normaliza gravedades antiguas (CRÍTICO/ALTO/MEDIO/BAJO) y limpia tráfico normal."""
     mapa = [
         (GRAVEDAD_CRITICA, ("CRÍTICO", "CRITICO", "Crítica")),
         (GRAVEDAD_ALTA, ("ALTO", "Alta")),
@@ -1619,7 +1637,7 @@ def _migrar_gravedades_eventos_legacy():
             """
             UPDATE eventos
             SET gravedad = NULL
-            WHERE LOWER(TRIM(COALESCE(tipo_ataque, ''))) = 'otro'
+            WHERE LOWER(TRIM(COALESCE(tipo_ataque, ''))) IN ('otro', 'tráfico normal')
                OR TRIM(COALESCE(gravedad, '')) = '';
             """
         )
@@ -1639,11 +1657,11 @@ def _where_gravedad_monitor_sql(gravedad_filtro=None):
     return condicion, []
 
 
-def _filtro_sql_graficos_sin_otro(filtro_periodo):
+def _filtro_sql_graficos_sin_trafico_normal(filtro_periodo):
     """
     Añade exclusión de ruido al fragmento WHERE del período (métricas SOC).
 
-    Excluye tipo «Otro» y filas sin gravedad asignada.
+    Excluye tráfico normal y filas sin gravedad asignada.
     """
     excl = _sql_condicion_amenazas_reales()
     if filtro_periodo:
@@ -1662,7 +1680,7 @@ def _contar_eventos_rango(cursor, desde, hasta):
 
 
 def _contar_eventos_amenazas_rango(cursor, desde, hasta):
-    """Cuenta solo incidentes con severidad (excluye «Otro» y gravedad vacía)."""
+    """Cuenta solo incidentes con severidad (excluye tráfico normal y gravedad vacía)."""
     where_sql, params = _where_periodo_sql(desde, hasta)
     amenazas = _sql_condicion_amenazas_reales()
     if where_sql:
@@ -1765,7 +1783,7 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
         partes.append(_sql_solo_rutas_zona_admin())
         partes.append(
             "(gravedad IS NOT NULL AND TRIM(gravedad) <> '') "
-            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) <> 'otro'"
+            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) NOT IN ('otro', 'tráfico normal')"
         )
         canon = normalizar_gravedad_filtro_api(gravedad)
         if canon:
@@ -1774,7 +1792,7 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
     elif ambito == "todo":
         cond_base = (
             "(gravedad IS NOT NULL AND TRIM(gravedad) <> '') "
-            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) <> 'otro'"
+            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) NOT IN ('otro', 'tráfico normal')"
         )
         canon = normalizar_gravedad_filtro_api(gravedad)
         if canon:
@@ -1806,7 +1824,7 @@ def obtener_estadisticas(periodo=None):
     rangos = _rangos_periodo_monitor(periodo)
     where_sql, params = _where_periodo_sql(rangos["desde"], rangos["hasta"])
     filtro = f" WHERE {where_sql}" if where_sql else ""
-    filtro_graficos = _filtro_sql_graficos_sin_otro(filtro)
+    filtro_graficos = _filtro_sql_graficos_sin_trafico_normal(filtro)
 
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
@@ -1874,7 +1892,7 @@ def obtener_estadisticas(periodo=None):
             """,
             params,
         )
-        ataques_por_tipo = _filtrar_mapa_sin_otro(
+        ataques_por_tipo = _filtrar_mapa_sin_trafico_normal(
             {fila["tipo_ataque"]: fila["cantidad"] for fila in cursor.fetchall()}
         )
 
@@ -1911,7 +1929,7 @@ def obtener_estadisticas(periodo=None):
         tipos_con_gravedad = {}
         for fila in cursor.fetchall():
             tipo = fila["tipo_ataque"]
-            if _es_tipo_otro(tipo):
+            if _es_tipo_trafico_normal(tipo):
                 continue
             grav = normalizar_gravedad_almacenada(fila["gravedad"])
             if not grav:
@@ -1919,8 +1937,8 @@ def obtener_estadisticas(periodo=None):
             peso = prioridad_gravedad(grav)
             if tipo not in tipos_con_gravedad or peso > tipos_con_gravedad[tipo]["peso"]:
                 tipos_con_gravedad[tipo] = {"gravedad": grav, "peso": peso}
-        ataques_tipo_gravedad = _filtrar_mapa_sin_otro(
-            {t: v["gravedad"] for t, v in tipos_con_gravedad.items() if not _es_tipo_otro(t)}
+        ataques_tipo_gravedad = _filtrar_mapa_sin_trafico_normal(
+            {t: v["gravedad"] for t, v in tipos_con_gravedad.items() if not _es_tipo_trafico_normal(t)}
         )
 
         # Top 5 rutas
@@ -2036,7 +2054,7 @@ def obtener_estadisticas(periodo=None):
                 {
                     "ip": fila["ip"] or "—",
                     "ruta": fila["ruta"] or "/",
-                    "tipo_ataque": fila["tipo_ataque"] or "Otro",
+                    "tipo_ataque": fila["tipo_ataque"] or "Tráfico Normal",
                     "gravedad": g,
                     "timestamp": fila["timestamp"],
                     "hace_min": hace_min,
@@ -2128,7 +2146,7 @@ def obtener_alertas_graves_monitor(limite=10, periodo=None):
                 {
                     "ip": fila["ip"] or "—",
                     "ruta": fila["ruta"] or "/",
-                    "tipo_ataque": fila["tipo_ataque"] or "Otro",
+                    "tipo_ataque": fila["tipo_ataque"] or "Tráfico Normal",
                     "gravedad": g,
                     "timestamp": fila["timestamp"],
                 }
@@ -2743,6 +2761,60 @@ def listar_resumenes_diarios_ia():
         cursor = conexion.cursor()
         cursor.execute(consulta)
         return [dict(fila) for fila in cursor.fetchall()]
+
+
+def registrar_resumen_log(fecha, tipo, total_eventos, caracteres, ok=True):
+    """Registra una ejecución de generación de resumen (automático, manual o preview)."""
+    if not fecha:
+        return
+    marca = marca_ahora()
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            INSERT INTO resumenes_log (
+                fecha, tipo, total_eventos, caracteres, generado_en, ok
+            ) VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (
+                fecha,
+                (tipo or "automatico").strip(),
+                int(total_eventos or 0),
+                int(caracteres or 0),
+                marca,
+                1 if ok else 0,
+            ),
+        )
+        conexion.commit()
+
+
+def obtener_log_resumenes(limite=50):
+    """Últimas entradas del log de resúmenes, más recientes primero."""
+    limite_norm = max(1, min(int(limite or 50), 200))
+    consulta = """
+    SELECT id, fecha, tipo, total_eventos, caracteres, generado_en, ok
+    FROM resumenes_log
+    ORDER BY generado_en DESC
+    LIMIT ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (limite_norm,))
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def eliminar_resumen_diario_ia(fecha):
+    """Elimina el resumen guardado de un día y sus entradas de log (excepto preview)."""
+    if not fecha:
+        return
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("DELETE FROM resumenes_diarios_ia WHERE fecha = ?;", (fecha,))
+        cursor.execute(
+            "DELETE FROM resumenes_log WHERE fecha = ? AND tipo != 'preview';",
+            (fecha,),
+        )
+        conexion.commit()
 
 
 def registrar_ip_bloqueada(ip, motivo=""):
