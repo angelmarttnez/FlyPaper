@@ -1,7 +1,7 @@
 """
-Análisis de ataques del honeypot FlyPaper mediante la API de Anthropic (Claude).
+Análisis de ataques del honeypot FlyPaper mediante la API de Groq.
 
-Requiere la variable de entorno ANTHROPIC_API_KEY y el paquete `anthropic`.
+Requiere la variable de entorno GROQ_API_KEY y el paquete `groq`.
 """
 
 import json
@@ -9,12 +9,12 @@ import os
 import re
 from pathlib import Path
 
-import anthropic
+from groq import Groq
 
 from database import obtener_eventos
 
-# Modelo Claude usado en todas las llamadas al analizador.
-MODELO_CLAUDE = "claude-sonnet-4-20250514"
+# Modelo Groq usado en todas las llamadas al analizador.
+MODELO_GROQ = "llama-3.1-8b-instant"
 
 # Respuesta por defecto si falla el análisis de un payload individual.
 ANALISIS_PAYLOAD_DEFECTO = {
@@ -35,11 +35,11 @@ ANOMALIAS_DEFECTO = {
 }
 
 
-def _cargar_api_key_desde_entorno():
+def _cargar_groq_api_key():
     """
-    Obtiene ANTHROPIC_API_KEY del entorno; si falta, intenta leer .env en la raíz del proyecto.
+    Obtiene GROQ_API_KEY del entorno; si falta, intenta leer .env en la raíz del proyecto.
     """
-    clave = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    clave = os.environ.get("GROQ_API_KEY", "").strip()
     if clave:
         return clave
 
@@ -50,31 +50,33 @@ def _cargar_api_key_desde_entorno():
             if not linea or linea.startswith("#") or "=" not in linea:
                 continue
             nombre, _, valor = linea.partition("=")
-            if nombre.strip() == "ANTHROPIC_API_KEY":
+            if nombre.strip() == "GROQ_API_KEY":
                 valor = valor.strip().strip('"').strip("'")
                 if valor:
-                    os.environ["ANTHROPIC_API_KEY"] = valor
+                    os.environ["GROQ_API_KEY"] = valor
                     return valor
 
     return ""
 
 
-def _obtener_cliente_anthropic():
-    """Crea el cliente de Anthropic validando que exista la API key."""
-    api_key = _cargar_api_key_desde_entorno()
+def _obtener_cliente_groq():
+    """Crea el cliente de Groq validando que exista la API key."""
+    api_key = _cargar_groq_api_key()
     if not api_key:
         raise ValueError(
-            "Falta ANTHROPIC_API_KEY. Defínela en el entorno o en el archivo .env del proyecto."
+            "Falta GROQ_API_KEY. Defínela en el entorno o en el archivo .env del proyecto."
         )
-    return anthropic.Anthropic(api_key=api_key)
+    return Groq(api_key=api_key)
 
 
-def _texto_de_respuesta(message):
-    """Extrae el texto plano del primer bloque de contenido de la respuesta de Claude."""
-    if not message.content:
+def _texto_de_respuesta(response):
+    """Extrae el texto plano del mensaje del modelo en la respuesta de Groq."""
+    if not response.choices:
         return ""
-    bloque = message.content[0]
-    return getattr(bloque, "text", "") or ""
+    contenido = response.choices[0].message.content
+    if contenido is None:
+        return ""
+    return str(contenido).strip()
 
 
 def _extraer_json_de_texto(texto):
@@ -119,9 +121,54 @@ def _serializar_payload(payload):
     return str(payload)
 
 
+def _ruta_excluida_ia(ruta):
+    """Rutas de administración/monitor excluidas del análisis automático."""
+    ruta_txt = (ruta or "").strip()
+    return ruta_txt.startswith("/admin") or ruta_txt.startswith("/monitor")
+
+
+def _filtrar_eventos_para_ia(eventos):
+    """Elimina eventos de paneles internos antes de enviarlos al modelo."""
+    return [
+        ev
+        for ev in (eventos or [])
+        if not _ruta_excluida_ia(ev.get("ruta"))
+    ]
+
+
+def _es_evento_trafico_normal(ev):
+    """True si el evento está clasificado como tráfico legítimo (no incidente)."""
+    tipo = str(ev.get("tipo_ataque") or "").strip().lower()
+    return tipo in ("tráfico normal", "otro")
+
+
+_CONTEXTO_TRAFICO_NORMAL_RESUMEN = """CONTEXTO IMPORTANTE: Este honeypot recibe tanto tráfico legítimo como \
+ataques reales. Las siguientes interacciones son TRÁFICO NORMAL y NO deben \
+mencionarse como ataques ni incidentes:
+- Accesos al formulario de login (GET /login)
+- Intentos de autenticación con credenciales incorrectas sin payload malicioso (POST /login)
+- Navegación por el blog, búsquedas simples, acceso al panel /admin
+- Peticiones clasificadas como 'Tráfico Normal' en los datos
+
+Solo analiza y reporta como incidentes los eventos con tipo_ataque distinto \
+de 'Tráfico Normal'. Si el día solo tiene tráfico normal, indícalo \
+explícitamente como 'Sin incidentes de seguridad relevantes detectados'."""
+
+
+def _invocar_modelo_groq(cliente, prompt, max_tokens):
+    """Envía un prompt al modelo Groq y devuelve el texto de la respuesta."""
+    response = cliente.chat.completions.create(
+        model=MODELO_GROQ,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=max_tokens,
+        temperature=0.2,
+    )
+    return _texto_de_respuesta(response)
+
+
 def analizar_payload(tipo_ataque, payload, ruta):
     """
-    Analiza un ataque concreto con Claude y devuelve un dict estructurado.
+    Analiza un ataque concreto con Groq y devuelve un dict estructurado.
 
     Args:
         tipo_ataque (str): Clasificación del detector (p. ej. SQLi, XSS).
@@ -131,37 +178,38 @@ def analizar_payload(tipo_ataque, payload, ruta):
     Returns:
         dict: intencion, tecnica, dano_potencial, nivel_sofisticacion, recomendacion.
     """
+    ruta_txt = (ruta or "/").strip()
+    if _ruta_excluida_ia(ruta_txt):
+        resultado = dict(ANALISIS_PAYLOAD_DEFECTO)
+        resultado["recomendacion"] = (
+            "Ruta de administración excluida del análisis automático."
+        )
+        return resultado
+
     texto_payload = _serializar_payload(payload)
     tipo = (tipo_ataque or "Desconocido").strip()
-    ruta_txt = (ruta or "/").strip()
 
-    prompt = f"""Eres un experto en ciberseguridad analizando un ataque real \
-registrado en un honeypot. Analiza este ataque y responde en español \
-en formato JSON con exactamente estas claves:
+    prompt = f"""Eres un analista de ciberseguridad SOC analizando un evento real capturado \
+por un honeypot web. El honeypot simula un entorno corporativo vulnerable. \
+Tu tarea es analizar el ataque con precisión técnica y responder en español \
+estrictamente en JSON, sin texto adicional.
 
+Tipo de ataque clasificado: {tipo}
+Ruta HTTP atacada: {ruta_txt}
+Payload capturado: {texto_payload}
+
+Responde con este JSON exacto (sin bloques de código, sin explicaciones):
 {{
-  "intencion": "qué intentaba conseguir el atacante en 1-2 frases",
-  "tecnica": "nombre técnico del ataque y cómo funciona",
-  "dano_potencial": "qué daño habría causado en una app real",
-  "nivel_sofisticacion": "básico/intermedio/avanzado",
-  "recomendacion": "cómo defenderse de este ataque"
-}}
-
-Tipo de ataque: {tipo}
-Ruta atacada: {ruta_txt}
-Payload: {texto_payload}
-
-Responde únicamente con el objeto JSON, sin texto adicional."""
+  "intencion": "objetivo concreto del atacante en esta petición específica",
+  "tecnica": "nombre técnico del vector de ataque y mecanismo de explotación",
+  "dano_potencial": "impacto real si el sistema no fuera un honeypot",
+  "nivel_sofisticacion": "básico|intermedio|avanzado",
+  "recomendacion": "contramedida técnica específica para este vector"
+}}"""
 
     try:
-        cliente = _obtener_cliente_anthropic()
-        mensaje = cliente.messages.create(
-            model=MODELO_CLAUDE,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
-            timeout=90.0,
-        )
-        texto = _texto_de_respuesta(mensaje)
+        cliente = _obtener_cliente_groq()
+        texto = _invocar_modelo_groq(cliente, prompt, max_tokens=500)
         datos = _extraer_json_de_texto(texto)
 
         if not isinstance(datos, dict):
@@ -173,27 +221,26 @@ Responde únicamente con el objeto JSON, sin texto adicional."""
                 resultado[clave] = str(datos[clave]).strip()
         return resultado
 
-    except (anthropic.APIError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
-        fallback = dict(ANALISIS_PAYLOAD_DEFECTO)
-        fallback["recomendacion"] = f"Error de API Anthropic: {exc}"
-        return fallback
     except ValueError as exc:
         fallback = dict(ANALISIS_PAYLOAD_DEFECTO)
         fallback["recomendacion"] = str(exc)
         return fallback
     except Exception as exc:
         fallback = dict(ANALISIS_PAYLOAD_DEFECTO)
-        fallback["recomendacion"] = f"Error inesperado: {exc}"
+        fallback["recomendacion"] = f"Error de API Groq: {exc}"
         return fallback
 
 
 def _compactar_eventos_para_prompt(eventos):
-    """Resume eventos en líneas breves para no saturar el contexto del modelo."""
-    if not eventos:
-        return "No hay eventos registrados."
+    """Resume incidentes (sin Tráfico Normal) en líneas breves para el prompt."""
+    eventos_incidente = [
+        ev for ev in (eventos or []) if not _es_evento_trafico_normal(ev)
+    ]
+    if not eventos_incidente:
+        return "Sin eventos de seguridad relevantes en este período."
 
     lineas = []
-    for ev in eventos:
+    for ev in eventos_incidente:
         payload_corto = _serializar_payload(ev.get("payload"))
         if len(payload_corto) > 120:
             payload_corto = payload_corto[:117] + "..."
@@ -224,43 +271,49 @@ def generar_resumen_diario(fecha=None):
         eventos_dia = obtener_eventos(limite=500, periodo="hoy")
         etiqueta_dia = "hoy"
 
+    eventos_dia = _filtrar_eventos_para_ia(eventos_dia)
     if not eventos_dia:
         return ""
 
-    eventos_resumen = _compactar_eventos_para_prompt(eventos_dia)
-    total = len(eventos_dia)
+    eventos_incidente = [
+        ev for ev in eventos_dia if not _es_evento_trafico_normal(ev)
+    ]
+    if not eventos_incidente:
+        return "Sin eventos de seguridad relevantes en este período."
 
-    prompt = f"""Eres un analista de seguridad. Genera un resumen ejecutivo \
-en español de los ataques registrados el día {etiqueta_dia} en este honeypot. \
-El resumen debe ser en prosa natural, profesional y detallado. \
-Incluye: total de ataques, tipos más frecuentes, IPs destacadas, \
-patrones identificados y recomendaciones.
+    eventos_resumen = _compactar_eventos_para_prompt(eventos_incidente)
+    total = len(eventos_incidente)
 
-Total de eventos del día: {total}
+    prompt = f"""{_CONTEXTO_TRAFICO_NORMAL_RESUMEN}
 
-Datos del día {etiqueta_dia}:
+Eres un analista de seguridad SOC redactando el informe diario de un honeypot web \
+corporativo. Redacta un resumen ejecutivo profesional en español para el día {etiqueta_dia}.
+
+El informe debe cubrir obligatoriamente:
+1. Volumen total y comparativa con días anteriores si hay contexto
+2. Tipos de ataque predominantes con porcentajes aproximados
+3. IPs más activas y su comportamiento (automatizado vs manual)
+4. Patrones temporales: horas pico, ráfagas, campañas coordinadas
+5. Técnicas más sofisticadas o inusuales detectadas
+6. Recomendaciones de acción priorizadas
+
+Usa prosa técnica continua, sin listas de viñetas. Longitud: 3-4 párrafos.
+Total de eventos: {total}
+Datos del día:
 {eventos_resumen}"""
 
     try:
-        cliente = _obtener_cliente_anthropic()
-        mensaje = cliente.messages.create(
-            model=MODELO_CLAUDE,
-            max_tokens=800,
-            messages=[{"role": "user", "content": prompt}],
-            timeout=120.0,
-        )
-        texto = _texto_de_respuesta(mensaje).strip()
+        cliente = _obtener_cliente_groq()
+        texto = _invocar_modelo_groq(cliente, prompt, max_tokens=800)
         return texto or "El modelo no devolvió contenido para el resumen diario."
 
-    except (anthropic.APIError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
-        return (
-            f"No se pudo generar el resumen diario por un error de la API de Anthropic: {exc}. "
-            f"El día {etiqueta_dia} tiene {total} evento(s) registrados; consulte el panel del monitor."
-        )
     except ValueError as exc:
         return f"No se pudo generar el resumen: {exc}"
     except Exception as exc:
-        return f"Error inesperado al generar el resumen diario: {exc}"
+        return (
+            f"No se pudo generar el resumen diario por un error de la API de Groq: {exc}. "
+            f"El día {etiqueta_dia} tiene {total} evento(s) registrados; consulte el panel del monitor."
+        )
 
 
 def detectar_anomalias(eventos_recientes):
@@ -273,6 +326,8 @@ def detectar_anomalias(eventos_recientes):
     Returns:
         dict: hay_anomalia, descripcion, nivel_alerta, ips_sospechosas, patron_detectado.
     """
+    eventos_recientes = _filtrar_eventos_para_ia(eventos_recientes)
+
     if not eventos_recientes:
         return {
             "hay_anomalia": False,
@@ -298,33 +353,29 @@ def detectar_anomalias(eventos_recientes):
         indent=2,
     )
 
-    prompt = f"""Analiza estos eventos de seguridad y detecta anomalías o \
-patrones inusuales. Responde en JSON con:
+    prompt = f"""Eres un sistema de detección de anomalías SOC. Analiza estos eventos de seguridad \
+de la última hora e identifica comportamientos estadísticamente inusuales o \
+indicadores de compromiso (IoC).
 
+Criterios de anomalía: velocidad de ataque >10 req/min por IP, cambios bruscos \
+de tipo de ataque, IPs que prueban múltiples vectores, patrones de reconocimiento \
+sistemático, payloads que sugieren herramientas automatizadas (sqlmap, nikto, etc).
+
+Responde estrictamente en JSON sin texto adicional:
 {{
-  "hay_anomalia": true,
-  "descripcion": "descripción de la anomalía detectada",
-  "nivel_alerta": "bajo",
+  "hay_anomalia": true|false,
+  "descripcion": "descripción técnica concisa de la anomalía principal",
+  "nivel_alerta": "bajo|medio|alto|crítico",
   "ips_sospechosas": ["ip1", "ip2"],
-  "patron_detectado": "descripción del patrón"
+  "patron_detectado": "nombre del patrón o técnica detectada"
 }}
 
-Usa valores booleanos reales para hay_anomalia y nivel_alerta en: bajo, medio, alto, crítico.
-
-Eventos:
-{eventos_json}
-
-Responde únicamente con el objeto JSON."""
+Eventos de la última hora:
+{eventos_json}"""
 
     try:
-        cliente = _obtener_cliente_anthropic()
-        mensaje = cliente.messages.create(
-            model=MODELO_CLAUDE,
-            max_tokens=400,
-            messages=[{"role": "user", "content": prompt}],
-            timeout=90.0,
-        )
-        texto = _texto_de_respuesta(mensaje)
+        cliente = _obtener_cliente_groq()
+        texto = _invocar_modelo_groq(cliente, prompt, max_tokens=400)
         datos = _extraer_json_de_texto(texto)
 
         if not isinstance(datos, dict):
@@ -345,15 +396,11 @@ Responde únicamente con el objeto JSON."""
             resultado["patron_detectado"] = str(datos["patron_detectado"]).strip()
         return resultado
 
-    except (anthropic.APIError, anthropic.APIConnectionError, anthropic.APITimeoutError) as exc:
-        fallback = dict(ANOMALIAS_DEFECTO)
-        fallback["descripcion"] = f"Error de API Anthropic: {exc}"
-        return fallback
     except ValueError as exc:
         fallback = dict(ANOMALIAS_DEFECTO)
         fallback["descripcion"] = str(exc)
         return fallback
     except Exception as exc:
         fallback = dict(ANOMALIAS_DEFECTO)
-        fallback["descripcion"] = f"Error inesperado: {exc}"
+        fallback["descripcion"] = f"Error de API Groq: {exc}"
         return fallback
