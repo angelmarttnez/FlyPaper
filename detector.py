@@ -5,10 +5,38 @@ Analiza rutas, payloads, user-agents y cabeceras HTTP con reglas por patrones.
 Incluye contador en memoria para fuerza bruta en POST /login y niveles de gravedad.
 """
 
+import json
+import re
 from datetime import datetime, timedelta
+from urllib.parse import unquote_plus
 
 # Timestamps de intentos POST /login por IP: {"203.0.113.1": [datetime, ...]}
 intentos_login = {}
+
+# Categoría por defecto: tráfico legítimo o sin patrón de ataque identificable.
+TIPO_TRAFICO_NORMAL = "Tráfico Normal"
+
+# GET /blog/<id> — detalle de publicación.
+_PATRON_RUTA_BLOG_POST = re.compile(r"^/blog/\d+$")
+# Query de búsqueda sin caracteres de inyección (letras, números, espacios, puntuación básica).
+_PATRON_QUERY_SEARCH_LIMPIA = re.compile(
+    r"^[a-zA-Z0-9\s\-_.áéíóúñüÁÉÍÓÚÑÜ]*$"
+)
+# Indicios de inyección en credenciales de POST /login.
+_INDICIOS_LOGIN_MALICIOSO = (
+    "'",
+    '"',
+    "<script",
+    "union",
+    "../",
+    "..\\",
+    "%2e%2e",
+    "--",
+    "/*",
+    "<img",
+    "javascript:",
+    "onerror=",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +176,118 @@ def _contiene_patron(texto, patrones):
     return any(patron in texto for patron in patrones)
 
 
+def _texto_payload_normalizado(payload):
+    """Convierte payload a texto en minúsculas para reglas de clasificación."""
+    if payload is None:
+        return ""
+    if isinstance(payload, dict):
+        try:
+            return json.dumps(payload, ensure_ascii=False).lower()
+        except (TypeError, ValueError):
+            return str(payload).lower()
+    return str(payload).lower()
+
+
+def _contiene_patrones_ataque(texto):
+    """True si el texto incluye indicios de SQLi, XSS o path traversal."""
+    texto_norm = (texto or "").lower()
+    if not texto_norm.strip():
+        return False
+    return (
+        _contiene_patron(texto_norm, PATRONES_SQLI)
+        or _contiene_patron(texto_norm, PATRONES_XSS)
+        or _contiene_patron(texto_norm, PATRONES_PATH_TRAVERSAL)
+    )
+
+
+def _payload_es_sospechoso(payload_norm):
+    """True si el payload contiene indicios de SQLi, XSS o path traversal."""
+    return _contiene_patrones_ataque(payload_norm)
+
+
+def _normalizar_ruta_clasificacion(ruta):
+    """Ruta sin query string, minúsculas, sin barra final redundante."""
+    return (ruta or "").lower().split("?")[0].rstrip("/") or "/"
+
+
+def _post_login_credenciales_simples(payload):
+    """True si POST /login no lleva comillas, UNION, scripts ni path traversal."""
+    payload_norm = _texto_payload_normalizado(payload)
+    return not any(indicio in payload_norm for indicio in _INDICIOS_LOGIN_MALICIOSO)
+
+
+def _extraer_query_search(ruta, payload):
+    """Obtiene el parámetro query de GET /search (URL o cuerpo)."""
+    if "?" in (ruta or ""):
+        for parte in (ruta or "").split("?", 1)[1].split("&"):
+            if parte.lower().startswith("query="):
+                return unquote_plus(parte.split("=", 1)[1])
+    payload_norm = _texto_payload_normalizado(payload)
+    coincidencia = re.search(
+        r'["\']?query["\']?\s*[:=]\s*["\']?([^&"\'}\]]+)',
+        payload_norm,
+        re.IGNORECASE,
+    )
+    if coincidencia:
+        return unquote_plus(coincidencia.group(1).strip())
+    return ""
+
+
+def _search_get_query_es_limpia(ruta, payload):
+    """True si GET /search no tiene query o solo usa caracteres no maliciosos."""
+    query = _extraer_query_search(ruta, payload).strip()
+    if not query:
+        return True
+    return bool(_PATRON_QUERY_SEARCH_LIMPIA.match(query))
+
+
+def _es_trafico_legitimo_prioritario(ruta, payload, metodo):
+    """
+    Primera pasada en clasificar_ataque: rutas legítimas sin patrones de ataque.
+
+    Devuelve True si la petición encaja en interacción esperada del sitio y
+    ruta/payload no contienen SQLi, XSS ni path traversal.
+    """
+    texto_completo = f"{ruta or ''} {_texto_payload_normalizado(payload)}"
+    if _contiene_patrones_ataque(texto_completo):
+        return False
+
+    ruta_norm = _normalizar_ruta_clasificacion(ruta)
+    metodo_up = (metodo or "GET").upper()
+
+    if metodo_up in ("OPTIONS", "HEAD"):
+        return True
+
+    if ruta_norm.startswith("/static/") or ruta_norm.startswith("/assets/"):
+        return True
+
+    if ruta_norm == "/login" and metodo_up == "GET":
+        return True
+
+    if ruta_norm == "/login" and metodo_up == "POST":
+        return _post_login_credenciales_simples(payload)
+
+    if ruta_norm == "/logout" and metodo_up == "GET":
+        return True
+
+    if ruta_norm == "/" and metodo_up == "GET":
+        return True
+
+    if ruta_norm == "/blog" and metodo_up == "GET":
+        return True
+
+    if metodo_up == "GET" and _PATRON_RUTA_BLOG_POST.match(ruta_norm):
+        return True
+
+    if ruta_norm == "/search" and metodo_up == "GET":
+        return _search_get_query_es_limpia(ruta, payload)
+
+    if ruta_norm.startswith("/admin") and metodo_up == "GET":
+        return True
+
+    return False
+
+
 def _detectar_csrf(headers, metodo):
     """
     Detecta posible CSRF en peticiones POST sin Referer válido.
@@ -223,13 +363,14 @@ def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
     Clasifica un evento del honeypot según reglas de prioridad.
 
     Orden aplicado:
+    0) Rutas legítimas sin patrones de ataque (retorno inmediato Tráfico Normal)
     1) SQLi (payload)
     2) XSS (payload)
     3) Path Traversal (ruta o payload)
     4) CSRF (POST sin Referer coherente con Host)
     5) Scanner Automatizado (User-Agent)
     6) Reconocimiento (ruta señuelo)
-    7) Otro
+    7) Tráfico Normal (por defecto)
 
     La fuerza bruta se detecta con `registrar_intento_login` en POST /login;
     la aplicación puede sobrescribir el tipo a "Fuerza Bruta" cuando devuelve True.
@@ -244,6 +385,9 @@ def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
     Returns:
         str: Tipo de ataque detectado.
     """
+    if _es_trafico_legitimo_prioritario(ruta, payload, metodo):
+        return TIPO_TRAFICO_NORMAL
+
     ruta_norm = (ruta or "").lower()
     payload_norm = (payload or "").lower()
     ua_norm = (user_agent or "").lower()
@@ -274,10 +418,10 @@ def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
         if ruta_norm == ruta_senal or ruta_norm.startswith(ruta_senal + "/"):
             return "Reconocimiento"
 
-    return "Otro"
+    return TIPO_TRAFICO_NORMAL
 
 
-# Escala SOC del monitor (tres niveles + sin gravedad para tráfico «Otro»).
+# Escala SOC del monitor (tres niveles + sin gravedad para tráfico normal).
 GRAVEDAD_CRITICA = "Crítica"
 GRAVEDAD_ALTA = "Alta"
 GRAVEDAD_SOSPECHOSO = "Sospechoso"
@@ -362,7 +506,7 @@ def calcular_gravedad(tipo_ataque):
     - Crítica: SQLi, Path Traversal, RCE (explotación confirmada).
     - Alta: XSS, Fuerza Bruta, CSRF, escaneos automatizados.
     - Sospechoso: reconocimiento y anomalías a revisar.
-    - None: tráfico «Otro» (sin etiqueta de riesgo).
+    - None: tráfico normal (sin etiqueta de riesgo).
 
     Args:
         tipo_ataque (str): Categoría devuelta por `clasificar_ataque`.
@@ -370,7 +514,7 @@ def calcular_gravedad(tipo_ataque):
     Returns:
         str | None: Crítica, Alta, Sospechoso, o None.
     """
-    if not tipo_ataque or tipo_ataque == "Otro":
+    if not tipo_ataque or tipo_ataque == TIPO_TRAFICO_NORMAL:
         return None
     if tipo_ataque in ("SQLi", "Path Traversal", "RCE"):
         return GRAVEDAD_CRITICA
