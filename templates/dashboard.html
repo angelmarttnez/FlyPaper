@@ -1191,25 +1191,6 @@
         </div>
       </section>
 
-      <section class="card-ia card-resumen-diario" aria-label="Resumen diario IA">
-        <div class="card-ia-header">
-          <h3>Resumen Diario</h3>
-          <div class="resumen-controles">
-            <label for="resumen-fecha">
-              Día
-              <input type="date" id="resumen-fecha" class="resumen-fecha-input" aria-label="Fecha del resumen">
-            </label>
-            <span id="resumen-eventos-badge" class="resumen-eventos-badge"></span>
-            <button type="button" class="btn-ia" id="btn-resumen-diario">Generar resumen</button>
-          </div>
-        </div>
-        <div id="resumen-diario-meta" class="resumen-meta"></div>
-        <div id="resumen-diario-spinner" class="ia-spinner" style="display:none">Generando resumen con Claude...</div>
-        <div id="resumen-diario-contenido" class="resumen-contenido placeholder">
-          Elige un día con actividad y pulsa «Generar resumen», o cambia la fecha para cargar uno guardado.
-        </div>
-      </section>
-
       <details class="charts-collapsible" id="charts-collapsible">
         <summary class="charts-collapsible-summary">
           <span id="charts-summary-label" class="charts-collapsible-text">Ver gráficos estadísticos</span>
@@ -1269,7 +1250,7 @@
                 <button type="button" class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
                 <button type="button" class="filter-btn" data-filtro="Scanner">Scanner</button>
                 <button type="button" class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
-                <button type="button" class="filter-btn" data-filtro="Otro">Otro</button>
+                <button type="button" class="filter-btn" data-filtro="Tráfico Normal">Tráfico Normal</button>
               </div>
               <p class="filters-label">Gravedad</p>
               <div class="filtro-gravedad-wrap">
@@ -1631,11 +1612,12 @@
     boxPadding: 6,
   };
 
-  /** Omite la categoría de ruido «Otro» en desgloses por tipo. */
-  function filtrarMapaSinOtro(mapa) {
+  /** Omite tráfico normal en desgloses por tipo. */
+  function filtrarMapaSinTraficoNormal(mapa) {
     const salida = {};
     Object.entries(mapa || {}).forEach(([clave, valor]) => {
-      if (String(clave).trim().toLowerCase() !== 'otro') salida[clave] = valor;
+      const t = String(clave).trim().toLowerCase();
+      if (t !== 'otro' && t !== 'tráfico normal') salida[clave] = valor;
     });
     return salida;
   }
@@ -1738,8 +1720,8 @@
     if (!cacheDatosGraficos) return;
     const data = cacheDatosGraficos;
     renderChartTipos(
-      filtrarMapaSinOtro(data.ataques_por_tipo),
-      filtrarMapaSinOtro(data.ataques_tipo_gravedad)
+      filtrarMapaSinTraficoNormal(data.ataques_por_tipo),
+      filtrarMapaSinTraficoNormal(data.ataques_tipo_gravedad)
     );
     renderChartActividad(data);
     renderChartGravedad(data.ataques_por_gravedad || {});
@@ -1865,11 +1847,11 @@
       : '<span style="color:#64748b">—</span>';
   }
 
-  /** Gráfico de barras por tipo (sin categoría «Otro») con color según gravedad. */
+  /** Gráfico de barras por tipo (sin tráfico normal) con color según gravedad. */
   function renderChartTipos(tipos, tipoGravedad) {
     const ctx = document.getElementById('chart-tipos').getContext('2d');
-    const tiposFiltrados = filtrarMapaSinOtro(tipos);
-    const gravedadFiltrada = filtrarMapaSinOtro(tipoGravedad);
+    const tiposFiltrados = filtrarMapaSinTraficoNormal(tipos);
+    const gravedadFiltrada = filtrarMapaSinTraficoNormal(tipoGravedad);
     const labels = Object.keys(tiposFiltrados);
     const valores = labels.map((k) => tiposFiltrados[k]);
     const total = valores.reduce((a, b) => a + b, 0) || 1;
@@ -1970,7 +1952,7 @@
     });
   }
 
-  /** Dona de distribución por gravedad (solo incidentes, sin tipo «Otro»). */
+  /** Dona de distribución por gravedad (solo incidentes, sin tráfico normal). */
   function renderChartGravedad(porGravedad) {
     const ctx = document.getElementById('chart-gravedad').getContext('2d');
     const labels = [];
@@ -2127,7 +2109,7 @@
 
       const g = normalizarGravedad(a.gravedad);
       const claseGrav = g === 'Crítica' ? 'grav-critico' : 'grav-alto';
-      const tipoAtaque = a.tipo_ataque || a.tipo || 'Otro';
+      const tipoAtaque = a.tipo_ataque || a.tipo || 'Tráfico Normal';
       const minTxt = a.hace_min != null
         ? `hace ${a.hace_min} min`
         : (a.timestamp ? String(a.timestamp) : 'reciente');
@@ -2203,7 +2185,7 @@
   }
 
   function tipoDeEvento(ev) {
-    return (ev.tipo || ev.tipo_ataque || '').trim() || 'Otro';
+    return (ev.tipo || ev.tipo_ataque || '').trim() || 'Tráfico Normal';
   }
 
   /** Extrae YYYY-MM-DD de ultima_vez del grupo. */
@@ -2221,7 +2203,7 @@
   function pasaFiltroTipoGrupo(grupo, filtro) {
     if (!filtro || filtro === 'Todos') return true;
     const tiposGrupo = (grupo.tipos_ataque || []).map((t) => String(t).toLowerCase());
-    if (filtro === 'Otro') {
+    if (filtro === 'Tráfico Normal') {
       const tieneConocido = tiposGrupo.some((t) => TIPOS_CON_BOTON.includes(t));
       if (tiposGrupo.length === 0) {
         return (grupo.eventos || []).some((ev) => {
@@ -2240,7 +2222,7 @@
     return (grupo.eventos || []).filter((ev) => {
       if (!filtroTipo || filtroTipo === 'Todos') return true;
       const norm = tipoDeEvento(ev).toLowerCase();
-      if (filtroTipo === 'Otro') {
+      if (filtroTipo === 'Tráfico Normal') {
         return !norm || !TIPOS_CON_BOTON.includes(norm);
       }
       return norm === filtroTipo.toLowerCase();
@@ -2457,7 +2439,7 @@
 
     modalRegistroContext = { fuente: 'peticion', registro: pet, ip: pet.ip || ipGrupo || '' };
 
-    const tipo = (pet.tipo_ataque || 'Otro').trim() || 'Otro';
+    const tipo = (pet.tipo_ataque || 'Tráfico Normal').trim() || 'Tráfico Normal';
     const gravedad = normalizarGravedad(pet.gravedad);
     const ipMostrar = modalRegistroContext.ip || '—';
     const sesionId = (pet.sesion_id_corto || '').trim();
@@ -2481,7 +2463,7 @@
     document.getElementById('modal-pet-payload').textContent = textoPayloadEvento(pet);
     document.getElementById('modal-pet-ua').textContent = pet.user_agent || '—';
     const badgeGrav =
-      tipo !== 'Otro' && gravedad
+      tipo !== 'Tráfico Normal' && gravedad
         ? `<span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>`
         : '';
     document.getElementById('modal-pet-badges').innerHTML = `
@@ -2762,118 +2744,6 @@
     window.location.href = url;
   }
 
-  /** Fechas con eventos y totales (para el date picker del resumen diario). */
-  let fechasResumenDisponibles = [];
-  let mapaEventosPorFecha = {};
-
-  function fechaResumenSeleccionada() {
-    return document.getElementById('resumen-fecha').value || '';
-  }
-
-  function actualizarBadgeEventosResumen(fecha) {
-    const badge = document.getElementById('resumen-eventos-badge');
-    const total = mapaEventosPorFecha[fecha];
-    if (total === undefined) {
-      badge.textContent = '';
-      return;
-    }
-    badge.textContent = total === 0 ? 'Sin eventos' : `${total} evento(s)`;
-  }
-
-  async function inicializarSelectorResumenDiario() {
-    const input = document.getElementById('resumen-fecha');
-    try {
-      const res = await fetch('/monitor/api/fechas-con-datos');
-      const data = await res.json().catch(() => ({}));
-      fechasResumenDisponibles = (data.fechas || []).map((f) => f.fecha);
-      mapaEventosPorFecha = {};
-      (data.fechas || []).forEach((f) => {
-        mapaEventosPorFecha[f.fecha] = f.total;
-      });
-      if (fechasResumenDisponibles.length) {
-        const min = fechasResumenDisponibles[fechasResumenDisponibles.length - 1];
-        const max = fechasResumenDisponibles[0];
-        input.min = min;
-        input.max = max;
-      }
-      const defecto = data.defecto || data.hoy || '';
-      input.value = defecto;
-      actualizarBadgeEventosResumen(defecto);
-      await cargarResumenDiario(false);
-    } catch (err) {
-      console.warn('No se pudieron cargar fechas del resumen:', err);
-    }
-  }
-
-  /**
-   * Carga o genera el resumen diario para la fecha seleccionada.
-   * @param {boolean} regenerar - Si true, fuerza nueva generación con Claude.
-   */
-  async function cargarResumenDiario(regenerar = true) {
-    const btn = document.getElementById('btn-resumen-diario');
-    const spinner = document.getElementById('resumen-diario-spinner');
-    const contenido = document.getElementById('resumen-diario-contenido');
-    const meta = document.getElementById('resumen-diario-meta');
-    const fecha = fechaResumenSeleccionada();
-    if (!fecha) return;
-
-    actualizarBadgeEventosResumen(fecha);
-    const sinEventos = mapaEventosPorFecha[fecha] === 0;
-    if (sinEventos) {
-      contenido.classList.add('placeholder', 'resumen-sin-datos');
-      contenido.textContent = 'No hay datos para este día';
-      meta.textContent = `Día ${fecha} — sin eventos registrados`;
-      return;
-    }
-
-    btn.disabled = true;
-    if (regenerar) spinner.style.display = 'flex';
-    if (regenerar) {
-      contenido.classList.add('placeholder');
-      contenido.classList.remove('resumen-sin-datos');
-      contenido.textContent = '';
-    }
-
-    try {
-      const params = new URLSearchParams({ fecha });
-      if (regenerar) params.set('regenerar', '1');
-      const res = await fetch('/monitor/api/resumen-diario?' + params.toString());
-      const data = await res.json().catch(() => ({}));
-
-      if (data.sin_datos) {
-        contenido.classList.add('placeholder', 'resumen-sin-datos');
-        contenido.textContent = data.mensaje || 'No hay datos para este día';
-        meta.textContent = `Día ${fecha}`;
-        return;
-      }
-
-      if (!res.ok) {
-        contenido.classList.add('placeholder');
-        contenido.classList.remove('resumen-sin-datos');
-        contenido.textContent = data.error || 'Error al obtener el resumen';
-        meta.textContent = '';
-        return;
-      }
-
-      contenido.classList.remove('placeholder', 'resumen-sin-datos');
-      contenido.textContent = data.resumen || 'Sin contenido en la respuesta.';
-      const origen = data.desde_bd
-        ? ' (guardado en base de datos)'
-        : data.desde_cache
-          ? ' (desde caché del servidor)'
-          : ' (generado ahora)';
-      const gen = data.generado_en ? ` · Generado: ${data.generado_en}` : '';
-      meta.textContent = `Día ${data.fecha || fecha} · ${data.total_eventos ?? '—'} evento(s)${gen}${origen}`;
-    } catch (err) {
-      contenido.classList.add('placeholder');
-      contenido.textContent = 'Error de red: ' + err.message;
-      meta.textContent = '';
-    } finally {
-      btn.disabled = false;
-      spinner.style.display = 'none';
-    }
-  }
-
   /** Color de badge según nivel_alerta del detector de anomalías. */
   function claseNivelAnomalia(nivel) {
     const n = String(nivel || '').toLowerCase();
@@ -2926,7 +2796,7 @@
 
   function esPeticionConAlerta(p) {
     const tipo = (p.tipo_ataque || '').trim();
-    return tipo && tipo !== 'Otro';
+    return tipo && tipo !== 'Tráfico Normal' && tipo.toLowerCase() !== 'otro';
   }
 
   function htmlCeldaEventoDetectadoPeticion(p) {
@@ -3359,9 +3229,6 @@
   document.getElementById('modal-ia-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-ia-overlay') cerrarModalIA();
   });
-  document.getElementById('btn-resumen-diario').addEventListener('click', () => cargarResumenDiario(true));
-  document.getElementById('resumen-fecha').addEventListener('change', () => cargarResumenDiario(false));
-  inicializarSelectorResumenDiario();
 
   const chartsCollapsible = document.getElementById('charts-collapsible');
   chartsCollapsible.addEventListener('toggle', onPanelGraficosToggle);
