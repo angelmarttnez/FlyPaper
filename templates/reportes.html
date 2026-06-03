@@ -70,8 +70,28 @@ tr:hover td{background:#1c2128}
 .resumen-fecha{font-size:16px;font-weight:600;color:#58a6ff}
 .resumen-meta-item{font-size:12px;color:#8b949e}
 .resumen-preview{font-size:14px;line-height:1.6;color:#c9d1d9;margin-bottom:12px}
-.btn-ver{background:#1f6feb;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer}
-.btn-ver:hover{background:#388bfd}
+.btn-ver,.btn-accion{background:#1f6feb;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;margin-right:6px;margin-top:4px}
+.btn-ver:hover,.btn-accion:hover{background:#388bfd}
+.btn-accion.btn-preview{background:#8957e5}
+.btn-accion.btn-preview:hover{background:#a371f7}
+.btn-accion.btn-descargar{background:#238636}
+.btn-accion.btn-descargar:hover{background:#2ea043}
+.btn-accion.btn-eliminar{background:#da3633}
+.btn-accion.btn-eliminar:hover{background:#f85149}
+.btn-accion:disabled{opacity:.5;cursor:not-allowed}
+.badge-tipo{display:inline-block;font-size:11px;font-weight:600;padding:3px 8px;border-radius:4px;text-transform:capitalize}
+.badge-tipo-automatico{background:#1f3d2a;color:#3fb950;border:1px solid #238636}
+.badge-tipo-manual{background:#1f2d4a;color:#58a6ff;border:1px solid #1f6feb}
+.badge-tipo-preview{background:#3d2a4a;color:#d2a8ff;border:1px solid #8957e5}
+.resumen-acciones{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.panel-preview{margin-top:16px;padding:16px;background:#0d1117;border:1px solid #30363d;border-radius:8px}
+.panel-preview.aviso{border-color:#8957e5}
+.panel-preview h3{font-size:14px;color:#d2a8ff;margin-bottom:8px}
+.panel-preview-body{font-size:14px;line-height:1.65;color:#c9d1d9;white-space:pre-wrap;max-height:320px;overflow-y:auto}
+.log-resumenes{margin-top:28px}
+.log-resumenes h2{font-size:16px;margin-bottom:12px;color:#e4e6eb}
+.badge-ok{color:#3fb950;font-size:12px}
+.badge-error{color:#f85149;font-size:12px}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;align-items:center;justify-content:center;padding:24px}
 .modal-overlay.open{display:flex}
 .modal-box{background:#161b22;border:1px solid #30363d;border-radius:8px;max-width:720px;width:100%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column}
@@ -191,22 +211,83 @@ tr:hover td{background:#1c2128}
       {% if resumenes %}
       <ul class="resumen-lista">
         {% for s in resumenes %}
-        <li class="resumen-item">
+        <li class="resumen-item" data-fecha="{{ s.fecha }}">
           <div class="resumen-item-header">
             <span class="resumen-fecha">{{ s.fecha }}</span>
-            <span class="resumen-meta-item">{{ s.total_eventos }} evento(s) · Generado {{ s.generado_en }}</span>
+            <span class="resumen-meta-item">
+              {{ s.total_eventos }} evento(s) · {{ s.caracteres }} caracteres · Generado {{ s.generado_en }}
+            </span>
           </div>
           <p class="resumen-preview">{{ s.preview }}</p>
           <div class="resumen-full-hidden" id="resumen-full-{{ loop.index }}" hidden>{{ s.resumen_completo }}</div>
-          <button type="button" class="btn-ver" data-fecha="{{ s.fecha }}"
-                  data-target="resumen-full-{{ loop.index }}">Ver completo</button>
+          <div class="resumen-acciones">
+            <button type="button" class="btn-ver" data-fecha="{{ s.fecha }}"
+                    data-target="resumen-full-{{ loop.index }}">Ver completo</button>
+            <button type="button" class="btn-accion btn-preview" data-fecha="{{ s.fecha }}">Preview</button>
+            <a class="btn-accion btn-descargar" href="/admin/api/resumen-diario/{{ s.fecha }}/descargar"
+               download>Descargar .txt</a>
+            <button type="button" class="btn-accion btn-eliminar" data-fecha="{{ s.fecha }}">Eliminar</button>
+          </div>
         </li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="empty">Aún no hay resúmenes diarios guardados. Genéralos desde el monitor (/monitor) en la sección Resumen Diario.</p>
+      <p class="empty">Aún no hay resúmenes diarios guardados. Se generan automáticamente a las 23:59 o mediante Preview en esta pestaña.</p>
       {% endif %}
+      <div id="panel-preview-resumen" class="panel-preview aviso" hidden>
+        <h3 id="panel-preview-titulo">Vista previa (no guardada)</h3>
+        <p class="resumen-meta-item" style="margin-bottom:10px">Este resumen no está guardado en la base de datos.</p>
+        <div id="panel-preview-cuerpo" class="panel-preview-body"></div>
+      </div>
     </div>
+
+    <section class="log-resumenes card" style="margin-top:24px;padding:20px">
+      <h2>Log de generación de resúmenes</h2>
+      {% if log_resumenes %}
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Tipo</th>
+            <th>Eventos</th>
+            <th>Caracteres</th>
+            <th>Generado</th>
+            <th>Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in log_resumenes %}
+          <tr>
+            <td>{{ e.fecha }}</td>
+            <td>
+              {% if e.tipo == 'automatico' %}
+              <span class="badge-tipo badge-tipo-automatico">Automático</span>
+              {% elif e.tipo == 'manual' %}
+              <span class="badge-tipo badge-tipo-manual">Manual</span>
+              {% elif e.tipo == 'preview' %}
+              <span class="badge-tipo badge-tipo-preview">Preview</span>
+              {% else %}
+              <span class="badge-tipo">{{ e.tipo }}</span>
+              {% endif %}
+            </td>
+            <td>{{ e.total_eventos }}</td>
+            <td>{{ e.caracteres }}</td>
+            <td class="fecha">{{ e.generado_en }}</td>
+            <td>
+              {% if e.ok %}
+              <span class="badge-ok">OK</span>
+              {% else %}
+              <span class="badge-error">Error</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Sin entradas en el log de resúmenes.</p>
+      {% endif %}
+    </section>
   </div>
 
   <footer class="reportes-compliance-footer" aria-label="Cumplimiento normativo">
@@ -308,6 +389,62 @@ tr:hover td{background:#1c2128}
   document.getElementById('modal-resumen-cerrar').addEventListener('click', cerrar);
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) cerrar();
+  });
+
+  const panelPreview = document.getElementById('panel-preview-resumen');
+  const panelPreviewCuerpo = document.getElementById('panel-preview-cuerpo');
+  const panelPreviewTitulo = document.getElementById('panel-preview-titulo');
+
+  document.querySelectorAll('.btn-preview').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const fecha = btn.getAttribute('data-fecha');
+      if (!fecha) return;
+      btn.disabled = true;
+      panelPreview.hidden = false;
+      panelPreviewCuerpo.textContent = 'Generando vista previa…';
+      panelPreviewTitulo.textContent = 'Vista previa del ' + fecha + ' (no guardada)';
+      try {
+        const res = await fetch('/admin/api/resumen-preview?fecha=' + encodeURIComponent(fecha));
+        const data = await res.json().catch(() => ({}));
+        if (data.sin_datos) {
+          panelPreviewCuerpo.textContent = data.mensaje || 'No hay datos para este día';
+          return;
+        }
+        if (!res.ok) {
+          panelPreviewCuerpo.textContent = data.error || 'Error al generar la vista previa';
+          return;
+        }
+        panelPreviewCuerpo.textContent = data.resumen || '(sin contenido)';
+      } catch (err) {
+        panelPreviewCuerpo.textContent = 'Error de red: ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll('.btn-eliminar').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const fecha = btn.getAttribute('data-fecha');
+      if (!fecha) return;
+      if (!window.confirm('¿Eliminar el resumen guardado del día ' + fecha + '?')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/admin/api/resumen-diario/' + encodeURIComponent(fecha), {
+          method: 'DELETE',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.exito) {
+          window.location.reload();
+        } else {
+          alert(data.error || 'No se pudo eliminar el resumen');
+        }
+      } catch (err) {
+        alert('Error de red: ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
   });
 })();
 </script>
