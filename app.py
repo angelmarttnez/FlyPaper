@@ -1654,6 +1654,7 @@ def admin_reportes():
         reportes_ip=reportes_ip,
         fecha_inicio=fecha_inicio or "",
         fecha_fin=fecha_fin or "",
+        fecha_hoy=fecha_hoy(),
         busqueda_enviada=busqueda_enviada,
         error_validacion=error_validacion,
         resumenes=resumenes_vista,
