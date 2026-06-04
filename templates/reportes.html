@@ -208,6 +208,14 @@ tr:hover td{background:#1c2128}
 
   <div id="tab-resumenes" class="tab-panel {% if tab == 'resumenes' %}active{% endif %}">
     <div class="card">
+      <div class="toolbar" id="toolbar-resumen-manual" aria-label="Generar resumen diario">
+        <label for="input-fecha-preview-manual">
+          Fecha del resumen
+          <input type="date" id="input-fecha-preview-manual" value="{{ fecha_hoy }}">
+        </label>
+        <button type="button" class="btn-primary" id="btn-generar-preview-manual">Generar Preview</button>
+        <button type="button" class="btn-secondary" id="btn-generar-guardar-manual">Generar y Guardar</button>
+      </div>
       {% if resumenes %}
       <ul class="resumen-lista">
         {% for s in resumenes %}
@@ -232,7 +240,7 @@ tr:hover td{background:#1c2128}
         {% endfor %}
       </ul>
       {% else %}
-      <p class="empty">Aún no hay resúmenes diarios guardados. Se generan automáticamente a las 23:59 o mediante Preview en esta pestaña.</p>
+      <p class="empty">Aún no hay resúmenes diarios guardados. Usa el formulario superior para generar un preview o guardar uno, o espera la generación automática a las 23:59.</p>
       {% endif %}
       <div id="panel-preview-resumen" class="panel-preview aviso" hidden>
         <h3 id="panel-preview-titulo">Vista previa (no guardada)</h3>
@@ -394,32 +402,96 @@ tr:hover td{background:#1c2128}
   const panelPreview = document.getElementById('panel-preview-resumen');
   const panelPreviewCuerpo = document.getElementById('panel-preview-cuerpo');
   const panelPreviewTitulo = document.getElementById('panel-preview-titulo');
+  const inputFechaPreviewManual = document.getElementById('input-fecha-preview-manual');
+  const btnGenerarPreviewManual = document.getElementById('btn-generar-preview-manual');
+  const btnGenerarGuardarManual = document.getElementById('btn-generar-guardar-manual');
 
-  document.querySelectorAll('.btn-preview').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const fecha = btn.getAttribute('data-fecha');
-      if (!fecha) return;
-      btn.disabled = true;
+  function fechaPreviewManual() {
+    return (inputFechaPreviewManual && inputFechaPreviewManual.value || '').trim();
+  }
+
+  function setBotonesResumenManualDisabled(deshabilitar, botonExtra) {
+    const botones = [btnGenerarPreviewManual, btnGenerarGuardarManual, botonExtra].filter(Boolean);
+    botones.forEach((b) => { b.disabled = deshabilitar; });
+  }
+
+  async function cargarPreviewResumen(fecha, botonDisparador) {
+    if (!fecha) {
       panelPreview.hidden = false;
-      panelPreviewCuerpo.textContent = 'Generando vista previa…';
-      panelPreviewTitulo.textContent = 'Vista previa del ' + fecha + ' (no guardada)';
+      panelPreviewCuerpo.textContent = 'Selecciona una fecha válida.';
+      return;
+    }
+    setBotonesResumenManualDisabled(true, botonDisparador);
+    panelPreview.hidden = false;
+    panelPreviewCuerpo.textContent = 'Generando vista previa…';
+    panelPreviewTitulo.textContent = 'Vista previa del ' + fecha + ' (no guardada)';
+    try {
+      const res = await fetch('/admin/api/resumen-preview?fecha=' + encodeURIComponent(fecha));
+      const data = await res.json().catch(() => ({}));
+      if (data.sin_datos) {
+        panelPreviewCuerpo.textContent = data.mensaje || 'No hay datos para este día';
+        return;
+      }
+      if (!res.ok) {
+        panelPreviewCuerpo.textContent = data.error || 'Error al generar la vista previa';
+        return;
+      }
+      panelPreviewCuerpo.textContent = data.resumen || '(sin contenido)';
+    } catch (err) {
+      panelPreviewCuerpo.textContent = 'Error de red: ' + err.message;
+    } finally {
+      setBotonesResumenManualDisabled(false, botonDisparador);
+    }
+  }
+
+  if (btnGenerarPreviewManual) {
+    btnGenerarPreviewManual.addEventListener('click', () => {
+      cargarPreviewResumen(fechaPreviewManual(), btnGenerarPreviewManual);
+    });
+  }
+
+  if (btnGenerarGuardarManual) {
+    btnGenerarGuardarManual.addEventListener('click', async () => {
+      const fecha = fechaPreviewManual();
+      if (!fecha) {
+        panelPreview.hidden = false;
+        panelPreviewCuerpo.textContent = 'Selecciona una fecha válida.';
+        return;
+      }
+      setBotonesResumenManualDisabled(true, btnGenerarGuardarManual);
+      panelPreview.hidden = false;
+      panelPreviewCuerpo.textContent = 'Generando y guardando resumen…';
+      panelPreviewTitulo.textContent = 'Resumen del ' + fecha;
       try {
-        const res = await fetch('/admin/api/resumen-preview?fecha=' + encodeURIComponent(fecha));
+        const url = '/admin/api/resumen-diario?fecha=' + encodeURIComponent(fecha) + '&regenerar=1';
+        const res = await fetch(url);
         const data = await res.json().catch(() => ({}));
         if (data.sin_datos) {
           panelPreviewCuerpo.textContent = data.mensaje || 'No hay datos para este día';
           return;
         }
         if (!res.ok) {
-          panelPreviewCuerpo.textContent = data.error || 'Error al generar la vista previa';
+          panelPreviewCuerpo.textContent = data.error || 'Error al generar el resumen';
           return;
         }
-        panelPreviewCuerpo.textContent = data.resumen || '(sin contenido)';
+        if (data.resumen) {
+          window.location.reload();
+          return;
+        }
+        panelPreviewCuerpo.textContent = 'No se recibió contenido del resumen.';
       } catch (err) {
         panelPreviewCuerpo.textContent = 'Error de red: ' + err.message;
       } finally {
-        btn.disabled = false;
+        setBotonesResumenManualDisabled(false, btnGenerarGuardarManual);
       }
+    });
+  }
+
+  document.querySelectorAll('.btn-preview').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const fecha = btn.getAttribute('data-fecha');
+      if (!fecha) return;
+      cargarPreviewResumen(fecha, btn);
     });
   });
 
