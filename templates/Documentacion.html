@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FlyPaper — Documentación de seguridad</title>
+<meta name="description" content="Análisis técnico de vulnerabilidades, writeups y teoría de seguridad web del laboratorio FlyPaper Corp." />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e1a;
+    color: #e4e6eb;
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  a { color: #a78bfa; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .navbar {
+    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
+    border-bottom: 1px solid #1f2742;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+  }
+  .logo {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+  .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
+  .nav-links { display: flex; gap: 8px; list-style: none; }
+  .nav-links li { list-style: none; }
+  .nav-links a {
+    color: #b4b8c5;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { background: #1a2138; color: #fff; text-decoration: none; }
+  .nav-links a.active { background: #1a2138; color: #fff; }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 48px 40px 64px; }
+  .page-header { margin-bottom: 28px; }
+  .page-header h1 {
+    font-size: 36px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .page-header p { color: #8b91a7; font-size: 15px; max-width: 720px; }
+  .hero-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .stat-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; background: #141a2e; border: 1px solid #1f2742;
+    border-radius: 999px; font-size: 12px; color: #8b91a7;
+  }
+  .stat-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #6366f1; }
+  .stat-badge:nth-child(2) .dot { background: #f59e0b; }
+  .stat-badge:nth-child(3) .dot { background: #22c55e; }
+
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 28px; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } .container { padding: 32px 20px 48px; } }
+
+  .cat-section { margin-bottom: 36px; }
+  .cat-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    padding-left: 12px; border-left: 3px solid #1f2742;
+  }
+  .cat-section[data-cat="informe"] .cat-header { border-left-color: #f85149; }
+  .cat-section[data-cat="vulnerabilidad"] .cat-header { border-left-color: #f59e0b; }
+  .cat-section[data-cat="teoria"] .cat-header { border-left-color: #6366f1; }
+  .cat-section[data-cat="apuntes"] .cat-header { border-left-color: #22c55e; }
+  .cat-title { font-size: 20px; font-weight: 700; color: #fff; }
+  .cat-count { font-size: 11px; color: #8b91a7; text-transform: uppercase; letter-spacing: .08em; }
+
+  .article {
+    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
+    border: 1px solid #1f2742; border-radius: 14px; padding: 24px;
+    margin-bottom: 16px; transition: border-color .2s, box-shadow .2s;
+  }
+  .article:hover { border-color: #3b3f6b; box-shadow: 0 8px 24px rgba(99,102,241,.12); }
+
+  .pill {
+    display: inline-flex; padding: 3px 10px; border-radius: 999px;
+    font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  }
+  .pill.informe { color: #f85149; background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.25); }
+  .pill.vulnerabilidad { color: #f59e0b; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.25); }
+  .pill.teoria { color: #a78bfa; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.25); }
+  .pill.apuntes { color: #22c55e; background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.25); }
+
+  .article-title { font-size: 20px; font-weight: 700; margin: 12px 0 8px; color: #fff; line-height: 1.3; }
+  .article-meta { font-size: 12px; color: #8b91a7; margin-bottom: 12px; }
+  .article-meta .sep { margin: 0 6px; opacity: .5; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .tag {
+    font-size: 11px; color: #b4b8c5; background: #0d1220;
+    border: 1px solid #2a3454; padding: 3px 8px; border-radius: 6px;
+  }
+  .excerpt { color: #b4b8c5; font-size: 14px; line-height: 1.65; margin: 0 0 16px; }
+
+  .toc {
+    background: #0d1220; border: 1px solid #2a3454; border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .toc-title {
+    font-size: 11px; color: #8b91a7; text-transform: uppercase;
+    letter-spacing: .12em; margin-bottom: 10px; padding-bottom: 8px;
+    border-bottom: 1px dashed #2a3454;
+  }
+  .toc ol { margin: 0; padding: 0; list-style: none; counter-reset: idx; }
+  .toc li {
+    counter-increment: idx; padding: 4px 0 4px 28px; position: relative;
+    font-size: 13px; color: #8b91a7;
+  }
+  .toc li::before {
+    content: counter(idx, decimal-leading-zero); position: absolute; left: 0;
+    color: #a78bfa; font-size: 11px;
+  }
+
+  .read-more {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: #fff; border: none; border-radius: 8px; font-size: 13px;
+    font-weight: 600; cursor: pointer;
+  }
+  .read-more:hover { opacity: .92; }
+
+  .sidebar { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 88px; align-self: start; }
+  @media (max-width: 980px) { .sidebar { position: static; } }
+  .side-block {
+    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
+    border: 1px solid #1f2742; border-radius: 14px; padding: 18px;
+  }
+  .side-title {
+    font-size: 11px; color: #8b91a7; text-transform: uppercase;
+    letter-spacing: .12em; margin: 0 0 12px; font-weight: 600;
+  }
+
+  .doc-search {
+    display: flex; border: 1px solid #2a3454; border-radius: 8px;
+    background: #0d1220; overflow: hidden;
+  }
+  .doc-search input {
+    flex: 1; background: transparent; border: 0; outline: 0;
+    color: #e4e6eb; font-size: 13px; padding: 10px 12px;
+  }
+  .doc-search input::placeholder { color: #6b7289; }
+  .doc-search button {
+    background: transparent; border: 0; color: #8b91a7; padding: 0 12px;
+    cursor: pointer; border-left: 1px solid #2a3454;
+  }
+
+  .cat-list { display: flex; flex-direction: column; gap: 4px; }
+  .cat-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 8px 10px; color: #e4e6eb; font-size: 13px; cursor: pointer;
+    font-family: inherit;
+  }
+  .cat-btn:hover { background: #1a2138; }
+  .cat-btn.active { background: #1a2138; border-color: #3b3f6b; color: #fff; }
+  .cat-btn .swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .cat-btn .count { margin-left: auto; color: #8b91a7; font-size: 11px; }
+
+  .tagcloud { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tagcloud .tag { cursor: default; }
+
+  .updates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .updates li { font-size: 13px; padding-left: 10px; border-left: 1px solid #2a3454; }
+  .updates time { display: block; font-size: 11px; color: #8b91a7; margin-bottom: 2px; }
+  .updates a { color: #e4e6eb; }
+  .updates a:hover { color: #a78bfa; text-decoration: none; }
+
+  .quick { display: flex; flex-direction: column; gap: 8px; }
+  .quick a {
+    display: flex; justify-content: space-between; padding: 10px 12px;
+    border-radius: 8px; font-size: 13px; font-weight: 500;
+    border: 1px solid #2a3454; background: #0d1220; color: #e4e6eb;
+  }
+  .quick a:hover { border-color: #6366f1; color: #a78bfa; text-decoration: none; }
+
+  .page-footer {
+    margin-top: 40px; padding-top: 20px; border-top: 1px solid #1f2742;
+    color: #8b91a7; font-size: 13px; text-align: center;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+  {% include 'partials/navbar_publico.html' %}
+
+  <main class="container">
+    <div class="page-header">
+      <h1>Documentación de seguridad</h1>
+      <p>Análisis técnico de vulnerabilidades, writeups y teoría de seguridad web del laboratorio FlyPaper Corp.</p>
+      <div class="hero-stats">
+        <span class="stat-badge"><span class="dot"></span>14 documentos publicados</span>
+        <span class="stat-badge"><span class="dot"></span>4 categorías</span>
+        <span class="stat-badge"><span class="dot"></span>Actualizado junio 2026</span>
+      </div>
+    </div>
+
+    <div class="layout">
+  <div class="feed">
+
+    <!-- INFORMES -->
+    <section class="cat-section" data-cat="informe">
+      <header class="cat-header">
+        <span class="pill informe">Informe</span>
+        <span class="cat-title">Informes</span>
+        <span class="cat-count">· 2 documentos</span>
+      </header>
+
+      <article class="article" data-cat="informe">
+        <span class="pill informe">Informe</span>
+        <h2 class="article-title">Análisis de tráfico bot en FlyPaper Honeypot — Mayo 2026</h2>
+        <div class="article-meta">08 jun 2026<span class="sep">·</span>12 min de lectura<span class="sep">·</span>Angel García</div>
+        <div class="tags"><span class="tag">Honeypot</span><span class="tag">Análisis</span><span class="tag">Tráfico Bot</span></div>
+        <p class="excerpt">Durante mayo se registraron 847 eventos únicos procedentes de 23 países. El 67% correspondió a escaneos automatizados con patrones de inyección SQL y path traversal. Se identificaron tres campañas coordinadas con intervalos de petición inferiores a 200ms.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>Resumen ejecutivo</li>
+            <li>Metodología de captura</li>
+            <li>Distribución geográfica</li>
+            <li>Tipos de ataque detectados</li>
+            <li>IPs más activas</li>
+            <li>Conclusiones y recomendaciones</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer informe →</button>
+      </article>
+
+      <article class="article" data-cat="informe">
+        <span class="pill informe">Informe</span>
+        <h2 class="article-title">Informe de Incidente — Campaña de Fuerza Bruta 03/06/2026</h2>
+        <div class="article-meta">03 jun 2026<span class="sep">·</span>8 min de lectura<span class="sep">·</span>Angel García</div>
+        <div class="tags"><span class="tag">Fuerza Bruta</span><span class="tag">Incidente</span><span class="tag">NIS2</span></div>
+        <p class="excerpt">Campaña sostenida de fuerza bruta contra /login durante 4 horas consecutivas. 2.341 intentos desde 3 IPs rotantes con intervalos de 800ms. Se activó bloqueo automático a los 47 intentos por IP.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>Cronología del incidente</li>
+            <li>IPs atacantes y geolocalización</li>
+            <li>Patrones detectados</li>
+            <li>Respuesta aplicada</li>
+            <li>Lecciones aprendidas</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer informe →</button>
+      </article>
+    </section>
+
+    <!-- VULNERABILIDADES -->
+    <section class="cat-section" data-cat="vulnerabilidad">
+      <header class="cat-header">
+        <span class="pill vulnerabilidad">Vulnerabilidad</span>
+        <span class="cat-title">Vulnerabilidades</span>
+        <span class="cat-count">· 2 documentos</span>
+      </header>
+
+      <article class="article" data-cat="vulnerabilidad">
+        <span class="pill vulnerabilidad">Vulnerabilidad</span>
+        <h2 class="article-title">SQL Injection — Extracción de datos con UNION</h2>
+        <div class="article-meta">15 may 2026<span class="sep">·</span>18 min de lectura</div>
+        <div class="tags"><span class="tag">SQLi</span><span class="tag">OWASP A03</span><span class="tag">Crítica</span></div>
+        <p class="excerpt">La inyección SQL mediante cláusulas UNION permite al atacante alinear columnas de tablas arbitrarias con la consulta original. Explicamos detección, explotación y mitigación con ejemplos reales capturados en el honeypot.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>¿Qué es SQL Injection?</li>
+            <li>Tipos: error-based, blind, UNION</li>
+            <li>Técnica UNION-based paso a paso</li>
+            <li>Payloads comunes</li>
+            <li>Detección en logs</li>
+            <li>Mitigación y consultas seguras</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer artículo →</button>
+      </article>
+
+      <article class="article" data-cat="vulnerabilidad">
+        <span class="pill vulnerabilidad">Vulnerabilidad</span>
+        <h2 class="article-title">Path Traversal — Lectura de archivos del sistema</h2>
+        <div class="article-meta">22 may 2026<span class="sep">·</span>14 min de lectura</div>
+        <div class="tags"><span class="tag">LFI</span><span class="tag">Path Traversal</span><span class="tag">Alta</span></div>
+        <p class="excerpt">El path traversal permite navegar fuera del directorio raíz de la aplicación usando secuencias ../ para leer archivos sensibles del sistema como /etc/passwd o claves privadas.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>Concepto y alcance</li>
+            <li>Vectores de ataque</li>
+            <li>Bypass de filtros comunes</li>
+            <li>Archivos objetivo frecuentes</li>
+            <li>Ejemplos reales del honeypot</li>
+            <li>Remediación</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer artículo →</button>
+      </article>
+    </section>
+
+    <!-- TEORÍA -->
+    <section class="cat-section" data-cat="teoria">
+      <header class="cat-header">
+        <span class="pill teoria">Teoría</span>
+        <span class="cat-title">Teoría</span>
+        <span class="cat-count">· 2 documentos</span>
+      </header>
+
+      <article class="article" data-cat="teoria">
+        <span class="pill teoria">Teoría</span>
+        <h2 class="article-title">Cómo funciona un Honeypot — Arquitectura y propósito</h2>
+        <div class="article-meta">01 may 2026<span class="sep">·</span>20 min de lectura</div>
+        <div class="tags"><span class="tag">Honeypot</span><span class="tag">Blue Team</span><span class="tag">Arquitectura</span></div>
+        <p class="excerpt">Un honeypot es un sistema diseñado para ser atacado. Analizamos los tipos de honeypot (low-interaction, high-interaction), su papel en la estrategia defensiva y cómo FlyPaper implementa cada concepto.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>Definición y clasificación</li>
+            <li>Low vs high interaction</li>
+            <li>Honeynets</li>
+            <li>Casos de uso en SOC</li>
+            <li>Arquitectura de FlyPaper</li>
+            <li>Métricas y análisis</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer artículo →</button>
+      </article>
+
+      <article class="article" data-cat="teoria">
+        <span class="pill teoria">Teoría</span>
+        <h2 class="article-title">OWASP Top 10 — Guía práctica con ejemplos reales</h2>
+        <div class="article-meta">10 may 2026<span class="sep">·</span>25 min de lectura</div>
+        <div class="tags"><span class="tag">OWASP</span><span class="tag">Teoría</span><span class="tag">Fundamentos</span></div>
+        <p class="excerpt">Recorremos las diez categorías de riesgo más críticas según OWASP, ilustradas con eventos reales capturados en el laboratorio FlyPaper. De A01 a A10 con ejemplos de payloads y patrones de detección.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>A01 — Control de acceso</li>
+            <li>A02 — Fallos criptográficos</li>
+            <li>A03 — Inyección</li>
+            <li>A04 — Diseño inseguro</li>
+            <li>A05 — Configuración incorrecta</li>
+            <li>A06 a A10</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer artículo →</button>
+      </article>
+    </section>
+
+    <!-- APUNTES -->
+    <section class="cat-section" data-cat="apuntes">
+      <header class="cat-header">
+        <span class="pill apuntes">Apuntes</span>
+        <span class="cat-title">Apuntes</span>
+        <span class="cat-count">· 1 documento</span>
+      </header>
+
+      <article class="article" data-cat="apuntes">
+        <span class="pill apuntes">Apuntes</span>
+        <h2 class="article-title">Apuntes: Herramientas esenciales para análisis de tráfico</h2>
+        <div class="article-meta">28 may 2026<span class="sep">·</span>10 min de lectura</div>
+        <div class="tags"><span class="tag">Herramientas</span><span class="tag">Wireshark</span><span class="tag">Burp Suite</span></div>
+        <p class="excerpt">Resumen de comandos y configuraciones para Wireshark, Burp Suite y curl orientados al análisis de tráfico web malicioso. Incluye filtros BPF para aislar ataques SQLi y XSS en capturas.</p>
+        <div class="toc">
+          <div class="toc-title">Índice del documento</div>
+          <ol>
+            <li>Wireshark — filtros útiles</li>
+            <li>Burp Suite — interceptación</li>
+            <li>curl para reproducir ataques</li>
+            <li>Análisis de User-Agents</li>
+            <li>Correlación de eventos</li>
+          </ol>
+        </div>
+        <button class="read-more">Leer apuntes →</button>
+      </article>
+    </section>
+
+  </div>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="side-block">
+      <h3 class="side-title">Buscar</h3>
+      <div class="doc-search">
+        <input type="text" placeholder="Buscar en la documentación..." />
+        <button aria-label="Buscar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="side-block">
+      <h3 class="side-title">Categorías</h3>
+      <div class="cat-list">
+        <button class="cat-btn active" data-filter="all"><span class="swatch" style="background:var(--muted)"></span>Todas<span class="count">7</span></button>
+        <button class="cat-btn" data-filter="informe"><span class="swatch" style="background:var(--red)"></span>Informes<span class="count">2</span></button>
+        <button class="cat-btn" data-filter="vulnerabilidad"><span class="swatch" style="background:var(--amber)"></span>Vulnerabilidades<span class="count">2</span></button>
+        <button class="cat-btn" data-filter="teoria"><span class="swatch" style="background:var(--blue)"></span>Teoría<span class="count">2</span></button>
+        <button class="cat-btn" data-filter="apuntes"><span class="swatch" style="background:var(--green)"></span>Apuntes<span class="count">1</span></button>
+      </div>
+    </div>
+
+    <div class="side-block">
+      <h3 class="side-title">Etiquetas más usadas</h3>
+      <div class="tagcloud">
+        <span class="tag">SQLi</span><span class="tag">XSS</span><span class="tag">Honeypot</span>
+        <span class="tag">OWASP</span><span class="tag">Blue Team</span><span class="tag">NIS2</span>
+        <span class="tag">Fuerza Bruta</span><span class="tag">Path Traversal</span>
+        <span class="tag">Incidente</span><span class="tag">Análisis</span>
+      </div>
+    </div>
+
+    <div class="side-block">
+      <h3 class="side-title">Últimas actualizaciones</h3>
+      <ul class="updates">
+        <li><time>08 jun 2026</time><a href="#">Análisis de tráfico bot — Mayo 2026</a></li>
+        <li><time>03 jun 2026</time><a href="#">Incidente: campaña de fuerza bruta</a></li>
+        <li><time>28 may 2026</time><a href="#">Herramientas para análisis de tráfico</a></li>
+        <li><time>22 may 2026</time><a href="#">Path Traversal — lectura de archivos</a></li>
+        <li><time>15 may 2026</time><a href="#">SQL Injection con UNION</a></li>
+      </ul>
+    </div>
+
+    <div class="side-block">
+      <h3 class="side-title">Acceso rápido</h3>
+      <div class="quick">
+        <a href="/objetivos">Ver el laboratorio <span>→</span></a>
+        <a href="/search">Ir al buscador <span>→</span></a>
+      </div>
+    </div>
+  </aside>
+    </div>
+
+    <div class="page-footer">FlyPaper Corp © 2026 — Entorno de laboratorio. Todo el tráfico es registrado y analizado.</div>
+  </main>
+
+<script>
+  // Filtro por categoría
+  const btns = document.querySelectorAll('.cat-btn');
+  const sections = document.querySelectorAll('.cat-section');
+  function applyFilter(f){
+    btns.forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+    sections.forEach(s => {
+      s.classList.toggle('hidden', !(f === 'all' || s.dataset.cat === f));
+    });
+  }
+  btns.forEach(b => b.addEventListener('click', () => applyFilter(b.dataset.filter)));
+</script>
+</body>
+</html>
