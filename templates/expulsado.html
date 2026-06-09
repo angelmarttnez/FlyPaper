@@ -106,25 +106,7 @@
 
   <script>
     /**
-     * Limpia almacenamiento local del navegador y cookies accesibles desde JS.
-     */
-    function limpiarAlmacenamientoLocalNavegador() {
-      try {
-        localStorage.clear();
-      } catch (e) { /* ignorar */ }
-      try {
-        sessionStorage.clear();
-      } catch (e) { /* ignorar */ }
-      document.cookie.split(';').forEach((par) => {
-        const nombre = par.split('=')[0].trim();
-        if (!nombre) return;
-        document.cookie = `${nombre}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-        document.cookie = `${nombre}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${location.hostname}`;
-      });
-    }
-
-    /**
-     * Pide al servidor desbloquear la IP, vaciar sesión Flask y redirigir al login.
+     * Pide al servidor desbloquear la IP (sin cerrar sesión) y redirigir al inicio.
      */
     async function volverAIntentarAcceso() {
       const boton = document.getElementById('btn-reintentar');
@@ -143,8 +125,7 @@
         if (!res.ok || !data.exito) {
           throw new Error(data.mensaje || 'No se pudo reiniciar el acceso');
         }
-        limpiarAlmacenamientoLocalNavegador();
-        window.location.href = data.redirect || '/login';
+        window.location.href = data.redirect || '/';
       } catch (err) {
         estado.textContent = err.message || 'Error al reintentar. Recarga la página.';
         estado.className = 'expulsion-estado err';
