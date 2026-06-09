@@ -2633,6 +2633,66 @@ def obtener_ips_distintas_eventos():
         return [fila["ip"] for fila in cursor.fetchall()]
 
 
+def _gravedad_maxima_desde_lista(lista_gravedades):
+    """Prioridad estricta: Crítica > Alta > Sospechoso."""
+    maxima = ""
+    rank_max = 0
+    for gravedad in lista_gravedades:
+        canon = normalizar_gravedad_almacenada(gravedad)
+        if not canon:
+            continue
+        rank = prioridad_gravedad(canon)
+        if rank > rank_max:
+            rank_max = rank
+            maxima = canon
+    return maxima
+
+
+def obtener_agregados_seguridad_por_ip():
+    """
+    Agrega incidentes de la tabla eventos por dirección IP.
+
+    Returns:
+        dict[str, dict]: Clave IP; valores total_eventos, gravedad_maxima, tipos_ataque.
+    """
+    consulta = """
+    SELECT ip, tipo_ataque, gravedad
+    FROM eventos
+    WHERE ip IS NOT NULL AND TRIM(ip) != '';
+    """
+    acumulado = {}
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        for fila in cursor.fetchall():
+            ip = (fila["ip"] or "").strip()
+            if not ip:
+                continue
+            if ip not in acumulado:
+                acumulado[ip] = {
+                    "total_eventos": 0,
+                    "gravedades": [],
+                    "tipos_set": set(),
+                }
+            bloque = acumulado[ip]
+            bloque["total_eventos"] += 1
+            tipo = (fila["tipo_ataque"] or "").strip()
+            if tipo:
+                bloque["tipos_set"].add(tipo)
+            grav = normalizar_gravedad_almacenada(fila["gravedad"])
+            if grav:
+                bloque["gravedades"].append(grav)
+
+    resultado = {}
+    for ip, bloque in acumulado.items():
+        resultado[ip] = {
+            "total_eventos": bloque["total_eventos"],
+            "gravedad_maxima": _gravedad_maxima_desde_lista(bloque["gravedades"]),
+            "tipos_ataque": sorted(bloque["tipos_set"]),
+        }
+    return resultado
+
+
 def obtener_fechas_con_eventos():
     """
     Días calendario (Europe/Madrid en timestamp) con al menos un evento.

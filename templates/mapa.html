@@ -1,0 +1,431 @@
+<!doctype html>
+<!-- Flask: protect with _redirigir_si_no_es_admin() -->
+<!-- Flask: add nav link <a href="/admin/mapa">Mapa</a> to sidebar in all admin templates -->
+<!-- Flask: implement GET /admin/api/mapa-ips returning JSON described in spec -->
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mapa de Ataques — FlyPaper</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  :root{
+    --bg:#0f1419; --sidebar:#161b22; --card:#161b22; --border:#21262d;
+    --land:#1c2128; --land-border:#30363d; --ocean:#0d1117;
+    --blue:#58a6ff; --red:#f85149; --green:#3fb950; --amber:#d29922;
+    --text:#c9d1d9; --muted:#8b949e; --text-strong:#f0f6fc;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px}
+  a{color:inherit;text-decoration:none}
+
+  /* layout */
+  .app{display:flex;min-height:100vh}
+  .sidebar{width:240px;background:var(--sidebar);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:20px 0;position:sticky;top:0;height:100vh}
+  .logo{padding:0 22px 22px;font-size:20px;font-weight:700;color:var(--text-strong);
+    display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+  .logo .dot{width:10px;height:10px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red)}
+  .nav{display:flex;flex-direction:column;padding:14px 10px;gap:2px;flex:1}
+  .nav a{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:6px;
+    color:var(--muted);font-weight:500;transition:.15s}
+  .nav a:hover{background:#21262d;color:var(--text-strong)}
+  .nav a.active{background:linear-gradient(90deg,rgba(88,166,255,.18),transparent);
+    color:var(--blue);border-left:2px solid var(--blue);padding-left:12px}
+  .nav .spacer{flex:1}
+  .nav .logout{color:#ff7b72}
+
+  main{flex:1;padding:24px 28px;min-width:0}
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px;flex-wrap:wrap}
+  h1{font-size:22px;margin:0;color:var(--text-strong);font-weight:600}
+  .subtitle{color:var(--muted);font-size:13px;margin-top:4px}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+  .stat .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  .stat .value{font-size:26px;font-weight:700;color:var(--text-strong);margin-top:6px;font-variant-numeric:tabular-nums}
+  .stat .hint{color:var(--muted);font-size:12px;margin-top:2px}
+
+  /* grid */
+  .grid{display:grid;grid-template-columns:300px minmax(0,1fr) 320px;gap:14px}
+  @media (max-width:1400px){.grid{grid-template-columns:280px minmax(0,1fr)}.right-col{grid-column:1/-1}}
+  @media (max-width:1100px){.grid{grid-template-columns:1fr}}
+
+  .panel-title{font-size:13px;color:var(--text-strong);text-transform:uppercase;
+    letter-spacing:.06em;margin:0 0 12px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .panel-title small{color:var(--muted);text-transform:none;letter-spacing:0;font-weight:500}
+
+  /* map */
+  .map-wrap{position:relative;background:var(--ocean);border:1px solid var(--border);
+    border-radius:8px;overflow:hidden;min-height:560px}
+  .map-toolbar{position:absolute;top:12px;right:12px;display:flex;gap:6px;z-index:5}
+  .btn{background:var(--card);border:1px solid var(--border);color:var(--text);
+    padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+  .btn:hover{border-color:var(--blue);color:var(--blue)}
+  .legend{position:absolute;left:12px;bottom:12px;background:rgba(22,27,34,.92);
+    border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px;display:flex;gap:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+  .legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+
+  svg.world{display:block;width:100%;height:auto;cursor:grab}
+  svg.world:active{cursor:grabbing}
+  .country{fill:var(--land);stroke:var(--land-border);stroke-width:.4}
+  .country.highlight{fill:#243042;stroke:var(--blue)}
+  .server-point{fill:var(--green);stroke:#fff;stroke-width:1.2}
+  .attack-line{fill:none;stroke-width:1.2;stroke-dasharray:4 6;opacity:.55;pointer-events:none}
+  @keyframes dash{to{stroke-dashoffset:-200}}
+  .attack-line.animate{animation:dash 4s linear infinite}
+  .attack-point{cursor:pointer;stroke:#0d1117;stroke-width:1}
+  .pulse{transform-origin:center;transform-box:fill-box}
+  @keyframes pulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.6);opacity:0}}
+  .pulse-ring{animation:pulse 2s ease-out infinite;fill-opacity:.5}
+
+  /* tooltip */
+  .tooltip{position:absolute;pointer-events:none;background:#161b22;border:1px solid var(--border);
+    border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text);
+    box-shadow:0 6px 24px rgba(0,0,0,.5);min-width:200px;opacity:0;transition:opacity .12s;z-index:10}
+  .tooltip .ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--blue);font-weight:600}
+  .tooltip .row{display:flex;justify-content:space-between;gap:14px;margin-top:4px;color:var(--muted)}
+  .tooltip .row b{color:var(--text-strong);font-weight:600}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  tbody tr{cursor:pointer;transition:background .12s}
+  tbody tr:hover{background:#1c2128}
+  tbody tr.active{background:#1f2937}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-strong)}
+  td.ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--blue)}
+
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;
+    line-height:1.6;border:1px solid transparent}
+  .b-critica{background:#1a0f0f;color:var(--red);border-color:rgba(248,81,73,.35)}
+  .b-alta{background:#1f1608;color:var(--amber);border-color:rgba(210,153,34,.35)}
+  .b-sospechoso{background:#0d1726;color:var(--blue);border-color:rgba(88,166,255,.35)}
+
+  .tag{display:inline-block;background:#21262d;color:var(--muted);border-radius:4px;
+    padding:1px 6px;font-size:10px;margin:1px 2px 0 0;font-family:ui-monospace,Menlo,monospace}
+
+  /* right drawer */
+  .drawer{position:fixed;top:0;right:0;width:340px;height:100vh;background:var(--card);
+    border-left:1px solid var(--border);transform:translateX(100%);transition:transform .25s ease;
+    z-index:50;display:flex;flex-direction:column}
+  .drawer.open{transform:translateX(0)}
+  .drawer header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  .drawer h3{margin:0;font-size:15px;color:var(--text-strong)}
+  .drawer .body{padding:16px 18px;overflow-y:auto}
+  .drawer .close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+  .drawer .close:hover{color:var(--red)}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .kv span:first-child{color:var(--muted)}
+  .kv span:last-child{color:var(--text-strong);font-weight:500}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="logo"><span class="dot"></span> FlyPaper</div>
+    <nav class="nav">
+      <a href="/admin">📊 Dashboard</a>
+      <a href="/admin/usuarios">👥 Usuarios</a>
+      <a href="/admin/configuracion">⚙️ Configuración</a>
+      <a href="/admin/reportes">📋 Reportes</a>
+      <a href="/admin/mapa" class="active">🌍 Mapa</a>
+      <div class="spacer"></div>
+      <a href="/logout" class="logout">⏻ Logout</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>🌍 Mapa de Ataques en Tiempo Real</h1>
+        <div class="subtitle">Geolocalización de IPs atacantes detectadas por el honeypot</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="refreshBtn">↻ Actualizar</button>
+      </div>
+    </div>
+
+    <section class="stats">
+      <div class="card stat"><div class="label">IPs atacantes</div><div class="value" id="statIps">—</div><div class="hint">únicas detectadas</div></div>
+      <div class="card stat"><div class="label">Eventos totales</div><div class="value" id="statEvents">—</div><div class="hint">en el período</div></div>
+      <div class="card stat"><div class="label">País más activo</div><div class="value" id="statTop">—</div><div class="hint" id="statTopHint">—</div></div>
+    </section>
+
+    <section class="grid">
+      <!-- left: top countries -->
+      <div class="card">
+        <h2 class="panel-title">Top países <small id="countriesCount">0</small></h2>
+        <table>
+          <thead><tr><th>País</th><th class="num">IPs</th><th class="num">Eventos</th></tr></thead>
+          <tbody id="countriesBody"></tbody>
+        </table>
+      </div>
+
+      <!-- center: map -->
+      <div class="map-wrap card" style="padding:0">
+        <div class="map-toolbar">
+          <button class="btn" id="zoomIn">+</button>
+          <button class="btn" id="zoomOut">−</button>
+          <button class="btn" id="zoomReset">Reset</button>
+        </div>
+        <svg class="world" id="map" viewBox="0 0 960 520" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="legend">
+          <span><i style="background:#f85149"></i>Crítica</span>
+          <span><i style="background:#d29922"></i>Alta</span>
+          <span><i style="background:#58a6ff"></i>Sospechoso</span>
+          <span><i style="background:#3fb950"></i>Honeypot</span>
+        </div>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+
+      <!-- right: top ips -->
+      <div class="card right-col">
+        <h2 class="panel-title">Top IPs <small id="ipsCount">0</small></h2>
+        <table>
+          <thead><tr><th>IP</th><th>País</th><th class="num">Ev.</th><th>Sev.</th></tr></thead>
+          <tbody id="ipsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- detail drawer -->
+  <aside class="drawer" id="drawer">
+    <header>
+      <h3 id="drawerTitle">Detalle de IP</h3>
+      <button class="close" id="drawerClose">×</button>
+    </header>
+    <div class="body" id="drawerBody"></div>
+  </aside>
+</div>
+
+<script>
+/* ---------- Mock data fallback ---------- */
+const MOCK = {
+  total_ips: 18, total_eventos: 612,
+  atacantes: [
+    {ip:"185.220.101.45",pais:"Germany",pais_codigo:"DE",lat:51.165691,lon:10.451526,total_eventos:87,gravedad_maxima:"Crítica",tipos_ataque:["SQLi","XSS","RCE"]},
+    {ip:"45.155.205.233",pais:"Russia",pais_codigo:"RU",lat:61.524,lon:105.3188,total_eventos:142,gravedad_maxima:"Crítica",tipos_ataque:["Brute-force","SQLi"]},
+    {ip:"103.74.123.18",pais:"China",pais_codigo:"CN",lat:35.8617,lon:104.1954,total_eventos:96,gravedad_maxima:"Crítica",tipos_ataque:["Scan","RCE"]},
+    {ip:"198.51.100.22",pais:"United States",pais_codigo:"US",lat:37.0902,lon:-95.7129,total_eventos:54,gravedad_maxima:"Alta",tipos_ataque:["XSS","CSRF"]},
+    {ip:"177.43.88.201",pais:"Brazil",pais_codigo:"BR",lat:-14.235,lon:-51.9253,total_eventos:31,gravedad_maxima:"Alta",tipos_ataque:["Brute-force"]},
+    {ip:"5.62.60.14",pais:"Iran",pais_codigo:"IR",lat:32.4279,lon:53.6880,total_eventos:48,gravedad_maxima:"Crítica",tipos_ataque:["SQLi","LFI"]},
+    {ip:"94.142.241.111",pais:"Netherlands",pais_codigo:"NL",lat:52.1326,lon:5.2913,total_eventos:22,gravedad_maxima:"Sospechoso",tipos_ataque:["Scan"]},
+    {ip:"89.40.182.99",pais:"Romania",pais_codigo:"RO",lat:45.9432,lon:24.9668,total_eventos:38,gravedad_maxima:"Alta",tipos_ataque:["Brute-force","XSS"]},
+    {ip:"211.45.18.7",pais:"South Korea",pais_codigo:"KR",lat:35.9078,lon:127.7669,total_eventos:17,gravedad_maxima:"Sospechoso",tipos_ataque:["Scan"]},
+    {ip:"123.45.67.89",pais:"China",pais_codigo:"CN",lat:39.9042,lon:116.4074,total_eventos:64,gravedad_maxima:"Crítica",tipos_ataque:["RCE","SQLi"]},
+    {ip:"46.161.27.150",pais:"Russia",pais_codigo:"RU",lat:55.7558,lon:37.6173,total_eventos:73,gravedad_maxima:"Alta",tipos_ataque:["Brute-force"]},
+    {ip:"34.102.136.180",pais:"United States",pais_codigo:"US",lat:34.0522,lon:-118.2437,total_eventos:29,gravedad_maxima:"Sospechoso",tipos_ataque:["Scan","XSS"]},
+    {ip:"79.124.62.10",pais:"Bulgaria",pais_codigo:"BG",lat:42.7339,lon:25.4858,total_eventos:19,gravedad_maxima:"Sospechoso",tipos_ataque:["Scan"]},
+    {ip:"203.0.113.77",pais:"Vietnam",pais_codigo:"VN",lat:14.0583,lon:108.2772,total_eventos:35,gravedad_maxima:"Alta",tipos_ataque:["Brute-force"]},
+    {ip:"196.52.43.85",pais:"South Africa",pais_codigo:"ZA",lat:-30.5595,lon:22.9375,total_eventos:11,gravedad_maxima:"Sospechoso",tipos_ataque:["Scan"]},
+    {ip:"91.219.236.222",pais:"Ukraine",pais_codigo:"UA",lat:48.3794,lon:31.1656,total_eventos:42,gravedad_maxima:"Crítica",tipos_ataque:["SQLi","RCE"]},
+    {ip:"125.64.94.220",pais:"China",pais_codigo:"CN",lat:30.5728,lon:104.0668,total_eventos:55,gravedad_maxima:"Alta",tipos_ataque:["Brute-force","XSS"]},
+    {ip:"176.111.174.30",pais:"Russia",pais_codigo:"RU",lat:59.9311,lon:30.3609,total_eventos:39,gravedad_maxima:"Alta",tipos_ataque:["Brute-force"]}
+  ]
+};
+MOCK.total_eventos = MOCK.atacantes.reduce((a,b)=>a+b.total_eventos,0);
+MOCK.total_ips = MOCK.atacantes.length;
+
+const SEV_COLOR = {"Crítica":"#f85149","Alta":"#d29922","Sospechoso":"#58a6ff"};
+const SEV_CLASS = {"Crítica":"b-critica","Alta":"b-alta","Sospechoso":"b-sospechoso"};
+const SERVER = {lat:40.4168, lon:-3.7038};
+
+function flag(cc){
+  if(!cc) return "🏳️";
+  return String.fromCodePoint(...cc.toUpperCase().split('').map(c=>0x1F1A5+c.charCodeAt(0)));
+}
+
+/* ---------- Fetch ---------- */
+async function loadData(){
+  try{
+    const r = await fetch('/admin/api/mapa-ips',{credentials:'same-origin'});
+    if(!r.ok) throw new Error('bad');
+    return await r.json();
+  }catch(e){ console.warn('Using mock data:',e); return MOCK; }
+}
+
+/* ---------- Map render ---------- */
+const svg = d3.select('#map');
+const width = 960, height = 520;
+const projection = d3.geoNaturalEarth1().scale(180).translate([width/2, height/2]);
+const path = d3.geoPath(projection);
+const gRoot = svg.append('g');
+const gCountries = gRoot.append('g').attr('class','countries');
+const gLines = gRoot.append('g');
+const gPoints = gRoot.append('g');
+const tooltip = document.getElementById('tooltip');
+
+const zoom = d3.zoom().scaleExtent([1,8]).on('zoom',(ev)=>{
+  gRoot.attr('transform', ev.transform);
+  gRoot.selectAll('circle, .attack-line').attr('stroke-width', 1/ev.transform.k);
+});
+svg.call(zoom);
+
+d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(world=>{
+  const countries = topojson.feature(world, world.objects.countries).features;
+  gCountries.selectAll('path').data(countries).join('path')
+    .attr('class','country').attr('d',path)
+    .attr('data-name', d=>d.properties.name);
+
+  // Server point
+  const [sx,sy] = projection([SERVER.lon, SERVER.lat]);
+  gPoints.append('circle').attr('class','server-point').attr('cx',sx).attr('cy',sy).attr('r',5);
+
+  init();
+});
+
+let DATA = null;
+
+async function init(){
+  DATA = await loadData();
+  renderStats(DATA);
+  renderPoints(DATA.atacantes);
+  renderCountries(DATA.atacantes);
+  renderIps(DATA.atacantes);
+}
+
+function renderStats(d){
+  document.getElementById('statIps').textContent = d.total_ips ?? d.atacantes.length;
+  document.getElementById('statEvents').textContent = (d.total_eventos ?? d.atacantes.reduce((a,b)=>a+b.total_eventos,0)).toLocaleString();
+  const byCountry = d3.rollups(d.atacantes, v=>d3.sum(v,x=>x.total_eventos), x=>x.pais)
+    .sort((a,b)=>b[1]-a[1]);
+  if(byCountry.length){
+    const [name,ev] = byCountry[0];
+    const cc = d.atacantes.find(x=>x.pais===name)?.pais_codigo;
+    document.getElementById('statTop').innerHTML = `${flag(cc)} ${name}`;
+    document.getElementById('statTopHint').textContent = `${ev} eventos`;
+  }
+}
+
+function renderPoints(list){
+  const [sx,sy] = projection([SERVER.lon, SERVER.lat]);
+  const rScale = d3.scaleSqrt().domain(d3.extent(list,d=>d.total_eventos)).range([6,22]);
+
+  gLines.selectAll('path.attack-line').data(list).join('path')
+    .attr('class','attack-line animate')
+    .attr('stroke', d=>SEV_COLOR[d.gravedad_maxima]||'#58a6ff')
+    .attr('d', d=>{
+      const [x,y] = projection([d.lon,d.lat]);
+      const mx=(x+sx)/2, my=(y+sy)/2 - 40;
+      return `M${x},${y} Q${mx},${my} ${sx},${sy}`;
+    });
+
+  const groups = gPoints.selectAll('g.atk').data(list, d=>d.ip).join(enter=>{
+    const g = enter.append('g').attr('class','atk')
+      .attr('transform', d=>{const [x,y]=projection([d.lon,d.lat]); return `translate(${x},${y})`;});
+    g.append('circle').attr('class','pulse-ring')
+      .attr('r', d=>rScale(d.total_eventos))
+      .attr('fill', d=>SEV_COLOR[d.gravedad_maxima]||'#58a6ff');
+    g.append('circle').attr('class','attack-point')
+      .attr('r', d=>rScale(d.total_eventos))
+      .attr('fill', d=>SEV_COLOR[d.gravedad_maxima]||'#58a6ff');
+    return g;
+  });
+
+  groups.select('.attack-point')
+    .on('mousemove', (ev,d)=>{
+      const wrap = document.querySelector('.map-wrap').getBoundingClientRect();
+      tooltip.style.left = (ev.clientX - wrap.left + 12)+'px';
+      tooltip.style.top = (ev.clientY - wrap.top + 12)+'px';
+      tooltip.style.opacity = 1;
+      tooltip.innerHTML = `
+        <div class="ip">${d.ip}</div>
+        <div class="row"><span>${flag(d.pais_codigo)} ${d.pais}</span></div>
+        <div class="row"><span>Eventos</span><b>${d.total_eventos}</b></div>
+        <div class="row"><span>Severidad</span><span class="badge ${SEV_CLASS[d.gravedad_maxima]}">${d.gravedad_maxima}</span></div>
+        <div class="row" style="flex-wrap:wrap"><span>Ataques</span><span>${d.tipos_ataque.map(t=>`<span class="tag">${t}</span>`).join('')}</span></div>`;
+    })
+    .on('mouseleave', ()=>{tooltip.style.opacity=0;})
+    .on('click', (ev,d)=>openDrawer(d));
+}
+
+function renderCountries(list){
+  const agg = d3.rollups(list,
+    v=>({ips:v.length, events:d3.sum(v,x=>x.total_eventos),
+         cc:v[0].pais_codigo,
+         worst:v.reduce((a,b)=>severityRank(b.gravedad_maxima)>severityRank(a.gravedad_maxima)?b:a).gravedad_maxima}),
+    x=>x.pais)
+    .map(([pais,o])=>({pais,...o}))
+    .sort((a,b)=>b.events-a.events).slice(0,10);
+  document.getElementById('countriesCount').textContent = agg.length;
+  const tb = document.getElementById('countriesBody');
+  tb.innerHTML = agg.map(r=>`
+    <tr data-country="${r.pais}">
+      <td>${flag(r.cc)} ${r.pais} <span class="badge ${SEV_CLASS[r.worst]}" style="margin-left:4px">${r.worst}</span></td>
+      <td class="num">${r.ips}</td><td class="num">${r.events}</td>
+    </tr>`).join('');
+  tb.querySelectorAll('tr').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      tb.querySelectorAll('tr').forEach(x=>x.classList.remove('active'));
+      tr.classList.add('active');
+      highlightCountry(tr.dataset.country);
+    });
+  });
+}
+
+function severityRank(s){return s==='Crítica'?3:s==='Alta'?2:1;}
+
+function renderIps(list){
+  const top = [...list].sort((a,b)=>b.total_eventos-a.total_eventos).slice(0,10);
+  document.getElementById('ipsCount').textContent = top.length;
+  const tb = document.getElementById('ipsBody');
+  tb.innerHTML = top.map(r=>`
+    <tr data-ip="${r.ip}">
+      <td class="ip">${r.ip}</td>
+      <td>${flag(r.pais_codigo)} ${r.pais}</td>
+      <td class="num">${r.total_eventos}</td>
+      <td><span class="badge ${SEV_CLASS[r.gravedad_maxima]}">${r.gravedad_maxima}</span></td>
+    </tr>`).join('');
+  tb.querySelectorAll('tr').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const d = list.find(x=>x.ip===tr.dataset.ip); if(d) openDrawer(d);
+    });
+  });
+}
+
+function highlightCountry(name){
+  gCountries.selectAll('path').classed('highlight', d=>d.properties.name===name);
+  // crude name-to-iso matching: just pulse points of matching country name in data
+  gPoints.selectAll('g.atk').select('.attack-point')
+    .attr('stroke-width', d=>d.pais===name?2.5:1)
+    .attr('stroke', d=>d.pais===name?'#fff':'#0d1117');
+}
+
+/* ---------- Drawer ---------- */
+const drawer = document.getElementById('drawer');
+function openDrawer(d){
+  document.getElementById('drawerTitle').textContent = d.ip;
+  document.getElementById('drawerBody').innerHTML = `
+    <div class="kv"><span>IP</span><span class="ip" style="font-family:ui-monospace,Menlo,monospace;color:var(--blue)">${d.ip}</span></div>
+    <div class="kv"><span>País</span><span>${flag(d.pais_codigo)} ${d.pais} (${d.pais_codigo})</span></div>
+    <div class="kv"><span>Coordenadas</span><span>${d.lat.toFixed(2)}, ${d.lon.toFixed(2)}</span></div>
+    <div class="kv"><span>Eventos totales</span><span>${d.total_eventos}</span></div>
+    <div class="kv"><span>Severidad máxima</span><span class="badge ${SEV_CLASS[d.gravedad_maxima]}">${d.gravedad_maxima}</span></div>
+    <div class="kv" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <span>Tipos de ataque</span>
+      <span>${d.tipos_ataque.map(t=>`<span class="tag">${t}</span>`).join('')}</span>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button class="btn" onclick="alert('Bloquear ${d.ip}')">🚫 Bloquear IP</button>
+      <button class="btn" onclick="alert('Ver eventos de ${d.ip}')">📋 Ver eventos</button>
+    </div>`;
+  drawer.classList.add('open');
+}
+document.getElementById('drawerClose').addEventListener('click',()=>drawer.classList.remove('open'));
+
+/* ---------- Controls ---------- */
+document.getElementById('zoomIn').onclick = ()=>svg.transition().call(zoom.scaleBy,1.5);
+document.getElementById('zoomOut').onclick = ()=>svg.transition().call(zoom.scaleBy,1/1.5);
+document.getElementById('zoomReset').onclick = ()=>svg.transition().call(zoom.transform,d3.zoomIdentity);
+document.getElementById('refreshBtn').onclick = init;
+</script>
+</body>
+</html>

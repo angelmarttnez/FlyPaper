@@ -85,6 +85,7 @@
     border: 1px solid #1a3a2a;
   }
   .progress-fill {
+    width: 0;
     height: 100%;
     background: linear-gradient(90deg, #00ff8c 0%, #00d4ff 100%);
     box-shadow: 0 0 12px rgba(0,255,140,0.5);
@@ -377,7 +378,7 @@
       <div class="progress-text">Has resuelto <strong id="contador-resueltas">{{ resueltas }}</strong> de <strong id="contador-total">{{ total }}</strong> retos</div>
       <div class="progress-actions">
         <div class="progress-bar">
-          <div class="progress-fill" id="progress-fill" style="width: {{ (resueltas / total * 100) if total else 0 }}%"></div>
+          <div class="progress-fill" id="progress-fill" data-resueltas="{{ resueltas }}" data-total="{{ total }}"></div>
         </div>
         <button type="button" class="btn-reset-retos" id="btn-reset-retos">Reiniciar retos</button>
       </div>
@@ -514,6 +515,15 @@
     }
 
     document.getElementById('btn-reset-retos')?.addEventListener('click', reiniciarProgresoCTF);
+
+    (function initProgressBar() {
+      const barra = document.getElementById('progress-fill');
+      if (!barra) return;
+      actualizarProgresoUI(
+        Number(barra.dataset.resueltas) || 0,
+        Number(barra.dataset.total) || 0
+      );
+    })();
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
