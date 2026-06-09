@@ -1124,7 +1124,7 @@ def ruta_exenta_de_bloqueo_ip(ruta):
     """
     Rutas accesibles aunque la IP esté bloqueada (monitor, assets, reintento y login).
 
-    Tras /acceso/reintentar la IP se desbloquea; /login queda libre para autenticarse.
+    Tras /acceso/reintentar la IP se desbloquea y el visitante puede volver al inicio.
     """
     if not ruta:
         return False
@@ -1223,7 +1223,6 @@ def middleware_bloqueo_ip_y_actividad():
         return None
 
     if visitante_esta_bloqueado(ip):
-        session.clear()
         return respuesta_expulsion_visitante()
 
     return None
@@ -1238,14 +1237,14 @@ def servir_archivo_assets(nombre_archivo):
 @aplicacion.post("/acceso/reintentar")
 def acceso_reintentar_tras_bloqueo():
     """
-    Desbloquea la IP del visitante, destruye su sesión en servidor y permite ir al login.
+    Desbloquea la IP del visitante sin cerrar su sesión del portal y redirige al inicio.
 
-    El frontend limpia cookies/localStorage y redirige a /login tras esta petición.
+    Conserva credenciales honeypot (`logueado`, `usuario`, etc.) para que el visitante
+    vuelva a la landing sin tener que autenticarse de nuevo.
     """
     ip = obtener_ip_cliente()
     desbloquear_ip_visitante(ip)
-    session.clear()
-    return jsonify({"exito": True, "redirect": url_for("mostrar_login")})
+    return jsonify({"exito": True, "redirect": url_for("mostrar_landing")})
 
 
 def acceso_monitor_autorizado():
