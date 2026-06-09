@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FlyPaper · Iniciar sesión</title>
+<title>FlyPaper · Portal de Administración</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -31,15 +31,15 @@
     width: 72px;
     height: 72px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    background: linear-gradient(135deg, #dc2626, #991b1b);
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: 26px;
+    font-size: 22px;
     color: #fff;
     margin: 0 auto 20px;
-    box-shadow: 0 8px 24px rgba(79, 124, 255, 0.4);
+    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.35);
     letter-spacing: 1px;
   }
   h1 {
@@ -80,7 +80,7 @@
     width: 100%;
     padding: 12px;
     margin-top: 8px;
-    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    background: linear-gradient(135deg, #dc2626, #991b1b);
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -89,7 +89,7 @@
     cursor: pointer;
     transition: transform .1s, box-shadow .2s;
   }
-  button:hover { box-shadow: 0 8px 20px rgba(79, 124, 255, 0.4); }
+  button:hover { box-shadow: 0 8px 20px rgba(220, 38, 38, 0.35); }
   button:active { transform: translateY(1px); }
   .auth-links {
     text-align: center;
@@ -135,30 +135,32 @@
     margin-bottom: 18px;
     text-align: center;
   }
+  .notice {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    color: #93c5fd;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    margin-bottom: 18px;
+    text-align: center;
+    line-height: 1.45;
+  }
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">FP</div>
-    <h1>FlyPaper</h1>
-    <p class="subtitle">Portal público — buscador, blog y objetivos</p>
+    <div class="logo">ADM</div>
+    <h1>Portal de Administración</h1>
+    <p class="subtitle">Acceso restringido al personal de gestión</p>
 
-    {% if mensaje_timeout %}
-    <div class="error">{{ mensaje_timeout }}</div>
+    {% if mensaje_error %}
+    <div class="error">{{ mensaje_error }}</div>
     {% endif %}
-    {% if mensaje_cierre %}
-    <div class="error" style="background:rgba(59,130,246,0.12);border-color:rgba(59,130,246,0.45);color:#93c5fd">
-      {{ mensaje_cierre }}
-    </div>
-    {% endif %}
-    <div id="error-msg" class="error" style="display:none;">
-      Usuario o contraseña incorrectos. Acceso denegado.
-    </div>
 
-    <form method="POST" action="/login">
-      {% if destino_siguiente %}
-      <input type="hidden" name="next" value="{{ destino_siguiente }}">
-      {% endif %}
+    <div class="notice">Solo cuentas autorizadas del directorio interno pueden acceder a este portal.</div>
+
+    <form method="POST" action="/admin/login">
       <div class="field">
         <label for="username">Usuario</label>
         <input type="text" id="username" name="username" required autocomplete="username" />
@@ -167,19 +169,15 @@
         <label for="password">Contraseña</label>
         <input type="password" id="password" name="password" required autocomplete="current-password" />
       </div>
-      <button type="submit">Iniciar sesión</button>
+      <button type="submit">Acceder al panel</button>
     </form>
 
     <p class="auth-links">
-      <a href="{% if destino_siguiente %}/register?next={{ destino_siguiente|urlencode }}{% else %}/register{% endif %}">Crear cuenta</a>
+      <a href="/login">Portal público</a>
+      <span class="sep">·</span>
+      <a href="/monitor/login">Acceso analista SOC</a>
     </p>
     <a href="/" class="btn-volver">Volver al inicio</a>
   </div>
-
-  <script>
-    if (new URLSearchParams(window.location.search).get('error') === '1') {
-      document.getElementById('error-msg').style.display = 'block';
-    }
-  </script>
 </body>
 </html>
