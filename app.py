@@ -13,10 +13,13 @@ load_dotenv()
 
 import csv
 import io
+import ipaddress
 import json
 import logging
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -87,6 +90,8 @@ from database import (
     obtener_alertas_graves_monitor,
     obtener_evento_por_id,
     obtener_eventos_ultima_hora,
+    obtener_agregados_seguridad_por_ip,
+    obtener_ips_distintas_eventos,
 )
 from ai_analyzer import analizar_payload, generar_resumen_diario, detectar_anomalias
 from detector import (
@@ -117,6 +122,9 @@ _ultima_fecha_resumen_auto = None
 # Caché en memoria del resumen diario por fecha (evita llamadas repetidas a la API).
 _cache_resumen_diario_por_fecha = {}
 TTL_RESUMEN_DIARIO_SEG = 3600
+
+# Geolocalización ip-api.com: {ip: {lat, lon, pais, pais_codigo}}
+cache_geoip = {}
 
 # Último resultado de detección de anomalías (actualizado por el hilo de fondo).
 _cache_anomalias = {"datos": None, "actualizado_en": None}
@@ -1660,6 +1668,178 @@ def admin_reportes():
         resumenes=resumenes_vista,
         log_resumenes=log_resumenes_vista,
     )
+
+
+def _es_ip_atacante_publica(ip):
+    """
+    True si la IP es apta para geolocalización en el mapa (no local/privada).
+
+    Excluye loopback, RFC1918 y rangos documentados en el requisito del panel.
+    """
+    texto = (ip or "").strip()
+    if not texto:
+        return False
+    try:
+        direccion = ipaddress.ip_address(texto)
+    except ValueError:
+        return False
+    if direccion.is_loopback or direccion.is_private or direccion.is_link_local:
+        return False
+    return True
+
+
+def _filtrar_ips_publicas_atacantes(ips):
+    """Lista única de IPs públicas válidas para el mapa de amenazas."""
+    vistas = set()
+    resultado = []
+    for ip in ips:
+        texto = (ip or "").strip()
+        if not texto or texto in vistas:
+            continue
+        if not _es_ip_atacante_publica(texto):
+            continue
+        vistas.add(texto)
+        resultado.append(texto)
+    return resultado
+
+
+def _consultar_geolocalizacion_lote(ips_lote):
+    """
+    Consulta hasta 100 IPs en ip-api.com/batch.
+
+    Returns:
+        dict[str, dict]: Entradas exitosas listas para cache_geoip.
+    """
+    if not ips_lote:
+        return {}
+    cuerpo = json.dumps([{"query": ip} for ip in ips_lote]).encode("utf-8")
+    url = (
+        "http://ip-api.com/batch"
+        "?fields=status,message,country,countryCode,lat,lon,query"
+    )
+    solicitud = urllib.request.Request(
+        url,
+        data=cuerpo,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(solicitud, timeout=20) as respuesta:
+        datos = json.loads(respuesta.read().decode("utf-8"))
+    if not isinstance(datos, list):
+        return {}
+
+    nuevas = {}
+    for item in datos:
+        if not isinstance(item, dict) or item.get("status") != "success":
+            continue
+        ip = (item.get("query") or "").strip()
+        lat = item.get("lat")
+        lon = item.get("lon")
+        if not ip or lat is None or lon is None:
+            continue
+        nuevas[ip] = {
+            "lat": float(lat),
+            "lon": float(lon),
+            "pais": item.get("country") or "",
+            "pais_codigo": item.get("countryCode") or "",
+        }
+    return nuevas
+
+
+def _geolocalizar_ips_en_cache(ips_publicas):
+    """Rellena cache_geoip con lotes de hasta 100 IPs y pausa entre lotes."""
+    pendientes = [ip for ip in ips_publicas if ip not in cache_geoip]
+    if not pendientes:
+        return
+
+    tam_lote = 100
+    for indice in range(0, len(pendientes), tam_lote):
+        lote = pendientes[indice : indice + tam_lote]
+        try:
+            nuevas = _consultar_geolocalizacion_lote(lote)
+            cache_geoip.update(nuevas)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            logging.warning("Geolocalización ip-api fallida en lote: %s", exc)
+        except Exception as exc:
+            logging.exception("Error inesperado en geolocalización: %s", exc)
+        if len(pendientes) > 100 and indice + tam_lote < len(pendientes):
+            time.sleep(1.5)
+
+
+def _datos_demo_mapa():
+    """IPs de demostración para entornos sin tráfico público real (laboratorio)."""
+    return [
+        {"ip": "185.220.101.45", "pais": "Germany", "pais_codigo": "DE", "lat": 51.165, "lon": 10.451, "total_eventos": 47, "gravedad_maxima": "Crítica", "tipos_ataque": ["SQL Injection", "Fuerza Bruta"]},
+        {"ip": "45.142.212.100", "pais": "Netherlands", "pais_codigo": "NL", "lat": 52.132, "lon": 5.291, "total_eventos": 23, "gravedad_maxima": "Alta", "tipos_ataque": ["XSS", "Path Traversal"]},
+        {"ip": "194.165.16.77", "pais": "Russia", "pais_codigo": "RU", "lat": 55.751, "lon": 37.618, "total_eventos": 61, "gravedad_maxima": "Crítica", "tipos_ataque": ["SQL Injection", "Escaneo de puertos"]},
+        {"ip": "103.124.105.90", "pais": "China", "pais_codigo": "CN", "lat": 35.861, "lon": 104.195, "total_eventos": 18, "gravedad_maxima": "Sospechoso", "tipos_ataque": ["Escaneo de puertos"]},
+        {"ip": "91.108.4.200", "pais": "United States", "pais_codigo": "US", "lat": 37.751, "lon": -97.822, "total_eventos": 34, "gravedad_maxima": "Alta", "tipos_ataque": ["Fuerza Bruta", "XSS"]},
+        {"ip": "5.188.206.14", "pais": "Brazil", "pais_codigo": "BR", "lat": -14.235, "lon": -51.925, "total_eventos": 12, "gravedad_maxima": "Sospechoso", "tipos_ataque": ["Path Traversal"]},
+        {"ip": "212.102.35.66", "pais": "France", "pais_codigo": "FR", "lat": 46.227, "lon": 2.213, "total_eventos": 29, "gravedad_maxima": "Alta", "tipos_ataque": ["SQL Injection"]},
+    ]
+
+
+def _construir_payload_mapa_atacantes():
+    """Arma la respuesta JSON del mapa geopolítico de amenazas."""
+    ips_crudas = obtener_ips_distintas_eventos()
+    ips_publicas = _filtrar_ips_publicas_atacantes(ips_crudas)
+    agregados = obtener_agregados_seguridad_por_ip()
+    _geolocalizar_ips_en_cache(ips_publicas)
+
+    atacantes = []
+    total_eventos = 0
+    for ip in ips_publicas:
+        stats = agregados.get(ip, {})
+        total_ip = int(stats.get("total_eventos") or 0)
+        total_eventos += total_ip
+        geo = cache_geoip.get(ip)
+        if not geo:
+            continue
+        gravedad = stats.get("gravedad_maxima") or "Sospechoso"
+        atacantes.append(
+            {
+                "ip": ip,
+                "pais": geo.get("pais") or "",
+                "pais_codigo": geo.get("pais_codigo") or "",
+                "lat": geo["lat"],
+                "lon": geo["lon"],
+                "total_eventos": total_ip,
+                "gravedad_maxima": gravedad,
+                "tipos_ataque": stats.get("tipos_ataque") or [],
+            }
+        )
+
+    atacantes.sort(key=lambda a: a.get("total_eventos") or 0, reverse=True)
+
+    es_demo = len(atacantes) == 0
+    if es_demo:
+        atacantes = _datos_demo_mapa()
+        total_eventos = sum(a["total_eventos"] for a in atacantes)
+
+    return {
+        "total_ips": len(atacantes),
+        "total_eventos": total_eventos,
+        "atacantes": atacantes,
+        "es_demo": es_demo,
+    }
+
+
+@aplicacion.get("/admin/mapa")
+def admin_mapa_amenazas():
+    """Vista del mapa mundial de IPs atacantes (solo administradores)."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return bloqueo
+    return render_template("admin/mapa.html")
+
+
+@aplicacion.get("/admin/api/mapa-ips")
+def admin_api_mapa_ips():
+    """API JSON con geolocalización y agregados de seguridad por IP atacante."""
+    bloqueo = _redirigir_si_no_es_admin()
+    if bloqueo is not None:
+        return bloqueo
+    return jsonify(_construir_payload_mapa_atacantes())
 
 
 @aplicacion.get("/backup")

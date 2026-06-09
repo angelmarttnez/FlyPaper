@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlyPaper Admin — Mapa de Amenazas</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
+.sidebar{width:240px;background:#161b22;border-right:1px solid #21262d;padding:24px 0;display:flex;flex-direction:column;min-height:100vh;flex-shrink:0}
+.logo{padding:0 24px 24px;font-size:20px;font-weight:700;color:#58a6ff;border-bottom:1px solid #21262d;margin-bottom:16px}
+.logo span{color:#e4e6eb}
+.nav{flex:1;display:flex;flex-direction:column;gap:4px;padding:0 12px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 14px;color:#8b949e;text-decoration:none;border-radius:6px;font-size:14px;transition:all .15s}
+.nav a:hover{background:#21262d;color:#e4e6eb}
+.nav a.active{background:#1f6feb22;color:#58a6ff;border-left:3px solid #58a6ff;padding-left:11px}
+.logout{margin-top:auto;padding:0 12px}
+.logout a{display:flex;padding:10px 14px;color:#f85149;text-decoration:none;border-radius:6px;font-size:14px}
+.logout a:hover{background:#f8514922;color:#ff6b6b}
+.main{flex:1;padding:28px 32px;min-width:0;display:flex;flex-direction:column}
+.header{margin-bottom:20px}
+.header h1{font-size:24px;font-weight:600}
+.header p{color:#8b949e;font-size:14px;margin-top:4px}
+.stats{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:18px}
+.stat{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 18px;min-width:160px}
+.stat .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8b949e}
+.stat .value{font-size:22px;font-weight:700;color:#f0f6fc;margin-top:4px;font-variant-numeric:tabular-nums}
+.mapa-contenedor{flex:1;background:#111b27;border:1px solid #21262d;border-radius:8px;overflow:hidden;position:relative;height:calc(100vh - 280px);min-height:420px}
+#mapa-mundial{width:100%;height:100%;opacity:1 !important;filter:none !important;background:#111b27}
+.leaflet-container{opacity:1 !important;filter:none !important;background:#111b27 !important;font-family:inherit}
+.leaflet-tile-pane{opacity:1 !important;filter:brightness(1.08) contrast(1.06)}
+.estado-carga,.estado-error{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(17,27,39,.72);color:#8b949e;font-size:14px;z-index:1000;pointer-events:none;transition:opacity .2s}
+.estado-carga[hidden],.estado-error[hidden]{display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important}
+.estado-error{color:#f85149}
+.leyenda{position:absolute;bottom:14px;left:14px;z-index:800;background:rgba(22,27,34,.92);border:1px solid #30363d;border-radius:6px;padding:10px 14px;font-size:12px;display:flex;gap:16px}
+.leyenda span{display:inline-flex;align-items:center;gap:6px;color:#8b949e}
+.leyenda i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.toolbar-mapa{position:absolute;top:14px;right:14px;z-index:800}
+.btn-recargar{background:#21262d;border:1px solid #30363d;color:#e4e6eb;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer}
+.btn-recargar:hover{border-color:#58a6ff;color:#58a6ff}
+.btn-recargar:disabled{opacity:.5;cursor:wait}
+.leaflet-popup-content-wrapper{background:#161b22;color:#e4e6eb;border:1px solid #30363d;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.leaflet-popup-tip{background:#161b22}
+.popup-mapa{min-width:220px;font-size:13px;line-height:1.5}
+.popup-mapa .ip{font-family:ui-monospace,Menlo,monospace;color:#58a6ff;font-weight:600;font-size:14px;margin-bottom:8px}
+.popup-mapa .fila{display:flex;justify-content:space-between;gap:12px;margin:4px 0;color:#8b949e}
+.popup-mapa .fila b{color:#f0f6fc;font-weight:600}
+.popup-mapa .tags{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px}
+.popup-mapa .tag{background:#21262d;color:#c9d1d9;padding:2px 8px;border-radius:4px;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+.sev-critica{color:#f85149}
+.sev-alta{color:#d29922}
+.sev-sospechoso{color:#e3b341}
+@keyframes pulso-marcador{
+  0%{box-shadow:0 0 0 0 rgba(248,81,73,.55)}
+  70%{box-shadow:0 0 0 14px rgba(248,81,73,0)}
+  100%{box-shadow:0 0 0 0 rgba(248,81,73,0)}
+}
+.marcador-pulso-critica{border-radius:50%;animation:pulso-marcador 2s ease-out infinite}
+.marcador-pulso-alta{border-radius:50%;animation:pulso-marcador 2s ease-out infinite}
+.marcador-pulso-sospechoso{border-radius:50%;animation:pulso-marcador 2.2s ease-out infinite}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo">Fly<span>Paper</span></div>
+  <nav class="nav">
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/usuarios">Usuarios</a>
+    <a href="/admin/configuracion">Configuración</a>
+    <a href="/admin/reportes">Reportes</a>
+    <a href="/admin/mapa" class="active">Mapa de Amenazas</a>
+  </nav>
+  <div class="logout nav">
+    <a href="/logout">Logout</a>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="header">
+    <h1>Mapa de Amenazas</h1>
+    <p>Geolocalización de IPs atacantes registradas en el honeypot</p>
+  </div>
+
+  <section class="stats">
+    <div class="stat">
+      <div class="label">IPs atacantes</div>
+      <div class="value" id="stat-ips">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">Eventos totales</div>
+      <div class="value" id="stat-eventos">—</div>
+    </div>
+    <div class="stat">
+      <div class="label">Marcadores en mapa</div>
+      <div class="value" id="stat-marcadores">—</div>
+    </div>
+  </section>
+
+  <div class="mapa-contenedor">
+    <div id="mapa-mundial"></div>
+    <div class="estado-carga" id="estado-carga">Cargando datos de amenazas…</div>
+    <div class="estado-error" id="estado-error" hidden></div>
+    <div class="toolbar-mapa">
+      <button type="button" class="btn-recargar" id="btn-recargar">Actualizar</button>
+    </div>
+    <div id="banner-demo" hidden
+         style="position:absolute;top:14px;left:50%;transform:translateX(-50%);
+                z-index:900;background:#d2992244;border:1px solid #d29922;
+                color:#e3b341;padding:7px 18px;border-radius:6px;font-size:12px;
+                white-space:nowrap;pointer-events:none;">
+      Modo demostración: no hay IPs públicas reales en la base de datos
+    </div>
+    <div class="leyenda">
+      <span><i style="background:#f85149"></i> Crítica</span>
+      <span><i style="background:#d29922"></i> Alta</span>
+      <span><i style="background:#e3b341"></i> Sospechoso</span>
+    </div>
+  </div>
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const COLORES_GRAVEDAD = {
+    'Crítica': '#f85149',
+    'Alta': '#d29922',
+    'Sospechoso': '#e3b341'
+  };
+
+  const mapa = L.map('mapa-mundial', {
+    center: [20, 0],
+    zoom: 2,
+    minZoom: 2,
+    maxZoom: 10,
+    worldCopyJump: true
+  });
+
+  const capaOSM = L.tileLayer(
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }
+  );
+
+  const capaOscura = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_raster_tiles/{z}/{x}/{y}{r}.png',
+    {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19,
+      errorTileUrl: ''
+    }
+  );
+
+  capaOscura.addTo(mapa);
+  capaOscura.once('tileerror', function () {
+    mapa.removeLayer(capaOscura);
+    capaOSM.addTo(mapa);
+  });
+
+  let capaMarcadores = L.layerGroup().addTo(mapa);
+  const elCarga = document.getElementById('estado-carga');
+  const elError = document.getElementById('estado-error');
+  const btnRecargar = document.getElementById('btn-recargar');
+
+  function mostrarCarga() {
+    elCarga.hidden = false;
+    elCarga.style.display = 'flex';
+  }
+
+  function ocultarCarga() {
+    elCarga.hidden = true;
+    elCarga.style.display = 'none';
+  }
+
+  function radioMarcador(total) {
+    const t = Number(total) || 1;
+    return Math.min(22, Math.max(8, 6 + Math.sqrt(t) * 2));
+  }
+
+  function claseSeveridad(gravedad) {
+    if (gravedad === 'Crítica') return 'sev-critica';
+    if (gravedad === 'Alta') return 'sev-alta';
+    return 'sev-sospechoso';
+  }
+
+  function htmlPopup(atacante) {
+    const tipos = (atacante.tipos_ataque || [])
+      .map(function (t) { return '<span class="tag">' + escapeHtml(t) + '</span>'; })
+      .join('');
+    const paisTxt = atacante.pais
+      ? escapeHtml(atacante.pais) + (atacante.pais_codigo ? ' (' + escapeHtml(atacante.pais_codigo) + ')' : '')
+      : 'Desconocido';
+    return (
+      '<div class="popup-mapa">' +
+        '<div class="ip">' + escapeHtml(atacante.ip) + '</div>' +
+        '<div class="fila"><span>País</span><b>' + paisTxt + '</b></div>' +
+        '<div class="fila"><span>Eventos</span><b>' + (atacante.total_eventos || 0) + '</b></div>' +
+        '<div class="fila"><span>Severidad máxima</span><b class="' + claseSeveridad(atacante.gravedad_maxima) + '">' +
+          escapeHtml(atacante.gravedad_maxima || 'Sospechoso') + '</b></div>' +
+        '<div class="fila" style="flex-direction:column;align-items:flex-start;gap:6px">' +
+          '<span>Tipos de ataque</span>' +
+          '<div class="tags">' + (tipos || '<span class="tag">—</span>') + '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function escapeHtml(texto) {
+    return String(texto)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function dibujarMarcadores(atacantes) {
+    capaMarcadores.clearLayers();
+    const bounds = [];
+    atacantes.forEach(function (a) {
+      if (a.lat == null || a.lon == null) return;
+      const color = COLORES_GRAVEDAD[a.gravedad_maxima] || COLORES_GRAVEDAD.Sospechoso;
+      const radio = radioMarcador(a.total_eventos);
+      const marcador = L.circleMarker([a.lat, a.lon], {
+        radius: radio,
+        fillColor: color,
+        color: '#ffffff',
+        weight: 2.5,
+        opacity: 1,
+        fillOpacity: 0.92,
+        className: 'marcador-pulso-' + (a.gravedad_maxima === 'Crítica' ? 'critica' : a.gravedad_maxima === 'Alta' ? 'alta' : 'sospechoso')
+      });
+      marcador.bindPopup(htmlPopup(a), { maxWidth: 320 });
+      marcador.addTo(capaMarcadores);
+      bounds.push([a.lat, a.lon]);
+    });
+    if (bounds.length > 1) {
+      mapa.fitBounds(bounds, { padding: [40, 40], maxZoom: 5 });
+    } else if (bounds.length === 1) {
+      mapa.setView(bounds[0], 5);
+    } else {
+      mapa.setView([20, 0], 2);
+    }
+  }
+
+  function actualizarEstadisticas(datos) {
+    document.getElementById('stat-ips').textContent = datos.total_ips ?? 0;
+    document.getElementById('stat-eventos').textContent = (datos.total_eventos ?? 0).toLocaleString('es-ES');
+    document.getElementById('stat-marcadores').textContent = (datos.atacantes || []).length;
+  }
+
+  async function cargarMapa() {
+    elError.hidden = true;
+    elError.style.display = 'none';
+    mostrarCarga();
+    btnRecargar.disabled = true;
+    try {
+      const respuesta = await fetch('/admin/api/mapa-ips', { credentials: 'same-origin' });
+      if (!respuesta.ok) {
+        throw new Error('Respuesta HTTP ' + respuesta.status);
+      }
+      const datos = await respuesta.json();
+      actualizarEstadisticas(datos);
+      document.getElementById('banner-demo').hidden = !datos.es_demo;
+      dibujarMarcadores(datos.atacantes || []);
+      ocultarCarga();
+    } catch (err) {
+      elError.textContent = 'No se pudieron cargar los datos del mapa: ' + err.message;
+      elError.hidden = false;
+      elError.style.display = 'flex';
+      ocultarCarga();
+    } finally {
+      btnRecargar.disabled = false;
+      mapa.invalidateSize({ animate: false, pan: false });
+      requestAnimationFrame(function () {
+        mapa.invalidateSize({ animate: false, pan: false });
+      });
+      setTimeout(function () {
+        mapa.invalidateSize({ animate: false, pan: false });
+      }, 150);
+    }
+  }
+
+  btnRecargar.addEventListener('click', cargarMapa);
+  cargarMapa();
+});
+</script>
+</body>
+</html>
