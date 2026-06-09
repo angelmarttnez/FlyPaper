@@ -1,21 +1,16 @@
-{# Temporizador de inactividad (15 min) en /search, /blog y /objetivos. #}
+{# Temporizador de inactividad (15 min) en /search, /blog y /objetivos (usuario autenticado). #}
 <script>
 (function () {
   const SEGUNDOS = {{ sesion_inactividad_seg|default(900) }};
   const MS = SEGUNDOS * 1000;
   const LOGUEADO = {{ 'true' if sesion_logueado else 'false' }};
 
+  if (!LOGUEADO) return;
+
   let temporizador = null;
 
   function expirarPorInactividad() {
-    if (LOGUEADO) {
-      window.location.href = '/logout?reason=timeout';
-      return;
-    }
-    fetch('/logout?reason=timeout&guest=1', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    }).catch(function () {}).finally(reiniciarTemporizador);
+    window.location.href = '/logout?reason=timeout';
   }
 
   function reiniciarTemporizador() {
