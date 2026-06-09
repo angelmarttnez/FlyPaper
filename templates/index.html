@@ -96,19 +96,7 @@
     background:linear-gradient(180deg,#fff 0%,#9ba9b7 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   }
   .sub{font-size:18px;color:var(--muted);max-width:640px;margin:0 auto 36px}
-  .ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:60px}
-
-  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:780px;margin:0 auto;}
-  .stat{
-    background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 18px;
-    text-align:left;position:relative;
-  }
-  .stat .num{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#fff;margin-bottom:6px}
-  .stat .lbl{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
-  .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 0 var(--red);animation:pulse 1.6s infinite}
-  .pulse-dot.green{background:var(--green);box-shadow:0 0 0 0 var(--green);animation:pulse-green 1.6s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(248,81,73,.7)}70%{box-shadow:0 0 0 10px rgba(248,81,73,0)}100%{box-shadow:0 0 0 0 rgba(248,81,73,0)}}
-  @keyframes pulse-green{0%{box-shadow:0 0 0 0 rgba(63,185,80,.6)}70%{box-shadow:0 0 0 10px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+  .ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:0}
 
   /* SECTIONS */
   section{max-width:1200px;margin:0 auto;padding:60px 24px}
@@ -123,15 +111,18 @@
     transition:all .25s ease;position:relative;overflow:hidden;
     display:flex;flex-direction:column;
   }
+  a.feature-link{
+    text-decoration:none;color:inherit;cursor:pointer;
+  }
   .feature::before{
     content:"";position:absolute;inset:0;border-radius:14px;padding:1px;
     background:linear-gradient(135deg,rgba(88,166,255,.4),transparent 60%);
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude;
-    opacity:0;transition:opacity .25s;
+    opacity:0;transition:opacity .25s;pointer-events:none;
   }
   .feature:hover::before{opacity:1}
-  .feature:hover{transform:translateY(-3px);box-shadow:0 12px 40px -10px rgba(88,166,255,.25);border-color:rgba(88,166,255,.3)}
+  a.feature-link:hover{transform:translateY(-3px);box-shadow:0 12px 40px -10px rgba(88,166,255,.25);border-color:rgba(88,166,255,.3)}
   .feature .icon{
     width:46px;height:46px;border-radius:10px;display:flex;align-items:center;justify-content:center;
     background:rgba(88,166,255,.1);color:var(--blue);margin-bottom:18px;
@@ -154,7 +145,7 @@
   footer .links a:hover{text-decoration:underline}
 
   @media(max-width:768px){
-    .grid-features,.stats{grid-template-columns:1fr}
+    .grid-features{grid-template-columns:1fr}
     h1{font-size:36px}
     .sub{font-size:16px}
   }
@@ -174,7 +165,6 @@
       </span>
       <span><span class="blue">Fly</span>Paper</span>
     </a>
-    <a href="/login" class="btn btn-primary">Acceder al Portal</a>
   </div>
 </nav>
 
@@ -186,21 +176,6 @@
     <a href="/login" class="btn btn-primary">Acceder al Portal →</a>
     <a href="/objetivos" class="btn btn-outline">Ver Objetivos</a>
   </div>
-
-  <div class="stats">
-    <div class="stat">
-      <div class="num" id="stat1">0</div>
-      <div class="lbl">Eventos Monitorizados</div>
-    </div>
-    <div class="stat">
-      <div class="num" id="stat2">0</div>
-      <div class="lbl"><span class="pulse-dot"></span> Amenazas Activas</div>
-    </div>
-    <div class="stat">
-      <div class="num"><span id="stat3">0</span>%</div>
-      <div class="lbl">Disponibilidad</div>
-    </div>
-  </div>
 </section>
 
 <section>
@@ -209,38 +184,46 @@
     <p>Visibilidad integral del perímetro corporativo.</p>
   </div>
   <div class="grid-features">
-    <div class="feature">
+    <a href="/admin" class="feature feature-link">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       </div>
       <h3>Panel de Administración</h3>
       <p>Consola centralizada para gestionar usuarios, revisar reportes de seguridad, supervisar el mapa de ataques y configurar alertas.</p>
-      <a href="/admin" class="feat-link">Ir al Panel <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></a>
-    </div>
-    <div class="feature">
+      <span class="feat-link">Ir al Panel <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </a>
+    <a href="/objetivos" class="feature feature-link">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
       </div>
       <h3>CTF Lab</h3>
       <p>Retos de captura de bandera (CTF) para investigadores autorizados. Pon a prueba tus habilidades ofensivas y defensivas en un entorno controlado.</p>
-      <a href="/objetivos" class="feat-link">Ir al Lab <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></a>
-    </div>
-    <div class="feature">
+      <span class="feat-link">Ir al Lab <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </a>
+    <a href="/search" class="feature feature-link">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </div>
       <h3>Buscador Interno</h3>
       <p>Búsqueda corporativa rápida para localizar documentos, artículos del blog, registros de incidentes y recursos internos.</p>
-      <a href="/search" class="feat-link">Buscar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></a>
-    </div>
-    <div class="feature">
+      <span class="feat-link">Buscar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </a>
+    <a href="/blog" class="feature feature-link">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       </div>
       <h3>Blog Corporativo</h3>
       <p>Noticias internas, análisis de vulnerabilidades, write-ups de retos y comunicados del equipo de seguridad de FlyPaper Corp.</p>
-      <a href="/blog" class="feat-link">Leer Blog <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></a>
-    </div>
+      <span class="feat-link">Leer Blog <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </a>
+    <a href="/documentacion" class="feature feature-link">
+      <div class="icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      </div>
+      <h3>Documentación</h3>
+      <p>Informes de seguridad, análisis de vulnerabilidades, writeups y teoría técnica del laboratorio FlyPaper Research.</p>
+      <span class="feat-link">Ver documentación <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+    </a>
     <div class="feature">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -255,32 +238,13 @@
   <div>FlyPaper Corp © 2026 — Solo uso interno. Toda la actividad es monitorizada y registrada.</div>
   <div class="links">
     <a href="/login">Portal</a>
+    <a href="/documentacion">Documentación</a>
     <a href="/blog">Blog</a>
     <a href="/objetivos">Lab</a>
   </div>
 </footer>
 
 <script>
-  // Stat counters
-  function animateCount(el,target,suffix,duration){
-    const start=performance.now();
-    const fmt = (n)=>{
-      if(suffix==='float') return n.toFixed(1);
-      return Math.floor(n).toLocaleString('es-ES');
-    };
-    function frame(now){
-      const t=Math.min(1,(now-start)/duration);
-      const eased=1-Math.pow(1-t,3);
-      el.textContent=fmt(target*eased);
-      if(t<1) requestAnimationFrame(frame);
-      else el.textContent=fmt(target);
-    }
-    requestAnimationFrame(frame);
-  }
-  animateCount(document.getElementById('stat1'),12847,'int',1800);
-  animateCount(document.getElementById('stat2'),3,'int',1200);
-  animateCount(document.getElementById('stat3'),99.2,'float',1600);
-
   // Particles
   const p = document.getElementById('particles');
   for(let i=0;i<30;i++){
