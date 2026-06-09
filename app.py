@@ -16,6 +16,7 @@ import io
 import ipaddress
 import json
 import logging
+import random
 import threading
 import time
 import urllib.error
@@ -831,6 +832,8 @@ def _es_ruta_sesion_publica(path):
     if path == "/objetivos" or path.startswith("/objetivos/"):
         return True
     if path == "/documentacion" or path.startswith("/documentacion/"):
+        return True
+    if path == "/diversion/carta" or path.startswith("/diversion/carta/"):
         return True
     return False
 
@@ -2207,6 +2210,81 @@ def objetivos_reset_progreso():
             "mensaje": "Progreso restablecido. Puedes resolver los retos de nuevo.",
         }
     )
+
+
+CLAVE_DIVERSION_CARTA_SECRETA = "diversion_carta_secreta"
+CLAVE_DIVERSION_CARTA_GANADOR = "diversion_carta_ganador"
+
+
+CARTA_MIN = 1
+CARTA_MAX = 6
+
+
+def _generar_numero_carta_secreta():
+    """Número aleatorio del 1 al 6 para el minijuego de cartas."""
+    return random.randint(CARTA_MIN, CARTA_MAX)
+
+
+@aplicacion.route("/diversion/carta", methods=["GET", "POST"])
+@limiter.limit("60 per minute")
+def diversion_carta_juego():
+    """
+    Minijuego de adivinanza: el visitante debe acertar una carta secreta (1-6).
+
+    GET: inicia o reinicia la partida con una carta nueva en sesión.
+    POST: valida el intento; acierto → /diversion/carta/ganador; fallo → nueva carta.
+    """
+    if request.method == "GET":
+        session[CLAVE_DIVERSION_CARTA_SECRETA] = _generar_numero_carta_secreta()
+        session.pop(CLAVE_DIVERSION_CARTA_GANADOR, None)
+        session.modified = True
+        return _plantilla_publica(
+            "diversion/carta/juego.html",
+            nav_activo="diversion",
+            mensaje_error=None,
+        )
+
+    mensaje_error = None
+    carta_revelada = None
+    intento_raw = (request.form.get("carta") or "").strip()
+
+    secreto = session.get(CLAVE_DIVERSION_CARTA_SECRETA)
+    if secreto is None:
+        secreto = _generar_numero_carta_secreta()
+        session[CLAVE_DIVERSION_CARTA_SECRETA] = secreto
+
+    try:
+        intento = int(intento_raw)
+        if intento < CARTA_MIN or intento > CARTA_MAX:
+            raise ValueError("fuera de rango")
+    except ValueError:
+        carta_revelada = secreto
+        mensaje_error = f"Fallo, vuelve a intentarlo. La carta era {carta_revelada}."
+    else:
+        if intento == secreto:
+            session[CLAVE_DIVERSION_CARTA_GANADOR] = True
+            session.pop(CLAVE_DIVERSION_CARTA_SECRETA, None)
+            session.modified = True
+            return redirect(url_for("diversion_carta_ganador"))
+        carta_revelada = secreto
+        mensaje_error = f"Fallo, vuelve a intentarlo. La carta era {carta_revelada}."
+
+    session[CLAVE_DIVERSION_CARTA_SECRETA] = _generar_numero_carta_secreta()
+    session.modified = True
+    return _plantilla_publica(
+        "diversion/carta/juego.html",
+        nav_activo="diversion",
+        mensaje_error=mensaje_error,
+    )
+
+
+@aplicacion.get("/diversion/carta/ganador")
+@limiter.limit("60 per minute")
+def diversion_carta_ganador():
+    """Pantalla de victoria tras acertar la carta secreta."""
+    if not session.get(CLAVE_DIVERSION_CARTA_GANADOR):
+        return redirect(url_for("diversion_carta_juego"))
+    return render_template("diversion/carta/ganador.html")
 
 
 @aplicacion.get("/documentacion")
