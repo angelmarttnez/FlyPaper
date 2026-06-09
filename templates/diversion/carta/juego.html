@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlyPaper — Adivina la carta</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e1a;
+    color: #e4e6eb;
+    min-height: 100vh;
+  }
+  .navbar {
+    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
+    border-bottom: 1px solid #1f2742;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+  }
+  .logo {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+  .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
+  .nav-links { display: flex; gap: 8px; list-style: none; }
+  .nav-links li { list-style: none; }
+  .nav-links a {
+    color: #b4b8c5;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { background: #1a2138; color: #fff; }
+  .nav-links a.active { background: #1a2138; color: #fff; }
+
+  .container {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 64px 40px;
+  }
+  .page-header { margin-bottom: 32px; text-align: center; }
+  .page-header h1 {
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+  }
+  .page-header p {
+    color: #8b91a7;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .juego-panel {
+    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
+    border: 1px solid #1f2742;
+    border-radius: 14px;
+    padding: 32px 28px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  }
+  .juego-panel label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #b4b8c5;
+    margin-bottom: 10px;
+  }
+  .juego-panel input[type="number"] {
+    width: 100%;
+    background: #0d1220;
+    border: 1px solid #2a3454;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 18px;
+    color: #fff;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 18px;
+  }
+  .juego-panel input[type="number"]:focus {
+    border-color: #6366f1;
+  }
+  .btn-enviar {
+    width: 100%;
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-enviar:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45);
+  }
+  .mensaje-error {
+    margin-top: 18px;
+    padding: 12px 16px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 8px;
+    color: #f87171;
+    font-size: 14px;
+    text-align: center;
+  }
+  .mensaje-error[hidden] { display: none; }
+</style>
+</head>
+<body>
+  {% include 'partials/navbar_publico.html' %}
+
+  <main class="container">
+    <div class="page-header">
+      <h1>Adivina la carta</h1>
+      <p>He pensado en una carta del 1 al 6. Introduce tu predicción y envía.</p>
+    </div>
+
+    <div class="juego-panel">
+      <form method="post" action="/diversion/carta" autocomplete="off">
+        <label for="carta">Tu número (1-6)</label>
+        <input
+          type="number"
+          id="carta"
+          name="carta"
+          min="1"
+          max="6"
+          step="1"
+          required
+          inputmode="numeric"
+          placeholder="1 — 6"
+          value=""
+        >
+        <button type="submit" class="btn-enviar">Comprobar</button>
+      </form>
+      {% if mensaje_error %}
+      <p class="mensaje-error" role="alert">{{ mensaje_error }}</p>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

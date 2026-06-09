@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victoria · FlyPaper</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    min-height: 100vh;
+    background: #0a0e1a;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .expulsion-pantalla {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    text-align: center;
+  }
+  .expulsion-titulo {
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-weight: 800;
+    color: #22c55e;
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+  }
+  .expulsion-subtitulo {
+    font-size: 1rem;
+    color: #94a3b8;
+    max-width: 420px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  .expulsion-gif-wrap {
+    background: #111827;
+    border: 2px solid #1e293b;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+    margin-bottom: 20px;
+  }
+  .expulsion-gif-wrap img {
+    display: block;
+    max-width: min(480px, 90vw);
+    height: auto;
+    border-radius: 8px;
+  }
+  .btn-reintentar {
+    display: inline-block;
+    margin-bottom: 24px;
+    padding: 14px 28px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    text-decoration: none;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-reintentar:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45);
+  }
+  .expulsion-codigo {
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+</style>
+</head>
+<body>
+  <main class="expulsion-pantalla" role="status">
+    <h1 class="expulsion-titulo">Muy bien, has acertado</h1>
+    <p class="expulsion-subtitulo">
+      Has adivinado la carta correcta. La suerte —o la intuición— estaba de tu lado.
+    </p>
+    <div class="expulsion-gif-wrap">
+      <img src="/assets/Beso.gif" alt="Victoria" width="400" height="auto">
+    </div>
+    <a href="/" class="btn-reintentar">Volver al inicio</a>
+    <p class="expulsion-codigo">FlyPaper · Minijuego completado</p>
+  </main>
+</body>
+</html>
