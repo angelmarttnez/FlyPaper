@@ -1,4 +1,4 @@
-{# Barra superior compartida: /search, /blog, /objetivos. Requiere sesion_logueado y sesion_etiqueta. #}
+{# Barra superior compartida: /search, /blog, /objetivos, /documentacion. Requiere sesion_logueado y sesion_etiqueta. #}
 <style>
   .navbar-right {
     display: flex;
@@ -72,6 +72,7 @@
   <div class="navbar-right">
     <ul class="nav-links">
       <li><a href="/blog"{% if nav_activo == 'blog' %} class="active"{% endif %}>Blog</a></li>
+      <li><a href="/documentacion"{% if nav_activo == 'documentacion' %} class="active"{% endif %}>Documentación</a></li>
       <li><a href="/objetivos"{% if nav_activo == 'objetivos' %} class="active"{% endif %}>Objetivos CTF</a></li>
       <li><a href="/search"{% if nav_activo == 'search' %} class="active"{% endif %}>Buscar</a></li>
     </ul>

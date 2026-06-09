@@ -861,6 +861,67 @@ def verificar_usuario_privado(username, password):
         }
 
 
+def verificar_admin_panel_privado(username, password):
+    """
+    Autenticación exclusiva del portal /admin/login (rol admin_panel en flypaper_priv.db).
+
+    Rechaza cuentas de monitor u otros roles aunque la contraseña sea correcta.
+    """
+    cuenta = verificar_usuario_privado(username, password)
+    if cuenta is None or cuenta.get("rol") != ROL_PRIV_ADMIN_PANEL:
+        return None
+    return cuenta
+
+
+def crear_usuario_publico(username, password, email=None, nombre=None):
+    """
+    Alta de usuario en flypaper.db con privilegios mínimos (rol usuario).
+
+    Returns:
+        dict: {"exito": bool, "mensaje": str}
+    """
+    nombre_usuario = (username or "").strip()
+    if not nombre_usuario or password is None or not str(password):
+        return {"exito": False, "mensaje": "Usuario y contraseña son obligatorios."}
+    if len(nombre_usuario) < 3:
+        return {"exito": False, "mensaje": "El usuario debe tener al menos 3 caracteres."}
+    if len(str(password)) < 6:
+        return {"exito": False, "mensaje": "La contraseña debe tener al menos 6 caracteres."}
+
+    hash_md5 = _hash_md5_password(password)
+    correo = (email or "").strip() or f"{nombre_usuario}@flypaper.local"
+    nombre_visible = (nombre or "").strip() or nombre_usuario
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT id FROM usuarios WHERE username = ?;",
+            (nombre_usuario,),
+        )
+        if cursor.fetchone():
+            return {"exito": False, "mensaje": "Ese nombre de usuario ya está registrado."}
+        try:
+            cursor.execute(
+                """
+                INSERT INTO usuarios (
+                    username, password_hash, nombre, email, rol
+                ) VALUES (?, ?, ?, ?, ?);
+                """,
+                (
+                    nombre_usuario,
+                    hash_md5,
+                    nombre_visible,
+                    correo,
+                    ROL_USUARIO_NORMAL,
+                ),
+            )
+            conexion.commit()
+        except sqlite3.IntegrityError:
+            return {"exito": False, "mensaje": "Ese nombre de usuario ya está registrado."}
+
+    return {"exito": True, "mensaje": "Cuenta creada correctamente. Ya puedes iniciar sesión."}
+
+
 def reiniciar_progreso_ctf_por_ip(ip):
     """
     Elimina todos los retos resueltos de una IP (QA / repetir pruebas en /objetivos).

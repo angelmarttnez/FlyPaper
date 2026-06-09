@@ -20,6 +20,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -67,10 +68,13 @@ from database import (
     obtener_flags_publicas,
     reiniciar_progreso_ctf_por_usuario,
     verificar_usuario_privado,
+    verificar_admin_panel_privado,
+    crear_usuario_publico,
     verificar_credencial_usuario_bd,
     obtener_usuarios_para_panel_admin,
     ROL_PRIV_MONITOR,
     ROL_USUARIO_ADMIN_BD,
+    ROL_USUARIO_NORMAL,
     obtener_post_por_id,
     obtener_posts_blog,
     obtener_reportes_enviados,
@@ -767,7 +771,7 @@ aplicacion = Flask(__name__)
 # Clave para firmar cookies de sesión (login honeypot y otras sesiones).
 aplicacion.secret_key = 'flypaper_secreto_2026'
 
-# Sesión pública (/search, /blog, /objetivos): caducidad por inactividad de 15 minutos.
+# Sesión pública (/search, /blog, /objetivos, /documentacion): caducidad por inactividad de 15 minutos.
 SESION_PUBLICA_INACTIVIDAD_SEGUNDOS = 900
 SESION_PUBLICA_INACTIVIDAD = timedelta(seconds=SESION_PUBLICA_INACTIVIDAD_SEGUNDOS)
 CLAVE_ULTIMA_ACTIVIDAD_PUBLICA = "ultima_actividad_publica_ts"
@@ -797,7 +801,7 @@ def manejar_limite_peticiones(_exc):
     return jsonify({"error": "Demasiadas peticiones. Espera un momento."}), 429
 
 
-# Rol asignado en /search, /blog y /objetivos cuando no hay login.
+# Etiqueta legacy para logs y visitas sin sesión (p. ej. landing /).
 ROL_INVITADO = "invitado"
 
 # Inicializamos la base de datos al arrancar la aplicación para asegurar
@@ -819,25 +823,16 @@ iniciar_hilo_limpieza_comentarios()
 
 
 def _es_ruta_sesion_publica(path):
-    """True si la ruta pertenece al área pública con sesión Invitado o usuario logueado."""
+    """True si la ruta pertenece al portal de usuario (/search, /blog, /objetivos, /documentacion)."""
     if path == "/search" or path.startswith("/search/"):
         return True
     if path == "/blog" or path.startswith("/blog/"):
         return True
     if path == "/objetivos" or path.startswith("/objetivos/"):
         return True
+    if path == "/documentacion" or path.startswith("/documentacion/"):
+        return True
     return False
-
-
-def _asegurar_sesion_publica():
-    """
-    Mantiene la sesión de usuario autenticado o asigna rol Invitado sin forzar login.
-    """
-    if session.get("logueado") is True and session.get("usuario"):
-        return
-    session["logueado"] = False
-    session["rol"] = ROL_INVITADO
-    session.pop("usuario", None)
 
 
 def _usuario_publico_autenticado():
@@ -845,35 +840,11 @@ def _usuario_publico_autenticado():
     return session.get("logueado") is True and bool(session.get("usuario"))
 
 
-def requiere_autenticacion_objetivos(funcion_vista):
-    """
-    Control estricto de acceso a /objetivos.
-
-    - GET /objetivos (HTML): redirect a /login.
-    - POST /objetivos/submit y /objetivos/reset (API JSON): 401 Unauthorized.
-    """
-
-    @wraps(funcion_vista)
-    def envoltorio(*args, **kwargs):
-        if _usuario_publico_autenticado():
-            return funcion_vista(*args, **kwargs)
-
-        ruta = request.path or ""
-        es_api = ruta.startswith("/objetivos/") and request.method == "POST"
-
-        if es_api:
-            return jsonify({"exito": False, "mensaje": "Unauthorized"}), 401
-
-        return _redirect_login_sin_cache()
-
-    return envoltorio
-
-
 def _limpiar_estado_sesion_publica():
     """
     Elimina credenciales y estado temporal del área pública sin tocar sesión de monitor.
 
-    Tras la limpieza el visitante queda como Invitado.
+    Tras la limpieza el visitante debe volver a autenticarse para acceder al portal.
     """
     for clave in (
         "logueado",
@@ -883,7 +854,6 @@ def _limpiar_estado_sesion_publica():
         CLAVE_SESION_COMENTARIOS_VOLATILES,
     ):
         session.pop(clave, None)
-    _asegurar_sesion_publica()
     session.modified = True
 
 
@@ -921,6 +891,28 @@ def _invalidar_sesion_honeypot_en_servidor():
             tokens_por_ip[ip].discard(token)
     session.clear()
     session.modified = True
+
+
+def _destino_tras_login_seguro(destino):
+    """
+    Valida una ruta interna para redirigir tras login o registro.
+
+    Solo permite destinos del portal público autenticado (evita open redirect).
+    """
+    texto = (destino or "").strip()
+    if not texto or texto.startswith("//") or "://" in texto:
+        return None
+    if not texto.startswith("/"):
+        return None
+    parsed = urlparse(texto)
+    ruta = parsed.path or ""
+    if ruta in ("/", "/login", "/register"):
+        return None
+    if not _es_ruta_sesion_publica(ruta):
+        return None
+    if parsed.query:
+        return f"{ruta}?{parsed.query}"
+    return ruta
 
 
 def _redirect_login_sin_cache(**parametros_url):
@@ -1030,22 +1022,25 @@ def _marcar_inicio_telemetria_peticion():
 
 
 @aplicacion.before_request
-def control_inactividad_sesion_publica():
+def control_acceso_y_inactividad_portal_publico():
     """
-    En /search, /blog y /objetivos: expira la sesión tras 15 min sin actividad.
+    En /search, /blog, /objetivos y /documentacion exige sesión de usuario activa.
 
-    Usuarios autenticados → login con aviso. Invitado → solo limpia estado temporal.
+    Sin autenticación → /login. Con inactividad > 15 min → cierre y aviso en login.
     """
     if not _es_ruta_sesion_publica(request.path):
         return None
 
-    if _sesion_publica_expirada_por_inactividad():
-        era_autenticado = _usuario_publico_autenticado()
-        _limpiar_estado_sesion_publica()
-        if era_autenticado:
-            return redirect(url_for("mostrar_login", reason="timeout"))
+    if not _usuario_publico_autenticado():
+        ruta = request.path or ""
+        if ruta.startswith("/objetivos/") and request.method == "POST":
+            return jsonify({"exito": False, "mensaje": "Unauthorized"}), 401
+        return _redirect_login_sin_cache(next=request.full_path)
 
-    _asegurar_sesion_publica()
+    if _sesion_publica_expirada_por_inactividad():
+        _limpiar_estado_sesion_publica()
+        return redirect(url_for("mostrar_login", reason="timeout"))
+
     _marcar_actividad_sesion_publica()
     return None
 
@@ -1137,7 +1132,7 @@ def ruta_exenta_de_bloqueo_ip(ruta):
         return True
     if ruta.startswith("/assets/"):
         return True
-    if ruta in ("/acceso/reintentar", "/login", "/monitor/login"):
+    if ruta in ("/acceso/reintentar", "/login", "/register", "/admin/login", "/monitor/login"):
         return True
     return False
 
@@ -1275,7 +1270,7 @@ def requiere_autenticacion_monitor(funcion_vista):
     @wraps(funcion_vista)
     def envoltorio(*args, **kwargs):
         if not acceso_monitor_autorizado():
-            return redirect(url_for("monitor_login_get"))
+            return redirect(url_for("mostrar_admin_login"))
         return funcion_vista(*args, **kwargs)
 
     return envoltorio
@@ -1365,14 +1360,15 @@ def registrar_evento_honeypot(respuesta):
 
 
 @aplicacion.get("/")
-def redirigir_a_login():
+def mostrar_landing():
     """
-    Redirige la raíz del sitio hacia la página de login.
+    Muestra la landing pública de FlyPaper (sin autenticación).
 
-    Esta función existe para que el flujo inicial de la web falsa
-    se parezca al de un portal real con autenticación.
+    Cualquier visitante puede acceder. La petición se registra en SQLite
+    mediante `registrar_evento_honeypot` (after_request), igual que el resto
+    de rutas no excluidas del honeypot.
     """
-    return redirect(url_for("mostrar_login"))
+    return render_template("index.html")
 
 
 @aplicacion.get("/login")
@@ -1392,11 +1388,14 @@ def mostrar_login():
     elif request.args.get("cerrado") == "1":
         mensaje_cierre = "Has cerrado sesión. Vuelve a iniciar sesión para continuar."
 
+    destino_siguiente = _destino_tras_login_seguro(request.args.get("next"))
+
     respuesta = make_response(
         render_template(
             "login.html",
             mensaje_timeout=mensaje_timeout,
             mensaje_cierre=mensaje_cierre,
+            destino_siguiente=destino_siguiente,
         )
     )
     respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -1420,75 +1419,159 @@ def _redirigir_si_no_es_admin():
         Response | None: Redirección si no cumple; None si el acceso es válido.
     """
     if session.get("logueado") is not True:
-        return redirect("/login?error=1")
+        return redirect(url_for("mostrar_admin_login"))
     if session.get("rol") != ROL_USUARIO_ADMIN_BD:
         return redirect("/search?error=acceso_denegado")
     return None
+
+
+def _iniciar_sesion_publica(nombre, rol):
+    """Abre sesión en el portal público (/search, /blog, /objetivos)."""
+    session.permanent = True
+    session["logueado"] = True
+    session["usuario"] = nombre
+    session["rol"] = rol
+    _marcar_actividad_sesion_publica()
+
+
+def _iniciar_sesion_admin_panel(nombre):
+    """Abre sesión con privilegios de panel /admin (sin escalado desde login público)."""
+    session.permanent = True
+    session["logueado"] = True
+    session["usuario"] = nombre
+    session["rol"] = ROL_USUARIO_ADMIN_BD
+    _marcar_actividad_sesion_publica()
+
+
+@aplicacion.get("/admin/login")
+def mostrar_admin_login():
+    """
+    Formulario de acceso al portal de administración (/admin).
+
+    Solo valida cuentas admin_panel en flypaper_priv.db (POST dedicado).
+    """
+    mensaje_error = None
+    if request.args.get("error") == "admin_portal":
+        mensaje_error = "Credenciales no válidas para el portal de administración."
+    elif request.args.get("error") == "1":
+        mensaje_error = "Credenciales no válidas para el portal de administración."
+
+    respuesta = make_response(
+        render_template("admin/login.html", mensaje_error=mensaje_error)
+    )
+    respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    respuesta.headers["Pragma"] = "no-cache"
+    respuesta.headers["Expires"] = "0"
+    return respuesta
+
+
+@aplicacion.post("/admin/login")
+@limiter.limit("10 per minute")
+def procesar_admin_login():
+    """
+    Autenticación exclusiva de administradores (usuarios_privados, rol admin_panel).
+
+    Cuentas de monitor, usuarios públicos o invitados reciben error genérico.
+    """
+    usuario_enviado = request.form.get("username", "")
+    contrasena_enviada = request.form.get("password", "")
+
+    ip_peticion = obtener_ip_cliente()
+    if registrar_intento_login(ip_peticion):
+        session["_fuerza_bruta_detectada"] = True
+
+    cuenta_admin = verificar_admin_panel_privado(usuario_enviado, contrasena_enviada)
+    if cuenta_admin is not None:
+        _iniciar_sesion_admin_panel(cuenta_admin["username"])
+        destino = cuenta_admin.get("redirige") or "/admin"
+        return redirect(destino)
+
+    return redirect(url_for("mostrar_admin_login", error="admin_portal"))
+
+
+@aplicacion.get("/register")
+def mostrar_registro():
+    """Formulario de alta abierta en la base de datos pública (flypaper.db)."""
+    mensaje_error = request.args.get("error")
+    mensaje_exito = request.args.get("exito")
+    destino_siguiente = _destino_tras_login_seguro(request.args.get("next"))
+    return render_template(
+        "register.html",
+        mensaje_error=mensaje_error,
+        mensaje_exito=mensaje_exito,
+        destino_siguiente=destino_siguiente,
+    )
+
+
+@aplicacion.post("/register")
+@limiter.limit("10 per minute")
+def procesar_registro():
+    """Crea un usuario estándar sin privilegios de administración."""
+    usuario = request.form.get("username", "")
+    contrasena = request.form.get("password", "")
+    contrasena_rep = request.form.get("password_confirm", "")
+    email = request.form.get("email", "")
+    destino = _destino_tras_login_seguro(
+        request.form.get("next") or request.args.get("next")
+    )
+
+    def _volver_registro(**params):
+        if destino:
+            params["next"] = destino
+        return redirect(url_for("mostrar_registro", **params))
+
+    if contrasena != contrasena_rep:
+        return _volver_registro(error="Las contraseñas no coinciden.")
+
+    resultado = crear_usuario_publico(usuario, contrasena, email=email)
+    if not resultado.get("exito"):
+        return _volver_registro(error=resultado.get("mensaje", "No se pudo registrar."))
+
+    _iniciar_sesion_publica(usuario.strip(), ROL_USUARIO_NORMAL)
+    return redirect(destino or "/search")
 
 
 @aplicacion.post("/login")
 @limiter.limit("10 per minute")
 def procesar_login():
     """
-    Valida credenciales en este orden: privados (admin/admin), demo Angel, tabla usuarios (MD5).
+    Login del portal público: demo, tabla usuarios (MD5) y cuentas nuevas.
 
-    La tabla `usuarios` expuesta por SQLi no incluye cuentas de flypaper_priv.db.
+    No consulta flypaper_priv.db ni concede rol admin bajo ningún concepto.
     """
-    # Campos del formulario en `login.html` (honeypot con aspecto realista).
     usuario_enviado = request.form.get("username", "")
     contrasena_enviada = request.form.get("password", "")
 
-    ip_peticion = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-    if "," in ip_peticion:
-        ip_peticion = ip_peticion.split(",")[0].strip()
+    ip_peticion = obtener_ip_cliente()
     if registrar_intento_login(ip_peticion):
         session["_fuerza_bruta_detectada"] = True
 
-    def _iniciar_sesion_usuario(nombre, rol):
-        session.permanent = True
-        session["logueado"] = True
-        session["usuario"] = nombre
-        session["rol"] = rol
-        _marcar_actividad_sesion_publica()
-
-    cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
-    if cuenta_priv is not None and cuenta_priv.get("rol") != ROL_PRIV_MONITOR:
-        _iniciar_sesion_usuario(cuenta_priv["username"], ROL_USUARIO_ADMIN_BD)
-        return redirect(cuenta_priv["redirige"] or "/admin")
+    destino = _destino_tras_login_seguro(request.form.get("next"))
 
     datos_usuario = USUARIOS_DEMO_PUBLICOS.get(usuario_enviado)
     if datos_usuario is not None and datos_usuario["password"] == contrasena_enviada:
-        _iniciar_sesion_usuario(usuario_enviado, "usuario")
-        return redirect(datos_usuario["redirige"])
+        _iniciar_sesion_publica(usuario_enviado, ROL_USUARIO_NORMAL)
+        return redirect(destino or datos_usuario["redirige"])
 
     cuenta_bd = verificar_credencial_usuario_bd(usuario_enviado, contrasena_enviada)
     if cuenta_bd is not None:
-        _iniciar_sesion_usuario(cuenta_bd["username"], cuenta_bd["rol"])
-        if cuenta_bd["rol"] == ROL_USUARIO_ADMIN_BD:
-            return redirect("/admin")
-        return redirect("/search")
+        _iniciar_sesion_publica(cuenta_bd["username"], ROL_USUARIO_NORMAL)
+        return redirect(destino or "/search")
 
+    if destino:
+        return redirect(url_for("mostrar_login", error=1, next=destino))
     return redirect("/login?error=1")
 
 
 @aplicacion.get("/logout")
 def cerrar_sesion_honeypot():
     """
-    Cierra la sesión del honeypot y redirige siempre a /login (salvo limpieza silenciosa de Invitado).
+    Cierra la sesión del honeypot y redirige siempre a /login.
 
     Query:
         reason=timeout — cierre por inactividad (mensaje en login).
-        guest=1 — solo para el temporizador JS del Invitado (sin redirigir a login).
     """
     reason = request.args.get("reason")
-
-    if request.args.get("guest") == "1":
-        _limpiar_estado_sesion_publica()
-        if request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json":
-            respuesta = jsonify({"exito": True, "motivo": reason or "guest"})
-            respuesta.headers["Cache-Control"] = "no-store"
-            return respuesta
-        return redirect(request.referrer or url_for("blog_listado"))
 
     _invalidar_sesion_honeypot_en_servidor()
 
@@ -1991,7 +2074,7 @@ def simular_wp_admin():
 @limiter.limit("30 per minute")
 def mostrar_busqueda():
     """
-    Búsqueda interna accesible con sesión de usuario o Invitado.
+    Búsqueda interna (requiere usuario autenticado en el portal público).
 
     La consulta vulnerable se envía por POST al mismo endpoint.
     """
@@ -2069,7 +2152,6 @@ def procesar_busqueda():
 
 @aplicacion.get("/objetivos")
 @limiter.limit("30 per minute")
-@requiere_autenticacion_objetivos
 def pagina_objetivos():
     """
     Página de retos CTF: lista flags (sin el secreto) y progreso individual por usuario.
@@ -2091,7 +2173,6 @@ def pagina_objetivos():
 
 @aplicacion.post("/objetivos/submit")
 @limiter.limit("10 per minute")
-@requiere_autenticacion_objetivos
 def objetivos_submit():
     """
     Valida una flag enviada por el jugador y la registra si es correcta.
@@ -2110,7 +2191,6 @@ def objetivos_submit():
 
 
 @aplicacion.post("/objetivos/reset")
-@requiere_autenticacion_objetivos
 def objetivos_reset_progreso():
     """
     Borra el progreso CTF de la IP actual para poder reenviar las mismas flags (QA).
@@ -2130,11 +2210,20 @@ def objetivos_reset_progreso():
     )
 
 
+@aplicacion.get("/documentacion")
+@limiter.limit("60 per minute")
+def pagina_documentacion():
+    """
+    Documentación técnica de seguridad (requiere sesión activa en el portal público).
+    """
+    return _plantilla_publica("Documentacion.html", nav_activo="documentacion")
+
+
 @aplicacion.get("/blog")
 @limiter.limit("60 per minute")
 def blog_listado():
     """
-    Blog público del honeypot: listado de posts reales desde la BD.
+    Blog del portal de usuario: listado de posts (requiere sesión activa).
     """
     posts = obtener_posts_blog()
     return _plantilla_publica("blog.html", nav_activo="blog", posts=posts)
