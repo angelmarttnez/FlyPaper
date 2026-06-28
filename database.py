@@ -54,6 +54,8 @@ RUTA_RAIZ_PROYECTO = Path(__file__).resolve().parent
 RUTA_BD = RUTA_RAIZ_PROYECTO / "flypaper.db"
 # Credenciales /admin y /monitor: BD separada, no alcanzable por SQLi en el buscador.
 RUTA_BD_PRIVADA = RUTA_RAIZ_PROYECTO / "flypaper_priv.db"
+# Contenido señuelo de /secure/*: sin usuarios, flags ni datos del laboratorio CTF.
+RUTA_BD_AUTOBAN = RUTA_RAIZ_PROYECTO / "flypaper_autoban.db"
 
 
 def obtener_conexion():
@@ -79,6 +81,219 @@ def obtener_conexion_privada():
     conexion = sqlite3.connect(RUTA_BD_PRIVADA)
     conexion.row_factory = sqlite3.Row
     return conexion
+
+
+def obtener_conexion_autoban():
+    """
+    Conexión a la BD señuelo del auto-ban (aislada de flypaper.db).
+
+    Solo contiene `ab_posts` y `ab_comentarios` con contenido genérico inventado.
+    Los eventos de seguridad siguen registrándose en flypaper.db.
+
+    Returns:
+        sqlite3.Connection: Conexión a `flypaper_autoban.db`.
+    """
+    conexion = sqlite3.connect(RUTA_BD_AUTOBAN)
+    conexion.row_factory = sqlite3.Row
+    conexion.execute("PRAGMA foreign_keys = ON;")
+    return conexion
+
+
+def inicializar_db_autoban():
+    """
+    Crea el esquema de flypaper_autoban.db y lo puebla si está vacío.
+
+    Datos ficticios sin relación con usuarios, flags ni credenciales del honeypot.
+    """
+    ddl_autoban = """
+    CREATE TABLE IF NOT EXISTS ab_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        titulo TEXT NOT NULL,
+        contenido TEXT,
+        autor TEXT,
+        fecha DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS ab_comentarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER NOT NULL,
+        autor_nombre TEXT,
+        contenido TEXT,
+        fecha DATETIME,
+        FOREIGN KEY (post_id) REFERENCES ab_posts(id)
+    );
+    """
+    with obtener_conexion_autoban() as conexion:
+        cursor = conexion.cursor()
+        cursor.executescript(ddl_autoban)
+        conexion.commit()
+        _poblar_ab_datos_si_vacio(cursor)
+        conexion.commit()
+
+
+def _poblar_ab_datos_si_vacio(cursor):
+    """Inserta posts y comentarios genéricos si ab_posts está vacía."""
+    cursor.execute("SELECT COUNT(*) AS n FROM ab_posts;")
+    if cursor.fetchone()["n"] > 0:
+        return
+
+    posts = [
+        (
+            "Buenas prácticas de ciberseguridad en entornos corporativos",
+            (
+                "La segmentación de red y la autenticación multifactor siguen siendo "
+                "pilares básicos en cualquier plan de protección. Este artículo resume "
+                "recomendaciones habituales para equipos de infraestructura y soporte."
+            ),
+            "Departamento de Seguridad TI",
+            formatear_marca(hace_tiempo(days=12)),
+        ),
+        (
+            "Migración a infraestructura en la nube: lecciones aprendidas",
+            (
+                "Tras un año de transición gradual, compartimos aprendizajes sobre "
+                "costes, monitorización y gestión de identidades en proveedores cloud. "
+                "El objetivo es documentar el proceso para futuros despliegues."
+            ),
+            "Equipo de Arquitectura",
+            formatear_marca(hace_tiempo(days=28)),
+        ),
+        (
+            "Gestión de parches y ventanas de mantenimiento",
+            (
+                "Coordinar actualizaciones sin interrumpir el servicio requiere "
+                "calendarios claros y comunicación con las áreas de negocio. "
+                "Aquí describimos un flujo de trabajo estándar para entornos híbridos."
+            ),
+            "Operaciones de Sistemas",
+            formatear_marca(hace_tiempo(days=45)),
+        ),
+    ]
+    cursor.executemany(
+        """
+        INSERT INTO ab_posts (titulo, contenido, autor, fecha)
+        VALUES (?, ?, ?, ?);
+        """,
+        posts,
+    )
+
+    comentarios_por_post = [
+        [
+            ("Marcos Vidal", "Muy útil el repaso de MFA. Lo compartiré con mi equipo."),
+            ("Laura Núñez", "Faltaría un apartado sobre respuesta ante incidentes."),
+        ],
+        [
+            ("Pablo Serrano", "La parte de costes cloud coincide con lo que vimos en auditoría."),
+            ("Irene Molina", "¿Hay plantilla para el checklist de migración?"),
+        ],
+        [
+            ("Diego Castaño", "Las ventanas de mantenimiento los viernes funcionan bien aquí."),
+            ("Sofía Ríos", "Documentación clara; gracias por publicarlo."),
+        ],
+    ]
+
+    for post_id, comentarios in enumerate(comentarios_por_post, start=1):
+        for idx, (autor, texto) in enumerate(comentarios):
+            cursor.execute(
+                """
+                INSERT INTO ab_comentarios (post_id, autor_nombre, contenido, fecha)
+                VALUES (?, ?, ?, ?);
+                """,
+                (
+                    post_id,
+                    autor,
+                    texto,
+                    formatear_marca(hace_tiempo(days=10 - idx, hours=post_id * 3)),
+                ),
+            )
+
+
+def obtener_ab_posts():
+    """Listado de publicaciones de la zona señuelo /secure/blog."""
+    with obtener_conexion_autoban() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, titulo, contenido, autor, fecha
+            FROM ab_posts
+            ORDER BY fecha DESC, id DESC;
+            """
+        )
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def obtener_ab_post_por_id(post_id):
+    """Devuelve un post de ab_posts por id o None."""
+    try:
+        id_norm = int(post_id)
+    except (TypeError, ValueError):
+        return None
+    with obtener_conexion_autoban() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, titulo, contenido, autor, fecha
+            FROM ab_posts
+            WHERE id = ?;
+            """,
+            (id_norm,),
+        )
+        fila = cursor.fetchone()
+        return dict(fila) if fila else None
+
+
+def obtener_ab_comentarios_post(post_id):
+    """Comentarios visibles de un post en ab_comentarios."""
+    try:
+        id_norm = int(post_id)
+    except (TypeError, ValueError):
+        return []
+    with obtener_conexion_autoban() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, autor_nombre, contenido, fecha
+            FROM ab_comentarios
+            WHERE post_id = ?
+            ORDER BY fecha ASC, id ASC;
+            """,
+            (id_norm,),
+        )
+        return [
+            {
+                "nombre": fila["autor_nombre"] or "Anónimo",
+                "comentario": fila["contenido"] or "",
+                "fecha": fila["fecha"] or "",
+            }
+            for fila in cursor.fetchall()
+        ]
+
+
+def guardar_ab_comentario(post_id, autor_nombre, contenido):
+    """Persiste un comentario en ab_comentarios (zona auto-ban)."""
+    try:
+        id_norm = int(post_id)
+    except (TypeError, ValueError):
+        return False
+    texto = (contenido or "").strip()
+    if not texto:
+        return False
+    with obtener_conexion_autoban() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            INSERT INTO ab_comentarios (post_id, autor_nombre, contenido, fecha)
+            VALUES (?, ?, ?, ?);
+            """,
+            (
+                id_norm,
+                (autor_nombre or "").strip() or "Anónimo",
+                texto,
+                marca_ahora(),
+            ),
+        )
+        conexion.commit()
+    return True
 
 
 def _tabla_vacia(cursor, nombre_tabla):
@@ -121,6 +336,20 @@ def _asegurar_columnas_registro_peticiones(cursor):
             cursor.execute(
                 f"ALTER TABLE registro_peticiones ADD COLUMN {nombre} {tipo_sql};"
             )
+
+
+def _asegurar_columna_ambito(cursor):
+    """Añade la columna `ambito` a eventos y registro_peticiones si no existe."""
+    for tabla in ("eventos", "registro_peticiones"):
+        cursor.execute(f"PRAGMA table_info({tabla});")
+        columnas = {fila[1] for fila in cursor.fetchall()}
+        if "ambito" not in columnas:
+            try:
+                cursor.execute(
+                    f"ALTER TABLE {tabla} ADD COLUMN ambito TEXT DEFAULT 'publico';"
+                )
+            except Exception:
+                pass
 
 
 def _asegurar_columna_rol_usuarios(cursor):
@@ -281,6 +510,7 @@ def inicializar_db():
         _asegurar_columna_gravedad(cursor)
         _asegurar_columna_rol_usuarios(cursor)
         _asegurar_columnas_registro_peticiones(cursor)
+        _asegurar_columna_ambito(cursor)
         cursor.execute(
             "UPDATE eventos SET tipo_ataque = 'Tráfico Normal' WHERE tipo_ataque = 'Otro';"
         )
@@ -300,6 +530,7 @@ def inicializar_db():
     asegurar_cuentas_privilegiadas()
     _migrar_cuentas_privilegiadas_fuera_de_usuarios()
     _migrar_gravedades_eventos_legacy()
+    inicializar_db_autoban()
 
 
 def generar_flag_ctf_aleatoria():
@@ -1172,6 +1403,7 @@ def guardar_evento(
     tipo_ataque,
     headers,
     gravedad=None,
+    ambito="publico",
 ):
     """
     Inserta un evento capturado por el honeypot en la tabla `eventos`.
@@ -1185,18 +1417,20 @@ def guardar_evento(
         tipo_ataque (str): Clasificación del detector.
         headers: Cabeceras HTTP (dict o texto).
         gravedad (str|None): Crítica, Alta, Sospechoso; None para tráfico normal.
+        ambito (str): publico | autoban | admin.
     """
     gravedad_guardar = normalizar_gravedad_almacenada(gravedad)
     payload_texto = _serializar_campo_json(payload)
     headers_texto = _serializar_campo_json(headers) if headers is not None else "{}"
     marca_tiempo = marca_ahora()
+    ambito_guardar = (ambito or "publico").strip() or "publico"
 
     consulta = """
     INSERT INTO eventos (
         ip, ruta, metodo, payload, tipo_ataque, gravedad,
-        user_agent, timestamp, pais, headers
+        user_agent, timestamp, pais, headers, ambito
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """
 
     valores = (
@@ -1210,6 +1444,7 @@ def guardar_evento(
         marca_tiempo,
         "",
         headers_texto,
+        ambito_guardar,
     )
 
     with obtener_conexion() as conexion:
@@ -1240,27 +1475,52 @@ def vincular_registro_peticion_evento(peticion_id, evento_id):
 
 
 def _ruta_es_zona_administracion(ruta):
-    """True si la ruta pertenece a /admin o /monitor (y subrutas)."""
+    """
+    True si la ruta pertenece a /admin o /monitor (y subrutas).
+
+    Las rutas /secure/* tienen ámbito «autoban» y no se consideran zona admin.
+    """
     path = (ruta or "").strip()
     return path.startswith("/admin") or path.startswith("/monitor")
 
 
+def _sql_filtro_ambito_eventos(ambito, prefijo=""):
+    """
+    Fragmento SQL para filtrar eventos por columna `ambito`.
+
+    publico: filas públicas o legacy sin ámbito.
+  autoban/admin: solo ese ámbito.
+    todo: sin filtro.
+    """
+    if ambito == "todo":
+        return "1=1"
+    col = f"{prefijo}." if prefijo else ""
+    if ambito == "publico":
+        return f"({col}ambito = 'publico' OR {col}ambito IS NULL)"
+    if ambito == "autoban":
+        return f"{col}ambito = 'autoban'"
+    if ambito == "admin":
+        return f"{col}ambito = 'admin'"
+    raise ValueError(f"Ámbito de eventos no válido: {ambito}")
+
+
 def _sql_filtro_ambito_peticiones(ambito, prefijo=""):
     """
-    Fragmento SQL para filtrar registro_peticiones por ámbito.
+    Fragmento SQL para filtrar registro_peticiones por columna `ambito`.
 
-    ambito «publico»: todo excepto /admin y /monitor.
-    ambito «admin»: solo /admin y /monitor.
+    publico: peticiones del portal o legacy sin ámbito.
+    autoban/admin: solo ese ámbito.
+    todo: sin filtro.
     """
+    if ambito == "todo":
+        return "1=1"
     col = f"{prefijo}." if prefijo else ""
-    if ambito == "admin":
-        return (
-            f"({col}ruta LIKE '/admin%' OR {col}ruta LIKE '/monitor%')"
-        )
     if ambito == "publico":
-        return (
-            f"({col}ruta NOT LIKE '/admin%' AND {col}ruta NOT LIKE '/monitor%')"
-        )
+        return f"({col}ambito = 'publico' OR {col}ambito IS NULL)"
+    if ambito == "autoban":
+        return f"{col}ambito = 'autoban'"
+    if ambito == "admin":
+        return f"{col}ambito = 'admin'"
     raise ValueError(f"Ámbito de peticiones no válido: {ambito}")
 
 
@@ -1332,6 +1592,7 @@ def guardar_registro_peticion(
     puerto_origen=None,
     gravedad=None,
     evento_id=None,
+    ambito="publico",
 ):
     """Registra cada petición HTTP para el panel de actividad por IP del monitor."""
     payload_texto = _serializar_campo_json(payload) if payload is not None else ""
@@ -1340,13 +1601,14 @@ def guardar_registro_peticion(
     gravedad_guardar = ""
     if tipo_norm not in ("Otro", "Tráfico Normal"):
         gravedad_guardar = normalizar_gravedad_almacenada(gravedad) or ""
+    ambito_guardar = (ambito or "publico").strip() or "publico"
     consulta = """
     INSERT INTO registro_peticiones (
         ip, ruta, metodo, codigo_http, user_agent, payload, headers,
         tipo_ataque, gravedad, evento_id, usuario_activo, sesion_id_corto, tiempo_ms,
-        tamano_respuesta_bytes, puerto_origen, timestamp
+        tamano_respuesta_bytes, puerto_origen, timestamp, ambito
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
@@ -1369,6 +1631,7 @@ def guardar_registro_peticion(
                 tamano_respuesta_bytes,
                 puerto_origen or "",
                 marca_ahora(),
+                ambito_guardar,
             ),
         )
         conexion.commit()
@@ -1665,6 +1928,23 @@ def _sql_solo_rutas_zona_admin(prefijo=""):
     return f"({col}ruta LIKE '/admin%' OR {col}ruta LIKE '/monitor%')"
 
 
+def _sql_condicion_amenazas_base(prefijo=""):
+    """Incidentes con severidad asignada (excluye tráfico normal y gravedad vacía)."""
+    col = f"{prefijo}." if prefijo else ""
+    return (
+        f"({col}gravedad IS NOT NULL AND TRIM({col}gravedad) <> '') "
+        f"AND LOWER(TRIM(COALESCE({col}tipo_ataque, ''))) NOT IN ('', 'otro', 'tráfico normal')"
+    )
+
+
+def _sql_condicion_amenazas_con_ambito(ambito="publico", prefijo=""):
+    """Amenazas reales filtradas por columna `ambito`."""
+    base = _sql_condicion_amenazas_base(prefijo)
+    if ambito == "todo":
+        return base
+    return f"({base}) AND ({_sql_filtro_ambito_eventos(ambito, prefijo)})"
+
+
 def _sql_condicion_amenazas_reales(prefijo=""):
     """
     Incidentes con severidad en tráfico público (sin /admin ni /monitor).
@@ -1705,45 +1985,35 @@ def _migrar_gravedades_eventos_legacy():
         conexion.commit()
 
 
-def _where_gravedad_monitor_sql(gravedad_filtro=None):
+def _where_gravedad_monitor_sql(gravedad_filtro=None, ambito="publico"):
     """
     Fragmento WHERE + parámetros para listados del monitor.
 
-    Sin filtro concreto: solo amenazas reales. Con filtro: gravedad exacta (canónica).
+    Sin filtro concreto: solo amenazas reales del ámbito. Con filtro: gravedad exacta.
     """
-    condicion = _sql_condicion_amenazas_reales()
+    condicion = _sql_condicion_amenazas_con_ambito(ambito)
     canon = normalizar_gravedad_filtro_api(gravedad_filtro)
     if canon:
         return f"{condicion} AND gravedad = ?", [canon]
     return condicion, []
 
 
-def _filtro_sql_graficos_sin_trafico_normal(filtro_periodo):
+def _filtro_sql_graficos_sin_trafico_normal(filtro_periodo, ambito="publico"):
     """
     Añade exclusión de ruido al fragmento WHERE del período (métricas SOC).
 
-    Excluye tráfico normal y filas sin gravedad asignada.
+    Excluye tráfico normal y filas sin gravedad asignada, filtradas por ámbito.
     """
-    excl = _sql_condicion_amenazas_reales()
+    excl = _sql_condicion_amenazas_con_ambito(ambito)
     if filtro_periodo:
         return f"{filtro_periodo} AND {excl}"
     return f" WHERE {excl}"
 
 
-def _contar_eventos_rango(cursor, desde, hasta):
-    """Cuenta eventos en un rango; sin rango cuenta toda la tabla."""
+def _contar_eventos_amenazas_rango(cursor, desde, hasta, ambito="publico"):
+    """Cuenta solo incidentes con severidad en el ámbito indicado."""
     where_sql, params = _where_periodo_sql(desde, hasta)
-    if where_sql:
-        cursor.execute(f"SELECT COUNT(*) AS n FROM eventos WHERE {where_sql};", params)
-    else:
-        cursor.execute("SELECT COUNT(*) AS n FROM eventos;")
-    return cursor.fetchone()["n"]
-
-
-def _contar_eventos_amenazas_rango(cursor, desde, hasta):
-    """Cuenta solo incidentes con severidad (excluye tráfico normal y gravedad vacía)."""
-    where_sql, params = _where_periodo_sql(desde, hasta)
-    amenazas = _sql_condicion_amenazas_reales()
+    amenazas = _sql_condicion_amenazas_con_ambito(ambito)
     if where_sql:
         cursor.execute(
             f"SELECT COUNT(*) AS n FROM eventos WHERE {where_sql} AND {amenazas};",
@@ -1819,8 +2089,7 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
         limite (int): Máximo de filas (mínimo 1).
         periodo (str|None): hoy | ayer | semana | mes | todo
         gravedad (str|None): Filtro exacto (Crítica/Alta/Sospechoso); None = todas las amenazas.
-        ambito (str): «publico» (sin /admin,/monitor), «admin» (solo esas rutas),
-            «todo» (sin filtro de ruta; exportación forense).
+        ambito (str): publico | autoban | admin | todo (sin filtro de ámbito).
 
     Returns:
         list[dict]: Eventos como diccionarios.
@@ -1832,7 +2101,7 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
     consulta = """
     SELECT
         id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
-        user_agent, timestamp, pais, headers
+        user_agent, timestamp, pais, headers, ambito
     FROM eventos
     """
     partes = []
@@ -1840,29 +2109,23 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
     if where_sql:
         partes.append(where_sql)
 
-    if ambito == "admin":
-        partes.append(_sql_solo_rutas_zona_admin())
-        partes.append(
-            "(gravedad IS NOT NULL AND TRIM(gravedad) <> '') "
-            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) NOT IN ('otro', 'tráfico normal')"
-        )
-        canon = normalizar_gravedad_filtro_api(gravedad)
-        if canon:
-            partes.append("gravedad = ?")
-            grav_params = [canon]
-    elif ambito == "todo":
-        cond_base = (
-            "(gravedad IS NOT NULL AND TRIM(gravedad) <> '') "
-            "AND LOWER(TRIM(COALESCE(tipo_ataque, ''))) NOT IN ('otro', 'tráfico normal')"
-        )
+    if ambito == "todo":
+        cond_base = _sql_condicion_amenazas_base()
         canon = normalizar_gravedad_filtro_api(gravedad)
         if canon:
             partes.append(f"{cond_base} AND gravedad = ?")
             grav_params = [canon]
         else:
             partes.append(cond_base)
+    elif ambito == "admin":
+        partes.append(_sql_filtro_ambito_eventos("admin"))
+        partes.append(_sql_condicion_amenazas_base())
+        canon = normalizar_gravedad_filtro_api(gravedad)
+        if canon:
+            partes.append("gravedad = ?")
+            grav_params = [canon]
     else:
-        grav_sql, grav_params = _where_gravedad_monitor_sql(gravedad)
+        grav_sql, grav_params = _where_gravedad_monitor_sql(gravedad, ambito=ambito)
         partes.append(grav_sql)
 
     consulta += " WHERE " + " AND ".join(partes)
@@ -1875,9 +2138,9 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
         return [dict(fila) for fila in cursor.fetchall()]
 
 
-def obtener_estadisticas(periodo=None):
+def obtener_estadisticas(periodo=None, ambito="publico"):
     """
-    Calcula métricas agregadas para el dashboard del monitor (filtradas por período).
+    Calcula métricas agregadas para el dashboard del monitor (filtradas por período y ámbito).
 
     Returns:
         dict: métricas de tarjetas, gráficas, top rutas, alertas y serie temporal.
@@ -1885,16 +2148,17 @@ def obtener_estadisticas(periodo=None):
     rangos = _rangos_periodo_monitor(periodo)
     where_sql, params = _where_periodo_sql(rangos["desde"], rangos["hasta"])
     filtro = f" WHERE {where_sql}" if where_sql else ""
-    filtro_graficos = _filtro_sql_graficos_sin_trafico_normal(filtro)
+    filtro_graficos = _filtro_sql_graficos_sin_trafico_normal(filtro, ambito=ambito)
+    condicion_ambito = _sql_condicion_amenazas_con_ambito(ambito)
 
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
 
         total_eventos = _contar_eventos_amenazas_rango(
-            cursor, rangos["desde"], rangos["hasta"]
+            cursor, rangos["desde"], rangos["hasta"], ambito=ambito
         )
         total_anterior = _contar_eventos_amenazas_rango(
-            cursor, rangos["anterior_desde"], rangos["anterior_hasta"]
+            cursor, rangos["anterior_desde"], rangos["anterior_hasta"], ambito=ambito
         )
 
         if where_sql:
@@ -1930,7 +2194,7 @@ def obtener_estadisticas(periodo=None):
                 f"""
                 SELECT COUNT(*) AS n FROM (
                     SELECT DISTINCT ip FROM eventos
-                    WHERE {where_sql} AND {_sql_condicion_amenazas_reales()}
+                    WHERE {where_sql} AND {condicion_ambito}
                       AND ip IS NOT NULL AND TRIM(ip) != ''
                     EXCEPT
                     SELECT DISTINCT ip FROM eventos
@@ -2060,7 +2324,7 @@ def obtener_estadisticas(periodo=None):
                 SELECT strftime('%Y-%m-%d', timestamp) AS dia, COUNT(*) AS cantidad
                 FROM eventos
                 WHERE timestamp >= ?
-                  AND {_sql_condicion_amenazas_reales()}
+                  AND {condicion_ambito}
                 GROUP BY dia
                 ORDER BY dia ASC;
                 """,
@@ -2075,7 +2339,11 @@ def obtener_estadisticas(periodo=None):
             pico_indice = max(range(len(actividad_valores)), key=lambda i: actividad_valores[i])
 
         # Último incidente con severidad en el período
-        ultimo_filtro = filtro_graficos if filtro_graficos else f" WHERE {_sql_condicion_amenazas_reales()}"
+        ultimo_filtro = (
+            filtro_graficos
+            if filtro_graficos
+            else f" WHERE {condicion_ambito}"
+        )
         cursor.execute(
             f"""
             SELECT gravedad, timestamp FROM eventos
@@ -2093,7 +2361,10 @@ def obtener_estadisticas(periodo=None):
             ultimo_hace_min = minutos_desde_marca(fila_ult["timestamp"])
 
         # Alertas recientes (Crítica / Alta) dentro del período
-        partes_alerta = [_sql_condicion_amenazas_reales(), f"gravedad IN ('{GRAVEDAD_CRITICA}', '{GRAVEDAD_ALTA}')"]
+        partes_alerta = [
+            condicion_ambito,
+            f"gravedad IN ('{GRAVEDAD_CRITICA}', '{GRAVEDAD_ALTA}')",
+        ]
         if where_sql:
             partes_alerta.insert(0, where_sql)
         grav_where = " AND ".join(partes_alerta)
@@ -2128,7 +2399,7 @@ def obtener_estadisticas(periodo=None):
             SELECT COUNT(*) AS n FROM eventos
             WHERE gravedad = ?
               AND timestamp >= ?
-              AND {_sql_excluir_rutas_zona_admin()};
+              AND {_sql_filtro_ambito_eventos(ambito)};
             """,
             (GRAVEDAD_CRITICA, formatear_marca(hace_tiempo(minutes=5))),
         )
@@ -2991,6 +3262,68 @@ def desbloquear_ip_persistente(ip):
         cursor.execute("DELETE FROM ips_bloqueadas WHERE ip = ?;", (ip,))
         conexion.commit()
         return cursor.rowcount > 0
+
+
+def obtener_ultimas_expulsiones_autoban(limite=10):
+    """
+    Últimas IPs bloqueadas con el tipo de ataque autoban más reciente (si existe).
+
+    Returns:
+        list[dict]: ip, tipo_ataque, hace_min, fecha_bloqueo, motivo
+    """
+    limite_norm = max(int(limite), 1)
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT ip, fecha, motivo
+            FROM ips_bloqueadas
+            ORDER BY datetime(fecha) DESC, id DESC
+            LIMIT ?;
+            """,
+            (limite_norm,),
+        )
+        filas = [dict(fila) for fila in cursor.fetchall()]
+
+    resultado = []
+    for fila in filas:
+        ip = fila.get("ip") or ""
+        tipo = "—"
+        hace_min = minutos_desde_marca(fila.get("fecha"))
+        with obtener_conexion() as conexion:
+            cursor = conexion.cursor()
+            cursor.execute(
+                """
+                SELECT tipo_ataque, timestamp
+                FROM eventos
+                WHERE ip = ? AND ambito = 'autoban'
+                ORDER BY timestamp DESC, id DESC
+                LIMIT 1;
+                """,
+                (ip,),
+            )
+            ev = cursor.fetchone()
+            if ev:
+                tipo = (ev["tipo_ataque"] or "—").strip() or "—"
+                hace_min = minutos_desde_marca(ev["timestamp"])
+        resultado.append(
+            {
+                "ip": ip,
+                "tipo_ataque": tipo,
+                "hace_min": hace_min,
+                "fecha_bloqueo": fila.get("fecha"),
+                "motivo": fila.get("motivo") or "",
+            }
+        )
+    return resultado
+
+
+def contar_ips_bloqueadas():
+    """Devuelve el número total de IPs en la lista negra persistente."""
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("SELECT COUNT(*) AS n FROM ips_bloqueadas;")
+        return int(cursor.fetchone()["n"] or 0)
 
 
 def listar_ips_bloqueadas():
