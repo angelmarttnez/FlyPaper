@@ -92,20 +92,57 @@ PATRONES_XSS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Path Traversal — lectura de ficheros fuera del directorio web
-# Ejemplo: /../../etc/passwd  |  ruta=%2e%2e%2fetc%2fpasswd
+# Path Traversal — rutas públicas (fuera de /secure/*)
+# Se analizan en ruta + payload; típico en URLs 404 sin cuerpo GET.
 # ---------------------------------------------------------------------------
 PATRONES_PATH_TRAVERSAL = [
     "/../",
-    "/etc/passwd",
-    "/etc/shadow",
-    "/windows/system32",
+    "/..",
     "%2e%2e",
     "%252e",
-    "../",
-    "..\\",
-    "/proc/self",
+    "/etc/",
+    "/windows/",
+    "/proc/",
+    "\x00",
+    "%00",
+    ".php",
+    ".asp",
+    ".jsp",
+    ".bak",
+    ".sql",
+    "/.git",
+    "/.env",
+    "/wp-login",
+    "/.htaccess",
+    "/web.config",
 ]
+
+# ---------------------------------------------------------------------------
+# Path Traversal — regex estrictas (zona /secure/* y secuencias codificadas)
+# Ejemplo: /../../etc/passwd  |  ruta=%2e%2e%2fetc%2fpasswd
+# ---------------------------------------------------------------------------
+_PATRONES_PATH_TRAVERSAL_REGEX = (
+    re.compile(r"\.\./", re.IGNORECASE),
+    re.compile(r"\.\.\\", re.IGNORECASE),
+    re.compile(r"%2e%2e%2f", re.IGNORECASE),
+    re.compile(r"%2e%2e%252f", re.IGNORECASE),
+    re.compile(r"%252e%252e%252f", re.IGNORECASE),
+)
+
+# Extensiones y null bytes en rutas bajo /secure/ (sondeo automatizado)
+_PATRONES_SECURE_EXTENSION_REGEX = (
+    re.compile(r"\.php$", re.IGNORECASE),
+    re.compile(r"\.sql$", re.IGNORECASE),
+    re.compile(r"\.bak$", re.IGNORECASE),
+    re.compile(r"\.conf$", re.IGNORECASE),
+    re.compile(r"%00", re.IGNORECASE),
+    re.compile(r"\\x00", re.IGNORECASE),
+)
+
+# GET /secure/blog/<id> — detalle de publicación señuelo.
+_PATRON_RUTA_SECURE_BLOG_POST = re.compile(r"^/secure/blog/\d+$")
+# POST /secure/blog/<id>/comentar — envío de comentario señuelo.
+_PATRON_RUTA_SECURE_BLOG_COMENTAR = re.compile(r"^/secure/blog/\d+/comentar$")
 
 # ---------------------------------------------------------------------------
 # Rutas típicas de reconocimiento y enumeración
@@ -188,7 +225,40 @@ def _texto_payload_normalizado(payload):
     return str(payload).lower()
 
 
-def _contiene_patrones_ataque(texto):
+def _detectar_path_traversal(texto, ruta=None):
+    """
+    Detecta path traversal combinando ruta y payload.
+
+    - Fuera de /secure/*: lista PATRONES_PATH_TRAVERSAL (URLs 404, sondeo de ficheros).
+    - En /secure/*: regex estrictas + extensiones al final de ruta (auto-ban).
+    """
+    ruta_norm = _normalizar_ruta_clasificacion(ruta or "")
+    ruta_lower = (ruta or "").lower()
+    payload_lower = _texto_payload_normalizado(texto)
+    texto_completo = (ruta_lower + " " + payload_lower).strip()
+
+    if texto_completo:
+        for patron in _PATRONES_PATH_TRAVERSAL_REGEX:
+            if patron.search(texto_completo):
+                return True
+
+    # Rutas públicas: patrones amplios en ruta + payload (p. ej. /archivo.php, /.git/config).
+    if not ruta_norm.startswith("/secure/"):
+        return _contiene_patron(texto_completo, PATRONES_PATH_TRAVERSAL)
+
+    candidatos = [ruta_norm]
+    if texto_completo:
+        candidatos.append(texto_completo.split("?")[0])
+        candidatos.append(texto_completo)
+
+    for candidato in candidatos:
+        for patron in _PATRONES_SECURE_EXTENSION_REGEX:
+            if patron.search(candidato):
+                return True
+    return False
+
+
+def _contiene_patrones_ataque(texto, ruta=None):
     """True si el texto incluye indicios de SQLi, XSS o path traversal."""
     texto_norm = (texto or "").lower()
     if not texto_norm.strip():
@@ -196,7 +266,7 @@ def _contiene_patrones_ataque(texto):
     return (
         _contiene_patron(texto_norm, PATRONES_SQLI)
         or _contiene_patron(texto_norm, PATRONES_XSS)
-        or _contiene_patron(texto_norm, PATRONES_PATH_TRAVERSAL)
+        or _detectar_path_traversal(texto_norm, ruta=ruta)
     )
 
 
@@ -249,7 +319,7 @@ def _es_trafico_legitimo_prioritario(ruta, payload, metodo):
     ruta/payload no contienen SQLi, XSS ni path traversal.
     """
     texto_completo = f"{ruta or ''} {_texto_payload_normalizado(payload)}"
-    if _contiene_patrones_ataque(texto_completo):
+    if _contiene_patrones_ataque(texto_completo, ruta=ruta):
         return False
 
     ruta_norm = _normalizar_ruta_clasificacion(ruta)
@@ -284,6 +354,22 @@ def _es_trafico_legitimo_prioritario(ruta, payload, metodo):
 
     if ruta_norm.startswith("/admin") and metodo_up == "GET":
         return True
+
+    # Rutas señuelo /secure/* sin patrones maliciosos en URL ni cuerpo.
+    if ruta_norm == "/secure/search" and metodo_up == "GET":
+        return True
+
+    if ruta_norm == "/secure/blog" and metodo_up == "GET":
+        return True
+
+    if metodo_up == "GET" and _PATRON_RUTA_SECURE_BLOG_POST.match(ruta_norm):
+        return True
+
+    if ruta_norm == "/secure/search" and metodo_up == "POST":
+        return not _payload_es_sospechoso(_texto_payload_normalizado(payload))
+
+    if metodo_up == "POST" and _PATRON_RUTA_SECURE_BLOG_COMENTAR.match(ruta_norm):
+        return not _payload_es_sospechoso(_texto_payload_normalizado(payload))
 
     return False
 
@@ -401,8 +487,9 @@ def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
     if _contiene_patron(payload_norm, PATRONES_XSS):
         return "XSS"
 
-    # 3) Path Traversal — ej.: ruta "/../../etc/passwd"
-    if _contiene_patron(texto_ruta_payload, PATRONES_PATH_TRAVERSAL):
+    # 3) Path Traversal — analiza ruta y payload juntos (crítico en GET 404 sin cuerpo).
+    texto_completo_pt = (ruta_norm + " " + payload_norm).strip()
+    if _detectar_path_traversal(texto_completo_pt, ruta=ruta):
         return "Path Traversal"
 
     # 4) CSRF — ej.: POST sin Referer o Referer de otro dominio
