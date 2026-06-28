@@ -268,7 +268,7 @@ def generar_resumen_diario(fecha=None):
         eventos_dia = obtener_eventos_por_fecha(fecha, limite=500)
         etiqueta_dia = fecha
     else:
-        eventos_dia = obtener_eventos(limite=500, periodo="hoy")
+        eventos_dia = obtener_eventos(limite=500, periodo="hoy", ambito="publico")
         etiqueta_dia = "hoy"
 
     eventos_dia = _filtrar_eventos_para_ia(eventos_dia)

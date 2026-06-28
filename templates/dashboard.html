@@ -1135,6 +1135,155 @@
     .periodo-bar { gap: 6px; }
     .btn-periodo { padding: 6px 10px; font-size: 12px; }
   }
+
+  /* ——— Pestañas del dashboard ——— */
+  .dashboard-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 0;
+  }
+  .dashboard-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 20px;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dashboard-tab:hover { color: #e2e8f0; }
+  .dashboard-tab.active {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+  }
+  .dashboard-tab.tab-autoban.active {
+    color: #d29922;
+    border-bottom-color: #d29922;
+  }
+  .badge-autoban-reciente {
+    display: none;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    animation: blink-critico 0.8s infinite;
+  }
+  .badge-autoban-reciente.visible { display: inline-block; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* ——— Sección Auto-Ban ——— */
+  .autoban-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .autoban-titulo {
+    font-size: 20px;
+    font-weight: 700;
+    color: #d29922;
+    letter-spacing: -0.02em;
+  }
+  .autoban-subtitulo {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-top: 4px;
+  }
+  .stats-row-autoban .stat-card { border-top: 3px solid #d29922; }
+  .layout-autoban {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .layout-autoban-main { flex: 1; min-width: 0; }
+  .panel-expulsiones {
+    flex: 0 0 300px;
+    background: #111827;
+    border: 1px solid #3d2e14;
+    border-radius: 8px;
+    position: sticky;
+    top: 80px;
+    max-height: calc(100vh - 200px);
+    display: flex;
+    flex-direction: column;
+  }
+  .panel-expulsiones-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid #3d2e14;
+    font-size: 13px;
+    font-weight: 600;
+    color: #d29922;
+  }
+  .lista-expulsiones {
+    overflow-y: auto;
+    padding: 8px;
+    flex: 1;
+  }
+  .expulsion-item {
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    border-left: 3px solid #d29922;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .expulsion-item .exp-ip {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .expulsion-item .exp-meta { color: #94a3b8; }
+  .btn-desbloquear-ip {
+    background: transparent;
+    color: #d29922;
+    border: 1px solid #d29922;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-right: 6px;
+  }
+  .btn-desbloquear-ip:hover { background: rgba(210, 153, 34, 0.12); }
+  .btn-ver-eventos-ab {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-ver-eventos-ab:hover { background: #334155; }
+  .periodo-bar-autoban .btn-periodo.active {
+    background: #d29922;
+    border-color: #d29922;
+    color: #0a0e1a;
+  }
+  .tab-pane-admin .actividad-collapsible { margin-top: 0; }
+  @media (max-width: 1100px) {
+    .layout-autoban { flex-direction: column; }
+    .panel-expulsiones {
+      flex: 1 1 auto;
+      width: 100%;
+      max-height: 360px;
+      position: static;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1152,8 +1301,18 @@
 </header>
 
 <main>
+  <nav class="dashboard-tabs" aria-label="Secciones del monitor">
+    <button type="button" class="dashboard-tab active" data-tab="amenazas" id="tab-btn-amenazas">Amenazas</button>
+    <button type="button" class="dashboard-tab tab-autoban" data-tab="autoban" id="tab-btn-autoban">
+      Auto-Ban
+      <span class="badge-autoban-reciente" id="badge-autoban-reciente" title="Auto-ban en los últimos 5 min">Nuevo</span>
+    </button>
+    <button type="button" class="dashboard-tab" data-tab="admin" id="tab-btn-admin">Actividad Admin</button>
+  </nav>
+
+  <div id="tab-pane-amenazas" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-amenazas">
   <!-- Barra global de período -->
-  <nav class="periodo-bar" aria-label="Período de análisis">
+  <nav class="periodo-bar" id="periodo-bar-global" aria-label="Período de análisis">
     <span class="periodo-label">Período</span>
     <button type="button" class="btn-periodo active" data-periodo="hoy">Hoy</button>
     <button type="button" class="btn-periodo" data-periodo="ayer">Ayer</button>
@@ -1348,38 +1507,6 @@
           </div>
         </details>
 
-        <details class="actividad-collapsible" id="panel-actividad-admin">
-          <summary class="actividad-collapsible-summary">
-            <span>Actividad de administración</span>
-            <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
-          </summary>
-          <div class="actividad-collapsible-inner">
-            <p class="actividad-collapsible-desc">
-              Peticiones y alertas de seguridad en <code>/admin</code> y <code>/monitor</code> (panel, APIs internas y login de analista). Incluye incidentes con tipo y severidad; excluidas del listado público de eventos.
-            </p>
-            <div class="filter-bar">
-              <div class="filter-row">
-                <input type="text" id="filtro-ip-admin" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
-              </div>
-            </div>
-            <table id="tabla-actividad-admin">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>IP</th>
-                  <th>Total peticiones</th>
-                  <th>Primera vez</th>
-                  <th>Última vez</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody id="tbody-actividad-admin">
-                <tr class="empty-row"><td colspan="6">Cargando...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </details>
-
         <div id="modal-evento-overlay" class="modal-evento-overlay" aria-hidden="true">
           <div class="modal-evento-panel" id="modal-evento-panel" role="dialog" aria-labelledby="modal-evento-titulo" onclick="event.stopPropagation()">
             <button type="button" class="modal-evento-cerrar" id="modal-evento-cerrar" aria-label="Cerrar">×</button>
@@ -1531,6 +1658,147 @@
       </div>
     </aside>
   </div>
+  </div><!-- /tab-pane-amenazas -->
+
+  <div id="tab-pane-autoban" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-autoban">
+    <div class="autoban-header">
+      <div>
+        <h2 class="autoban-titulo">Auto-Ban · Rutas Señuelo /secure/*</h2>
+        <p class="autoban-subtitulo">Tráfico y bloqueos automáticos en la zona señuelo (sin datos sensibles del portal principal).</p>
+      </div>
+    </div>
+
+    <nav class="periodo-bar periodo-bar-autoban" aria-label="Período Auto-Ban">
+      <span class="periodo-label">Período</span>
+      <button type="button" class="btn-periodo active" data-periodo-ab="hoy">Hoy</button>
+      <button type="button" class="btn-periodo" data-periodo-ab="semana">7 días</button>
+      <button type="button" class="btn-periodo" data-periodo-ab="mes">30 días</button>
+      <button type="button" class="btn-periodo" data-periodo-ab="todo">Todo</button>
+    </nav>
+
+    <div class="layout-autoban">
+      <div class="layout-autoban-main">
+        <section class="stats-row stats-row-autoban">
+          <div class="stat-card">
+            <div class="label">Total Eventos Auto-Ban</div>
+            <div class="value" id="ab-stat-total">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">IPs Únicas</div>
+            <div class="value" id="ab-stat-ips">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">IPs Bloqueadas Automáticamente</div>
+            <div class="value" id="ab-stat-bloqueadas">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Último Auto-Ban</div>
+            <div class="value" id="ab-stat-ultimo">—</div>
+            <div class="stat-ultimo-sub" id="ab-stat-ultimo-grav"></div>
+          </div>
+        </section>
+
+        <section class="charts-grid" style="margin-bottom:20px" aria-label="Gráficas Auto-Ban">
+          <div class="chart-card">
+            <h3>Ataques Detectados</h3>
+            <canvas id="chart-ab-tipos" height="180"></canvas>
+          </div>
+          <div class="chart-card chart-card-gravedad">
+            <h3>Distribución por Gravedad</h3>
+            <canvas id="chart-ab-gravedad" height="220"></canvas>
+          </div>
+        </section>
+
+        <section class="actividad-registros" aria-label="IPs bloqueadas por Auto-Ban">
+          <div class="filter-bar">
+            <div class="filter-row">
+              <input type="text" id="filtro-ip-autoban" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
+              <button type="button" id="btn-limpiar-filtros-autoban" class="btn-limpiar-filtros">Limpiar filtros</button>
+            </div>
+            <p class="filters-label">Tipo de ataque</p>
+            <div class="filters" id="filtros-tipo-autoban">
+              <button type="button" class="filter-btn active" data-filtro-ab="Todos">Todos</button>
+              <button type="button" class="filter-btn" data-filtro-ab="SQLi">SQLi</button>
+              <button type="button" class="filter-btn" data-filtro-ab="XSS">XSS</button>
+              <button type="button" class="filter-btn" data-filtro-ab="Path Traversal">Path Traversal</button>
+              <button type="button" class="filter-btn" data-filtro-ab="Scanner Automatizado">Scanner</button>
+              <button type="button" class="filter-btn" data-filtro-ab="Fuerza Bruta">Fuerza Bruta</button>
+              <button type="button" class="filter-btn" data-filtro-ab="Reconocimiento">Reconocimiento</button>
+            </div>
+            <p class="filters-label">Gravedad</p>
+            <div class="filters" id="filtros-gravedad-autoban">
+              <button type="button" class="filter-btn active" data-gravedad-ab="Todos">Todos</button>
+              <button type="button" class="filter-btn" data-gravedad-ab="Crítica">Crítica</button>
+              <button type="button" class="filter-btn" data-gravedad-ab="Alta">Alta</button>
+              <button type="button" class="filter-btn" data-gravedad-ab="Sospechoso">Sospechoso</button>
+            </div>
+          </div>
+          <table id="tabla-autoban-grupos">
+            <thead>
+              <tr>
+                <th></th>
+                <th>IP</th>
+                <th>Tipos de Ataque</th>
+                <th>Gravedad Máxima</th>
+                <th>Primera vez vista</th>
+                <th>Última vez vista</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-autoban-grupos">
+              <tr class="empty-row"><td colspan="7">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <aside class="panel-expulsiones" aria-label="Últimas expulsiones">
+        <div class="panel-expulsiones-header">Últimas expulsiones</div>
+        <div id="lista-ultimas-expulsiones" class="lista-expulsiones">
+          <div class="alerta-vacio">Cargando...</div>
+        </div>
+      </aside>
+    </div>
+  </div><!-- /tab-pane-autoban -->
+
+  <div id="tab-pane-admin" class="tab-pane tab-pane-admin" role="tabpanel" aria-labelledby="tab-btn-admin">
+    <nav class="periodo-bar periodo-bar-admin-sync" aria-label="Período actividad admin">
+      <span class="periodo-label">Período (sincronizado con Amenazas)</span>
+      <span id="admin-periodo-etiqueta" style="font-size:13px;color:#94a3b8;padding:8px 0">Hoy</span>
+    </nav>
+    <details class="actividad-collapsible" id="panel-actividad-admin" open>
+      <summary class="actividad-collapsible-summary">
+        <span>Actividad de administración</span>
+        <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
+      </summary>
+      <div class="actividad-collapsible-inner">
+        <p class="actividad-collapsible-desc">
+          Peticiones y alertas de seguridad en <code>/admin</code> y <code>/monitor</code> (panel, APIs internas y login de analista). Incluye incidentes con tipo y severidad; excluidas del listado público de eventos.
+        </p>
+        <div class="filter-bar">
+          <div class="filter-row">
+            <input type="text" id="filtro-ip-admin" class="filtro-ip-input" placeholder="Filtrar por IP..." autocomplete="off">
+          </div>
+        </div>
+        <table id="tabla-actividad-admin">
+          <thead>
+            <tr>
+              <th></th>
+              <th>IP</th>
+              <th>Total peticiones</th>
+              <th>Primera vez</th>
+              <th>Última vez</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-actividad-admin">
+            <tr class="empty-row"><td colspan="6">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div><!-- /tab-pane-admin -->
+
 </main>
 
 <div class="fab-container">
@@ -1589,6 +1857,29 @@
   let chartRutas = null;
   /** Última respuesta de /monitor/api/stats (para pintar gráficos al abrir el panel). */
   let cacheDatosGraficos = null;
+
+  /** Pestaña visible: amenazas | autoban | admin */
+  let pestañaActual = 'amenazas';
+
+  /** Período de la sección Auto-Ban (independiente del período global). */
+  let periodoAutoban = 'hoy';
+  let gruposCacheAutoban = [];
+  let ipsExpandidasAutoban = new Set();
+  let filtroTipoAutoban = 'Todos';
+  let filtroGravedadAutoban = 'Todos';
+  let chartAbTipos = null;
+  let chartAbGravedad = null;
+  let cacheStatsAutoban = null;
+  let intervalAutoban30 = null;
+  let intervalExpulsiones15 = null;
+
+  const ETIQUETAS_PERIODO = {
+    hoy: 'Hoy',
+    ayer: 'Ayer',
+    semana: 'Últimos 7 días',
+    mes: 'Últimos 30 días',
+    todo: 'Todo',
+  };
 
   const TIPOS_CON_BOTON = ['sqli', 'xss', 'reconocimiento', 'scanner', 'fuerza bruta'];
 
@@ -1688,7 +1979,349 @@
     document.querySelectorAll('.btn-periodo').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.periodo === periodoActual);
     });
+    const adminEtq = document.getElementById('admin-periodo-etiqueta');
+    if (adminEtq) adminEtq.textContent = ETIQUETAS_PERIODO[periodoActual] || periodoActual;
     recargarTodo();
+  }
+
+  /**
+   * Cambia la pestaña visible sin recargar la página.
+   */
+  function cambiarPestaña(id) {
+    pestañaActual = id;
+    document.querySelectorAll('.dashboard-tab').forEach((btn) => {
+      const activo = btn.dataset.tab === id;
+      btn.classList.toggle('active', activo);
+      btn.setAttribute('aria-selected', activo ? 'true' : 'false');
+    });
+    document.querySelectorAll('.tab-pane').forEach((pane) => {
+      pane.classList.toggle('active', pane.id === `tab-pane-${id}`);
+    });
+    const fab = document.querySelector('.fab-container');
+    if (fab) fab.style.display = id === 'amenazas' ? '' : 'none';
+    const periodoGlobal = document.getElementById('periodo-bar-global');
+    if (periodoGlobal) periodoGlobal.style.display = id === 'autoban' ? 'none' : '';
+
+    if (id === 'autoban') {
+      recargarAutoban();
+      iniciarIntervalosAutoban();
+    } else {
+      detenerIntervalosAutoban();
+    }
+    if (id === 'admin') {
+      cargarActividadPeticiones('admin');
+    }
+  }
+
+  function pestañaAutobanVisible() {
+    return pestañaActual === 'autoban';
+  }
+
+  /** URL del API autoban con período y gravedad propios de la pestaña. */
+  function urlAutobanConPeriodo(ruta) {
+    const sep = ruta.includes('?') ? '&' : '?';
+    let url = `${ruta}${sep}periodo=${encodeURIComponent(periodoAutoban)}`;
+    if (filtroGravedadAutoban && filtroGravedadAutoban !== 'Todos') {
+      url += `&gravedad=${encodeURIComponent(filtroGravedadAutoban)}`;
+    }
+    return url;
+  }
+
+  function cambiarPeriodoAutoban(nuevo) {
+    periodoAutoban = nuevo;
+    document.querySelectorAll('[data-periodo-ab]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.periodoAb === periodoAutoban);
+    });
+    if (pestañaAutobanVisible()) recargarAutoban();
+  }
+
+  function textoHaceMinutos(min) {
+    if (min == null || min === '') return '—';
+    const n = Number(min);
+    if (Number.isNaN(n)) return '—';
+    if (n < 1) return 'hace un momento';
+    if (n === 1) return 'hace 1 min';
+    if (n < 60) return `hace ${n} min`;
+    const h = Math.floor(n / 60);
+    return h === 1 ? 'hace 1 h' : `hace ${h} h`;
+  }
+
+  function actualizarTarjetasAutoban(data) {
+    document.getElementById('ab-stat-total').textContent = data.total_eventos ?? '—';
+    document.getElementById('ab-stat-ips').textContent = data.ips_unicas ?? '—';
+    document.getElementById('ab-stat-bloqueadas').textContent = data.total_bloqueadas ?? '—';
+    const ultEl = document.getElementById('ab-stat-ultimo');
+    const gravEl = document.getElementById('ab-stat-ultimo-grav');
+    if (data.ultimo_autoban_hace != null) {
+      ultEl.textContent = textoHaceMinutos(data.ultimo_autoban_hace);
+      gravEl.textContent = data.ultimo_autoban_gravedad
+        ? `Gravedad: ${data.ultimo_autoban_gravedad}`
+        : '';
+    } else {
+      ultEl.textContent = '—';
+      gravEl.textContent = '';
+    }
+    const badgeRec = document.getElementById('badge-autoban-reciente');
+    if (badgeRec) {
+      const reciente = data.ultimo_autoban_hace != null && Number(data.ultimo_autoban_hace) <= 5;
+      badgeRec.classList.toggle('visible', reciente);
+    }
+  }
+
+  function renderChartAbTipos(mapaTipos) {
+    const ctx = document.getElementById('chart-ab-tipos');
+    if (!ctx) return;
+    const tipos = filtrarMapaSinTraficoNormal(mapaTipos || {});
+    const labels = Object.keys(tipos);
+    const valores = Object.values(tipos);
+    if (chartAbTipos) chartAbTipos.destroy();
+    chartAbTipos = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Eventos',
+          data: valores,
+          backgroundColor: '#d29922',
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }, tooltip: TOOLTIP_OSCURO },
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  function renderChartAbGravedad(mapaGrav) {
+    const ctx = document.getElementById('chart-ab-gravedad');
+    if (!ctx) return;
+    const ordenado = ORDEN_GRAVEDAD
+      .filter((g) => (mapaGrav || {})[g])
+      .map((g) => ({ g, v: mapaGrav[g] }));
+    const labels = ordenado.map((x) => x.g);
+    const valores = ordenado.map((x) => x.v);
+    const colores = labels.map((g) => COLOR_GRAVEDAD[g] || '#64748b');
+    const total = valores.reduce((a, b) => a + b, 0);
+    if (chartAbGravedad) chartAbGravedad.destroy();
+    chartAbGravedad = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data: valores, backgroundColor: colores, borderWidth: 0 }] },
+      options: {
+        responsive: true,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#94a3b8' } },
+          tooltip: TOOLTIP_OSCURO,
+          centroTotal: { total },
+        },
+      },
+    });
+  }
+
+  function renderListaExpulsiones(lista) {
+    const cont = document.getElementById('lista-ultimas-expulsiones');
+    if (!cont) return;
+    if (!lista || !lista.length) {
+      cont.innerHTML = '<div class="alerta-vacio">Sin expulsiones recientes</div>';
+      return;
+    }
+    cont.innerHTML = lista.map((item) => `
+      <div class="expulsion-item">
+        <div class="exp-ip">${escapeHtml(item.ip || '—')}</div>
+        <div class="exp-meta">${escapeHtml(item.tipo_ataque || '—')} · ${escapeHtml(textoHaceMinutos(item.hace_min))}</div>
+      </div>
+    `).join('');
+  }
+
+  function obtenerGruposAutobanFiltrados() {
+    const textoIp = (document.getElementById('filtro-ip-autoban')?.value || '').trim().toLowerCase();
+    return gruposCacheAutoban
+      .map((grupo) => {
+        let eventos = grupo.eventos || [];
+        if (filtroTipoAutoban !== 'Todos') {
+          const f = filtroTipoAutoban.toLowerCase();
+          eventos = eventos.filter((ev) => (ev.tipo_ataque || '').toLowerCase().includes(f)
+            || (filtroTipoAutoban === 'Scanner Automatizado' && (ev.tipo_ataque || '').toLowerCase().includes('scanner')));
+        }
+        if (filtroGravedadAutoban !== 'Todos') {
+          eventos = eventos.filter((ev) => normalizarGravedad(ev.gravedad) === filtroGravedadAutoban);
+        }
+        return { ...grupo, _eventosVisibles: eventos };
+      })
+      .filter((grupo) => {
+        if (textoIp && !(grupo.ip || '').toLowerCase().includes(textoIp)) return false;
+        if (filtroTipoAutoban !== 'Todos' || filtroGravedadAutoban !== 'Todos') {
+          return (grupo._eventosVisibles || []).length > 0;
+        }
+        return true;
+      });
+  }
+
+  function alternarExpansionAutoban(ip) {
+    if (ipsExpandidasAutoban.has(ip)) ipsExpandidasAutoban.delete(ip);
+    else ipsExpandidasAutoban.add(ip);
+    renderTablaAutoban();
+  }
+
+  async function desbloquearIpAutoban(ip, boton) {
+    if (!ip || !confirm(`¿Desbloquear la IP ${ip}?`)) return;
+    const textoOriginal = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = '...';
+    try {
+      const res = await fetch('/monitor/desbloquear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip, accion: 'desbloquear' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.exito) throw new Error(data.mensaje || 'No se pudo desbloquear');
+      await recargarAutoban();
+    } catch (err) {
+      alert(err.message || 'Error al desbloquear');
+      boton.textContent = textoOriginal;
+      boton.disabled = false;
+    }
+  }
+
+  function appendFilaAutoban(tbody, grupo) {
+    const ip = grupo.ip || '';
+    const expandido = ipsExpandidasAutoban.has(ip);
+    const grav = normalizarGravedad(grupo.gravedad_maxima) || '—';
+    const eventosVisibles = grupo._eventosVisibles || grupo.eventos || [];
+
+    const tr = document.createElement('tr');
+    tr.className = `fila-grupo ${claseFilaGravedad(grav)}`;
+    tr.dataset.ip = ip;
+    tr.innerHTML = `
+      <td class="celda-expandir">${expandido ? '−' : '+'}</td>
+      <td class="ip-mono">${escapeHtml(ip)}</td>
+      <td><div class="tipos-lista">${htmlTiposGrupo(grupo.tipos_ataque)}</div></td>
+      <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
+      <td>${escapeHtml(grupo.primera_vez || '')}</td>
+      <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+      <td class="celda-accion">
+        <button type="button" class="btn-desbloquear-ip" data-ip="${escapeHtml(ip)}">Desbloquear</button>
+        <button type="button" class="btn-ver-eventos-ab" data-ip="${escapeHtml(ip)}">Ver eventos</button>
+      </td>
+    `;
+
+    tr.querySelector('.btn-desbloquear-ip').addEventListener('click', (e) => {
+      e.stopPropagation();
+      desbloquearIpAutoban(ip, e.currentTarget);
+    });
+    tr.querySelector('.btn-ver-eventos-ab').addEventListener('click', (e) => {
+      e.stopPropagation();
+      alternarExpansionAutoban(ip);
+    });
+
+    tbody.appendChild(tr);
+
+    if (expandido) {
+      const trDet = document.createElement('tr');
+      trDet.className = 'fila-detalle';
+      trDet.innerHTML = `<td colspan="7">${htmlSubtabla(eventosVisibles)}</td>`;
+      enlazarClicsSubtabla(trDet, eventosVisibles, ip);
+      tbody.appendChild(trDet);
+    }
+  }
+
+  function renderTablaAutoban() {
+    const tbody = document.getElementById('tbody-autoban-grupos');
+    if (!tbody) return;
+    const grupos = obtenerGruposAutobanFiltrados();
+    if (!grupos.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No hay IPs que coincidan con los filtros</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    grupos.forEach((g) => appendFilaAutoban(tbody, g));
+  }
+
+  async function cargarAutobanStats() {
+    if (!pestañaAutobanVisible()) return;
+    try {
+      const res = await fetch(urlAutobanConPeriodo('/monitor/api/autoban/stats'));
+      if (!res.ok) throw new Error('stats no OK');
+      const data = await res.json();
+      cacheStatsAutoban = data;
+      actualizarTarjetasAutoban(data);
+      renderChartAbTipos(data.ataques_por_tipo);
+      renderChartAbGravedad(data.ataques_por_gravedad);
+      renderListaExpulsiones(data.ultimas_expulsiones);
+    } catch (e) {
+      ['ab-stat-total', 'ab-stat-ips', 'ab-stat-bloqueadas'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = 'Error';
+      });
+    }
+  }
+
+  async function cargarAutobanEventos() {
+    if (!pestañaAutobanVisible()) return;
+    try {
+      const res = await fetch(urlAutobanConPeriodo('/monitor/api/autoban/eventos'));
+      if (!res.ok) throw new Error('eventos no OK');
+      const data = await res.json();
+      gruposCacheAutoban = extraerGruposEventos(data);
+      renderTablaAutoban();
+    } catch (e) {
+      const tbody = document.getElementById('tbody-autoban-grupos');
+      if (tbody) tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Error al cargar datos</td></tr>';
+    }
+  }
+
+  async function recargarAutoban() {
+    if (!pestañaAutobanVisible()) return;
+    await Promise.all([cargarAutobanStats(), cargarAutobanEventos()]);
+  }
+
+  async function refrescarSoloExpulsiones() {
+    if (!pestañaAutobanVisible()) return;
+    try {
+      const res = await fetch(urlAutobanConPeriodo('/monitor/api/autoban/stats'));
+      if (!res.ok) return;
+      const data = await res.json();
+      renderListaExpulsiones(data.ultimas_expulsiones);
+      if (data.ultimo_autoban_hace != null) {
+        const badgeRec = document.getElementById('badge-autoban-reciente');
+        if (badgeRec) {
+          badgeRec.classList.toggle('visible', Number(data.ultimo_autoban_hace) <= 5);
+        }
+      }
+    } catch (e) { /* ignorar fallo puntual */ }
+  }
+
+  function iniciarIntervalosAutoban() {
+    detenerIntervalosAutoban();
+    intervalAutoban30 = setInterval(() => {
+      if (pestañaAutobanVisible()) recargarAutoban();
+    }, 30000);
+    intervalExpulsiones15 = setInterval(refrescarSoloExpulsiones, 15000);
+  }
+
+  function detenerIntervalosAutoban() {
+    if (intervalAutoban30) { clearInterval(intervalAutoban30); intervalAutoban30 = null; }
+    if (intervalExpulsiones15) { clearInterval(intervalExpulsiones15); intervalExpulsiones15 = null; }
+  }
+
+  function limpiarFiltrosAutoban() {
+    document.getElementById('filtro-ip-autoban').value = '';
+    filtroTipoAutoban = 'Todos';
+    filtroGravedadAutoban = 'Todos';
+    document.querySelectorAll('#filtros-tipo-autoban .filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.filtroAb === 'Todos');
+    });
+    document.querySelectorAll('#filtros-gravedad-autoban .filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.gravedadAb === 'Todos');
+    });
+    renderTablaAutoban();
+    cargarAutobanEventos();
   }
 
   /** Recarga completa del dashboard para el período activo. */
@@ -3270,6 +3903,43 @@
     });
   });
 
+  // ——— Pestañas del dashboard ———
+  document.querySelectorAll('.dashboard-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.tab !== pestañaActual) cambiarPestaña(btn.dataset.tab);
+    });
+  });
+
+  document.querySelectorAll('[data-periodo-ab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.periodoAb !== periodoAutoban) cambiarPeriodoAutoban(btn.dataset.periodoAb);
+    });
+  });
+
+  document.getElementById('filtro-ip-autoban').addEventListener('input', renderTablaAutoban);
+  document.getElementById('btn-limpiar-filtros-autoban').addEventListener('click', limpiarFiltrosAutoban);
+
+  document.querySelectorAll('#filtros-tipo-autoban .filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#filtros-tipo-autoban .filter-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroTipoAutoban = btn.dataset.filtroAb;
+      renderTablaAutoban();
+    });
+  });
+
+  document.querySelectorAll('#filtros-gravedad-autoban .filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#filtros-gravedad-autoban .filter-btn').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      filtroGravedadAutoban = btn.dataset.gravedadAb;
+      cargarAutobanEventos();
+    });
+  });
+
+  const adminEtqInit = document.getElementById('admin-periodo-etiqueta');
+  if (adminEtqInit) adminEtqInit.textContent = ETIQUETAS_PERIODO[periodoActual] || periodoActual;
+
   // ——— Carga inicial y refrescos automáticos ———
   recargarTodo();
   cargarIpsActivas();
@@ -3308,15 +3978,33 @@
   });
 
   setInterval(() => {
+    if (pestañaActual !== 'amenazas') return;
     cargarEstadisticas();
     cargarIpsActivas();
     cargarEventos();
     cargarActividadPeticiones('publico');
-    cargarActividadPeticiones('admin');
+  }, 30000);
+
+  setInterval(() => {
+    if (pestañaActual === 'admin' || pestañaActual === 'amenazas') {
+      cargarActividadPeticiones('admin');
+    }
   }, 30000);
 
   setInterval(refrescarAlertas, 10000);
   setInterval(cargarAnomalias, 5 * 60 * 1000);
+
+  /** Precarga ligera de stats autoban para el badge de la pestaña (sin gráficos). */
+  fetch('/monitor/api/autoban/stats?periodo=hoy')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data) return;
+      const badgeRec = document.getElementById('badge-autoban-reciente');
+      if (badgeRec && data.ultimo_autoban_hace != null) {
+        badgeRec.classList.toggle('visible', Number(data.ultimo_autoban_hace) <= 5);
+      }
+    })
+    .catch(() => {});
 </script>
 </body>
 </html>
