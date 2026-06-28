@@ -4,3 +4,4 @@ python-dotenv==1.2.2
 gunicorn>=22.0.0
 groq
 tzdata==2026.2
+bcrypt>=4.0.0
