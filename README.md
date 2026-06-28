@@ -49,6 +49,7 @@ flypaper/
 ├── detector.py          # Motor de clasificacion y deteccion de ataques
 ├── database.py          # Capa de acceso a datos y esquema relacional
 ├── ai_analyzer.py       # Modulo de inteligencia artificial con Claude
+├── telegram_notifier.py # Notificaciones de alertas via Telegram Bot API
 ├── timezone_fp.py       # Gestion centralizada de zona horaria (Europe/Madrid)
 ├── Dockerfile           # Imagen Docker de produccion
 ├── docker-compose.yml   # Orquestacion de contenedores
@@ -148,6 +149,48 @@ Aún así existe la posibilidad de acceder como invitado.
 4. Usar el boton Analizar para obtener analisis IA de cada payload
 5. Exportar evidencias en CSV o cabeceras HTTP
 6. Bloquear IPs atacantes desde el panel
+
+---
+
+## Notificaciones Telegram
+
+FlyPaper envía alertas a un **grupo de Telegram con Topics** (hilos separados por tipo
+de evento): logins, ataques críticos, auto-ban y resumen diario IA.
+
+### Configurar el bot y los topics
+
+1. Crea el bot con **@BotFather** (`/newbot`) y copia el token.
+2. Crea un grupo, activa **Topics** en ajustes del grupo y añade el bot como administrador.
+3. Crea un topic por categoría (Logins, Ataques, Auto-Ban, Resumen).
+4. Obtén el **chat_id** del grupo y el **message_thread_id** de cada topic
+   (consulta `getUpdates` tras enviar un mensaje en cada topic).
+5. Añade al `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=tu_token_aqui
+TELEGRAM_CHAT_ID=id_del_grupo
+TELEGRAM_TOPIC_LOGINS=id_del_topic_logins
+TELEGRAM_TOPIC_ATAQUES=id_del_topic_ataques_criticos
+TELEGRAM_TOPIC_RESUMEN=id_del_topic_resumen_diario
+```
+
+6. Prueba la configuración:
+
+```bash
+python -c "from telegram_notifier import test_telegram; test_telegram()"
+```
+
+7. Reinicia la aplicación.
+
+Si `TELEGRAM_BOT_TOKEN` no está definido, las notificaciones quedan desactivadas.
+
+### Eventos notificados
+
+| Topic | Evento |
+|-------|--------|
+| Logins | Acceso a `/admin/login` y `/monitor/login` |
+| Ataques | Incidentes **Críticos** en tráfico público (máx. 1/IP cada 5 min) |
+| Resumen | Resumen diario automático generado por IA |
 
 ---
 
