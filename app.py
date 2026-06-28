@@ -17,6 +17,7 @@ import ipaddress
 import json
 import logging
 import random
+import re
 import threading
 import time
 import urllib.error
@@ -55,6 +56,11 @@ from database import (
     inicializar_db,
     obtener_comentarios_visibles_post,
     obtener_conexion,
+    obtener_ab_posts,
+    obtener_ab_post_por_id,
+    obtener_ab_comentarios_post,
+    guardar_ab_comentario,
+    obtener_conexion_autoban,
     obtener_estadisticas,
     obtener_eventos,
     obtener_registros_peticiones,
@@ -65,6 +71,8 @@ from database import (
     desbloquear_ip_persistente,
     ip_esta_bloqueada_en_bd,
     listar_ips_bloqueadas,
+    contar_ips_bloqueadas,
+    obtener_ultimas_expulsiones_autoban,
     obtener_flags_con_estado_por_usuario,
     obtener_flags_publicas,
     reiniciar_progreso_ctf_por_usuario,
@@ -100,6 +108,7 @@ from database import (
 )
 from ai_analyzer import analizar_payload, generar_resumen_diario, detectar_anomalias
 from detector import (
+    GRAVEDAD_CRITICA,
     TIPO_TRAFICO_NORMAL,
     calcular_gravedad,
     clasificar_ataque,
@@ -216,7 +225,7 @@ def _calcular_gravedad_maxima(lista_gravedades):
     return maxima
 
 
-def agrupar_eventos_por_ip(limite_eventos=500, periodo=None, gravedad=None):
+def agrupar_eventos_por_ip(limite_eventos=500, periodo=None, gravedad=None, ambito="publico"):
     """
     Agrupa eventos recientes por dirección IP para el API del monitor.
 
@@ -224,13 +233,14 @@ def agrupar_eventos_por_ip(limite_eventos=500, periodo=None, gravedad=None):
         limite_eventos (int): Máximo de filas leídas antes de agrupar.
         periodo (str|None): Filtro temporal (hoy, ayer, semana, mes, todo).
         gravedad (str|None): Crítica, Alta o Sospechoso; None = todas las amenazas.
+        ambito (str): publico | autoban | admin | todo.
 
     Returns:
         list[dict]: Grupos con total_eventos, tipos_ataque, gravedad_maxima,
                     primera_vez, ultima_vez y lista de eventos detallados.
     """
     filas = obtener_eventos(
-        limite=limite_eventos, periodo=periodo, gravedad=gravedad
+        limite=limite_eventos, periodo=periodo, gravedad=gravedad, ambito=ambito
     )
     mapa_grupos = {}
 
@@ -1057,7 +1067,34 @@ def _plantilla_publica(nombre, nav_activo=None, **kwargs):
     return render_template(nombre, **ctx)
 
 
-def construir_payload_para_registro():
+def _payload_registro_vacio(payload):
+    """True si no hay formulario, JSON, query string ni cuerpo útil para clasificar."""
+    if payload is None:
+        return True
+    if isinstance(payload, str):
+        return not payload.strip()
+    if isinstance(payload, dict):
+        return len(payload) == 0
+    return False
+
+
+def construir_payload_url_404():
+    """
+    Payload estructurado con la URL intentada en respuestas 404 sin cuerpo.
+
+    Permite que clasificar_ataque() detecte path traversal aunque request.form esté vacío.
+    """
+    path = request.path or ""
+    qs = request.query_string.decode("utf-8", errors="ignore")
+    url_completa = path + ("?" + qs if qs else "")
+    return {
+        "url_intentada": path,
+        "query_string": qs,
+        "url_completa": url_completa,
+    }
+
+
+def construir_payload_para_registro(codigo_http=None):
     """
     Construye una representación de payload útil para almacenar en la BD.
 
@@ -1066,6 +1103,7 @@ def construir_payload_para_registro():
     2) Si hay JSON (`request.get_json`), guardamos ese objeto.
     3) Si hay query string (`request.args`), guardamos esos parámetros.
     4) Si no hay estructura previa, guardamos el cuerpo en texto bruto.
+    5) Si la respuesta es 404 y sigue vacío, usamos la URL completa (path traversal en GET).
 
     Returns:
         dict | str: Información de entrada enviada por el visitante.
@@ -1080,7 +1118,14 @@ def construir_payload_para_registro():
     if request.args:
         return request.args.to_dict(flat=True)
 
-    return request.get_data(as_text=True) or ""
+    cuerpo = request.get_data(as_text=True) or ""
+    if cuerpo.strip():
+        return cuerpo
+
+    if codigo_http == 404:
+        return construir_payload_url_404()
+
+    return ""
 
 
 def debe_excluirse_del_registro(ruta_solicitada):
@@ -1108,11 +1153,197 @@ def omitir_registro_automatico_honeypot(ruta_solicitada, metodo):
     """
     Evita doble registro cuando una vista ya guarda el evento con reglas propias.
 
-    POST /search registra manualmente la búsqueda (incluye gravedad SQLi).
+    POST /search, POST /secure/search y POST /secure/blog/.../comentar registran manualmente.
     """
     if ruta_solicitada == "/search" and metodo == "POST":
         return True
+    if ruta_solicitada == "/secure/search" and metodo == "POST":
+        return True
+    if metodo == "POST" and re.match(r"^/secure/blog/\d+/comentar$", ruta_solicitada or ""):
+        return True
     return False
+
+
+# ——— Auto-ban: rutas señuelo /secure/* ———
+TIPOS_ATAQUE_AUTOBAN_BLOQUEO = frozenset({
+    "SQLi",
+    "XSS",
+    "Path Traversal",
+    "Fuerza Bruta",
+    "Scanner Automatizado",
+})
+
+
+def _ambito_desde_ruta(ruta):
+    """Determina el ámbito de almacenamiento según la ruta visitada."""
+    path = (ruta or "").strip()
+    if path.startswith("/secure/"):
+        return "autoban"
+    if _ruta_es_zona_administracion(path):
+        return "admin"
+    return "publico"
+
+
+def _url_completa_peticion():
+    """Ruta + query string decodificada para análisis de patrones en la URL."""
+    url_completa = request.path or ""
+    if request.query_string:
+        url_completa += "?" + request.query_string.decode("utf-8", errors="ignore")
+    return url_completa
+
+
+def _tipo_dispara_autoban(tipo_ataque):
+    """True si el tipo de ataque debe provocar bloqueo inmediato en zona /secure/."""
+    return (tipo_ataque or "").strip() in TIPOS_ATAQUE_AUTOBAN_BLOQUEO
+
+
+def _debe_analizar_url_secure_en_before_request(ruta, metodo):
+    """
+    Decide si la URL de una petición /secure/* requiere clasificación en before_request.
+
+    Las vistas conocidas (search, blog, comentarios) sin query string delegan el análisis
+    del cuerpo POST a su propia ruta. Cualquier query o ruta desconocida se inspecciona aquí.
+    """
+    if request.query_string:
+        return True
+
+    ruta_base = (ruta or "").split("?")[0].rstrip("/") or "/"
+    metodo_up = (metodo or "GET").upper()
+
+    if metodo_up == "GET":
+        if ruta_base in ("/secure/search", "/secure/blog"):
+            return False
+        if re.match(r"^/secure/blog/\d+$", ruta_base):
+            return False
+
+    if metodo_up == "POST":
+        if ruta_base == "/secure/search":
+            return False
+        if re.match(r"^/secure/blog/\d+/comentar$", ruta_base):
+            return False
+
+    return True
+
+
+def _inspeccionar_ruta_secure_autoban(ip, ruta):
+    """
+    Inspección temprana de peticiones /secure/* en before_request.
+
+    Construye url_completa (ruta + query), la pasa a clasificar_ataque() y, si el tipo
+    es bloqueable (Path Traversal, SQLi, XSS, Scanner, Fuerza Bruta), registra un único
+    evento autoban con gravedad Crítica, bloquea la IP y devuelve expulsado (403) antes
+    de que Flask resuelva la vista o dispare el manejador 404.
+    """
+    if not _debe_analizar_url_secure_en_before_request(ruta, request.method):
+        return None
+
+    url_completa = _url_completa_peticion()
+    user_agent = request.headers.get("User-Agent", "")
+    cabeceras = dict(request.headers)
+    tipo_ataque = clasificar_ataque(
+        ruta=ruta,
+        payload=url_completa,
+        user_agent=user_agent,
+        headers=cabeceras,
+        metodo=request.method,
+    )
+
+    if not _tipo_dispara_autoban(tipo_ataque):
+        return None
+
+    # IP ya bloqueada: expulsar sin reinsertar en BD (evita colisiones de escritura).
+    if visitante_esta_bloqueado(ip):
+        session.clear()
+        return respuesta_expulsion_visitante()
+
+    guardar_evento(
+        ip=ip,
+        ruta=ruta,
+        metodo=request.method,
+        payload=url_completa,
+        user_agent=user_agent,
+        tipo_ataque=tipo_ataque,
+        headers=cabeceras,
+        gravedad=GRAVEDAD_CRITICA,
+        ambito="autoban",
+    )
+    g.autoban_evento_ya_registrado = True
+
+    bloquear_ip_visitante(ip, motivo=f"Auto-ban: {tipo_ataque} en {ruta}")
+    session.clear()
+    return respuesta_expulsion_visitante()
+
+
+def _autoban_si_corresponde(ip, tipo_ataque, motivo="Bloqueo automático zona /secure/"):
+    """
+    Bloquea la IP tras un ataque detectado en el cuerpo de una vista /secure/*.
+
+    El evento ya debe estar guardado por la vista; aquí solo aplica el bloqueo.
+    """
+    if not _tipo_dispara_autoban(tipo_ataque):
+        return None
+
+    g.autoban_evento_ya_registrado = True
+
+    if visitante_esta_bloqueado(ip):
+        session.clear()
+        return respuesta_expulsion_visitante()
+
+    bloquear_ip_visitante(ip, motivo=motivo)
+    session.clear()
+    return respuesta_expulsion_visitante()
+
+
+def _ejecutar_busqueda_vulnerable(query):
+    """
+    Ejecuta la consulta SQLi deliberadamente vulnerable sobre `posts`.
+
+    Returns:
+        tuple: (resultados, error_sql)
+    """
+    resultados = []
+    error_sql = None
+    sql = (
+        f"SELECT id, titulo, contenido, fecha FROM posts "
+        f"WHERE titulo LIKE '%{query}%' OR contenido LIKE '%{query}%'"
+    )
+    try:
+        with obtener_conexion() as conexion:
+            cursor = conexion.cursor()
+            cursor.execute(sql)
+            columnas = [desc[0] for desc in cursor.description] if cursor.description else []
+            for fila in cursor.fetchall():
+                resultados.append(dict(zip(columnas, fila)))
+    except Exception as exc:
+        error_sql = str(exc)
+    return resultados, error_sql
+
+
+def _ejecutar_busqueda_autoban_vulnerable(query):
+    """
+    Consulta SQLi deliberadamente vulnerable sobre ab_posts (flypaper_autoban.db).
+
+    No accede a flypaper.db: UNION y extracciones solo ven datos genéricos del señuelo.
+
+    Returns:
+        tuple: (resultados, error_sql)
+    """
+    resultados = []
+    error_sql = None
+    sql = (
+        f"SELECT id, titulo, contenido, autor FROM ab_posts "
+        f"WHERE titulo LIKE '%{query}%' OR contenido LIKE '%{query}%'"
+    )
+    try:
+        with obtener_conexion_autoban() as conexion:
+            cursor = conexion.cursor()
+            cursor.execute(sql)
+            columnas = [desc[0] for desc in cursor.description] if cursor.description else []
+            for fila in cursor.fetchall():
+                resultados.append(dict(zip(columnas, fila)))
+    except Exception as exc:
+        error_sql = str(exc)
+    return resultados, error_sql
 
 
 def obtener_ip_cliente():
@@ -1135,7 +1366,7 @@ def ruta_exenta_de_bloqueo_ip(ruta):
         return True
     if ruta.startswith("/assets/"):
         return True
-    if ruta in ("/acceso/reintentar", "/login", "/register", "/admin/login", "/monitor/login"):
+    if ruta in ("/acceso/reintentar", "/login", "/register", "/admin/login", "/monitor/login", "/expulsado"):
         return True
     return False
 
@@ -1213,12 +1444,22 @@ def respuesta_expulsion_visitante():
 @aplicacion.before_request
 def middleware_bloqueo_ip_y_actividad():
     """
-    Middleware global: registra actividad por IP y bloquea visitantes en lista negra.
+    Middleware global unificado: inspección /secure/*, actividad por IP y lista negra.
 
-    El panel /monitor queda exento para que el analista pueda seguir operando.
+    Orden de ejecución (sin manejador 404 específico para /secure/*):
+    1) Si la ruta empieza por /secure/, analizar la URL y cortar con 403 si hay ataque.
+    2) Registrar actividad de la IP en memoria (monitor en tiempo real).
+    3) Eximir /monitor y rutas de reintento del bloqueo por IP.
+    4) Devolver expulsado si la IP ya está bloqueada.
     """
     ruta = request.path or ""
     ip = obtener_ip_cliente()
+
+    # Prioridad máxima: cortar ataques en URL antes del enrutado Flask.
+    if ruta.startswith("/secure/"):
+        respuesta_autoban = _inspeccionar_ruta_secure_autoban(ip, ruta)
+        if respuesta_autoban is not None:
+            return respuesta_autoban
 
     registrar_actividad_visitante(ip)
 
@@ -1229,6 +1470,12 @@ def middleware_bloqueo_ip_y_actividad():
         return respuesta_expulsion_visitante()
 
     return None
+
+
+@aplicacion.get("/expulsado")
+def pagina_expulsado():
+    """Pantalla de expulsión accesible tras redirección desde auto-ban o bloqueo manual."""
+    return render_template("expulsado.html"), 403
 
 
 @aplicacion.route("/assets/<path:nombre_archivo>")
@@ -1297,7 +1544,11 @@ def registrar_evento_honeypot(respuesta):
     ip_visitante = obtener_ip_cliente()
     user_agent_visitante = request.headers.get("User-Agent", "")
     cabeceras_peticion = dict(request.headers)
-    payload_peticion = construir_payload_para_registro()
+    payload_peticion = construir_payload_para_registro(codigo_http=respuesta.status_code)
+
+    # En 404 sin cuerpo, forzar URL como payload para reclasificar path traversal.
+    if respuesta.status_code == 404 and _payload_registro_vacio(payload_peticion):
+        payload_peticion = construir_payload_url_404()
 
     tipo_ataque_detectado = clasificar_ataque(
         ruta=ruta_visitada,
@@ -1316,6 +1567,7 @@ def registrar_evento_honeypot(respuesta):
         tipo_ataque_detectado = "Fuerza Bruta"
 
     gravedad_evento = calcular_gravedad(tipo_ataque_detectado)
+    ambito_evento = _ambito_desde_ruta(ruta_visitada)
 
     peticion_id = guardar_registro_peticion(
         ip=ip_visitante,
@@ -1332,15 +1584,19 @@ def registrar_evento_honeypot(respuesta):
         tiempo_ms=_tiempo_procesamiento_ms(),
         tamano_respuesta_bytes=_tamano_respuesta_bytes(respuesta),
         puerto_origen=_puerto_origen_cliente(),
+        ambito=ambito_evento,
     )
 
-    # Omitimos rutas internas/estáticas y las que registran el evento en su propia vista.
-    if debe_excluirse_del_registro(ruta_visitada) or omitir_registro_automatico_honeypot(
-        ruta_visitada, metodo_peticion
+    # Omitimos rutas internas/estáticas y eventos ya guardados en before_request, 404 o vistas.
+    if (
+        debe_excluirse_del_registro(ruta_visitada)
+        or omitir_registro_automatico_honeypot(ruta_visitada, metodo_peticion)
+        or getattr(g, "autoban_evento_ya_registrado", False)
+        or getattr(g, "evento_404_publico_registrado", False)
     ):
         return respuesta
 
-    # Alertas de /admin y /monitor solo en «Actividad de Administración» (registro_peticiones).
+    # Alertas de /admin y /monitor solo en registro_peticiones (ámbito admin).
     if _ruta_es_zona_administracion(ruta_visitada):
         return respuesta
 
@@ -1353,6 +1609,7 @@ def registrar_evento_honeypot(respuesta):
         tipo_ataque=tipo_ataque_detectado,
         headers=cabeceras_peticion,
         gravedad=gravedad_evento,
+        ambito=ambito_evento,
     )
 
     if peticion_id and evento_id:
@@ -2101,25 +2358,7 @@ def procesar_busqueda():
     - Siempre registra el evento con severidad según el tipo detectado (p. ej. Crítica en SQLi).
     """
     query = request.form.get("query", "")
-    resultados = []
-    error_sql = None
-
-    # Consulta insegura (UNION): 4 columnas alineadas con UNION sobre `usuarios`.
-    # posts: id, titulo, contenido, fecha  ↔  usuarios: id, username, password_hash, email
-    sql = (
-        f"SELECT id, titulo, contenido, fecha FROM posts "
-        f"WHERE titulo LIKE '%{query}%' OR contenido LIKE '%{query}%'"
-    )
-
-    try:
-        with obtener_conexion() as conexion:
-            cursor = conexion.cursor()
-            cursor.execute(sql)
-            columnas = [desc[0] for desc in cursor.description] if cursor.description else []
-            for fila in cursor.fetchall():
-                resultados.append(dict(zip(columnas, fila)))
-    except Exception as exc:
-        error_sql = str(exc)
+    resultados, error_sql = _ejecutar_busqueda_vulnerable(query)
 
     payload_registro = {"query": query}
     tipo_ataque = clasificar_ataque(
@@ -2139,6 +2378,7 @@ def procesar_busqueda():
         tipo_ataque=tipo_ataque,
         headers=dict(request.headers),
         gravedad=gravedad,
+        ambito="publico",
     )
 
     return _plantilla_publica(
@@ -2150,6 +2390,192 @@ def procesar_busqueda():
         total_resultados=len(resultados),
         mensaje_acceso=None,
     )
+
+
+# ——— Rutas señuelo Auto-Ban (/secure/*, sin login) ———
+
+@aplicacion.get("/secure/search")
+@limiter.limit("30 per minute")
+def autoban_mostrar_busqueda():
+    """
+    Búsqueda interna señuelo (zona auto-ban).
+
+    Acceso público: no requiere session['logueado'] ni ningún rol.
+    """
+    return render_template("auto-ban/search.html")
+
+
+@aplicacion.post("/secure/search")
+@limiter.limit("30 per minute")
+def autoban_procesar_busqueda():
+    """
+    Búsqueda vulnerable sobre flypaper_autoban.db (ab_posts).
+
+    Registra con ámbito autoban y bloquea ataques graves redirigiendo a /expulsado.
+    """
+    query = request.form.get("query", "")
+    resultados, error_sql = _ejecutar_busqueda_autoban_vulnerable(query)
+    ip = obtener_ip_cliente()
+    payload_registro = {"query": query}
+    user_agent = request.headers.get("User-Agent", "")
+    cabeceras = dict(request.headers)
+
+    tipo_ataque = clasificar_ataque(
+        ruta="/secure/search",
+        payload=str(payload_registro),
+        user_agent=user_agent,
+        headers=cabeceras,
+        metodo="POST",
+    )
+    gravedad = GRAVEDAD_CRITICA if _tipo_dispara_autoban(tipo_ataque) else calcular_gravedad(tipo_ataque)
+    guardar_evento(
+        ip=ip,
+        ruta="/secure/search",
+        metodo="POST",
+        payload=payload_registro,
+        user_agent=user_agent,
+        tipo_ataque=tipo_ataque,
+        headers=cabeceras,
+        gravedad=gravedad,
+        ambito="autoban",
+    )
+    if _tipo_dispara_autoban(tipo_ataque):
+        g.autoban_evento_ya_registrado = True
+
+    respuesta_ban = _autoban_si_corresponde(ip, tipo_ataque)
+    if respuesta_ban is not None:
+        return respuesta_ban
+
+    return render_template(
+        "auto-ban/search.html",
+        query=query,
+        resultados=resultados,
+        error_sql=error_sql,
+        total_resultados=len(resultados),
+    )
+
+
+@aplicacion.get("/secure/blog")
+@limiter.limit("60 per minute")
+def autoban_blog_listado():
+    """
+    Listado de blog señuelo (ab_posts en flypaper_autoban.db).
+
+    Acceso público sin autenticación.
+    """
+    posts = obtener_ab_posts()
+    return render_template("auto-ban/blog.html", posts=posts)
+
+
+@aplicacion.get("/secure/blog/<int:post_id>")
+@limiter.limit("60 per minute")
+def autoban_blog_detalle(post_id):
+    """Detalle de post señuelo y comentarios de ab_comentarios."""
+    post = obtener_ab_post_por_id(post_id)
+    if post is None:
+        return "Publicación no encontrada", 404
+
+    comentarios = obtener_ab_comentarios_post(post_id)
+    return render_template(
+        "auto-ban/post.html",
+        post=post,
+        comentarios=comentarios,
+    )
+
+
+@aplicacion.post("/secure/blog/<int:post_id>/comentar")
+@limiter.limit("30 per minute")
+def autoban_blog_comentar(post_id):
+    """
+    Comentario en blog señuelo: persiste en ab_comentarios (sin límite por sesión).
+    """
+    post = obtener_ab_post_por_id(post_id)
+    if post is None:
+        return "Publicación no encontrada", 404
+
+    nombre = (request.form.get("nombre") or "").strip() or "Anónimo"
+    contenido = (request.form.get("comentario") or "").strip()
+    ip = obtener_ip_cliente()
+    user_agent = request.headers.get("User-Agent", "")
+    cabeceras = dict(request.headers)
+    payload_registro = {"nombre": nombre, "comentario": contenido}
+    ruta = f"/secure/blog/{post_id}/comentar"
+
+    tipo_ataque = clasificar_ataque(
+        ruta=ruta,
+        payload=str(payload_registro),
+        user_agent=user_agent,
+        headers=cabeceras,
+        metodo="POST",
+    )
+    gravedad = GRAVEDAD_CRITICA if _tipo_dispara_autoban(tipo_ataque) else calcular_gravedad(tipo_ataque)
+    guardar_evento(
+        ip=ip,
+        ruta=ruta,
+        metodo="POST",
+        payload=payload_registro,
+        user_agent=user_agent,
+        tipo_ataque=tipo_ataque,
+        headers=cabeceras,
+        gravedad=gravedad,
+        ambito="autoban",
+    )
+    if _tipo_dispara_autoban(tipo_ataque):
+        g.autoban_evento_ya_registrado = True
+
+    respuesta_ban = _autoban_si_corresponde(ip, tipo_ataque)
+    if respuesta_ban is not None:
+        return respuesta_ban
+
+    if contenido:
+        guardar_ab_comentario(post_id, nombre, contenido)
+
+    return redirect(url_for("autoban_blog_detalle", post_id=post_id))
+
+
+@aplicacion.errorhandler(404)
+def pagina_no_encontrada(e):
+    """
+    Página 404 genérica.
+
+    En rutas públicas (no /secure/*, /admin/* ni /monitor/*) registra el intento
+    con la URL completa para detectar path traversal y sondeo de ficheros.
+    No expulsa al visitante; la inspección /secure/* sigue en before_request.
+    """
+    ruta = request.path or ""
+
+    if ruta.startswith("/secure/") or _ruta_es_zona_administracion(ruta):
+        return render_template("404.html"), 404
+
+    qs = request.query_string.decode("utf-8", errors="ignore")
+    url_completa = ruta + ("?" + qs if qs else "")
+    ip = obtener_ip_cliente()
+    ua = request.headers.get("User-Agent", "")
+    hdrs = dict(request.headers)
+
+    tipo = clasificar_ataque(
+        ruta=ruta,
+        payload=url_completa,
+        user_agent=ua,
+        headers=hdrs,
+        metodo=request.method,
+    )
+    gravedad = calcular_gravedad(tipo)
+
+    guardar_evento(
+        ip=ip,
+        ruta=ruta,
+        metodo=request.method,
+        payload={"url_intentada": url_completa},
+        user_agent=ua,
+        tipo_ataque=tipo,
+        headers=hdrs,
+        gravedad=gravedad,
+        ambito="publico",
+    )
+    g.evento_404_publico_registrado = True
+
+    return render_template("404.html"), 404
 
 
 @aplicacion.get("/objetivos")
@@ -2445,9 +2871,53 @@ def monitor_api_eventos():
     periodo = _periodo_monitor_desde_request()
     gravedad = normalizar_gravedad_filtro_api(request.args.get("gravedad"))
     grupos_por_ip = agrupar_eventos_por_ip(
-        limite_eventos=500, periodo=periodo, gravedad=gravedad
+        limite_eventos=500, periodo=periodo, gravedad=gravedad, ambito="publico"
     )
     return jsonify({"periodo": periodo, "gravedad": gravedad, "grupos": grupos_por_ip})
+
+
+@aplicacion.get("/monitor/api/autoban/eventos")
+@requiere_autenticacion_monitor
+def monitor_api_autoban_eventos():
+    """
+    Eventos de la zona señuelo /secure/* agrupados por IP.
+
+    Query: ?periodo=...&gravedad=... (igual que /monitor/api/eventos).
+    """
+    periodo = _periodo_monitor_desde_request()
+    gravedad = normalizar_gravedad_filtro_api(request.args.get("gravedad"))
+    grupos = agrupar_eventos_por_ip(
+        limite_eventos=500,
+        periodo=periodo,
+        gravedad=gravedad,
+        ambito="autoban",
+    )
+    return jsonify({"periodo": periodo, "gravedad": gravedad, "grupos": grupos})
+
+
+@aplicacion.get("/monitor/api/autoban/stats")
+@requiere_autenticacion_monitor
+def monitor_api_autoban_stats():
+    """
+    Estadísticas agregadas del tráfico auto-ban (/secure/*).
+
+    Incluye total_bloqueadas desde la tabla ips_bloqueadas.
+    """
+    periodo = _periodo_monitor_desde_request()
+    estadisticas_bd = obtener_estadisticas(periodo=periodo, ambito="autoban")
+    actividad = estadisticas_bd.get("actividad_por_periodo") or {}
+    return jsonify({
+        "periodo": periodo,
+        "total_eventos": estadisticas_bd.get("total_eventos", 0),
+        "ips_unicas": estadisticas_bd.get("ips_unicas", 0),
+        "ataques_por_tipo": estadisticas_bd.get("ataques_por_tipo") or {},
+        "ataques_por_gravedad": estadisticas_bd.get("ataques_por_gravedad") or {},
+        "total_bloqueadas": contar_ips_bloqueadas(),
+        "actividad_por_periodo": actividad,
+        "ultimo_autoban_hace": estadisticas_bd.get("ultimo_ataque_hace"),
+        "ultimo_autoban_gravedad": estadisticas_bd.get("ultimo_ataque_gravedad"),
+        "ultimas_expulsiones": obtener_ultimas_expulsiones_autoban(10),
+    })
 
 
 @aplicacion.get("/monitor/api/actividad-peticiones")
@@ -2526,6 +2996,25 @@ def monitor_bloquear_ip():
     return jsonify({"exito": True, "ip": ip_objetivo})
 
 
+@aplicacion.post("/monitor/desbloquear")
+@requiere_autenticacion_monitor
+def monitor_desbloquear_ip():
+    """
+    Quita una IP de la lista negra persistente desde el panel Auto-Ban.
+
+    Cuerpo JSON: { "ip": "x.x.x.x", "accion": "desbloquear" }
+    """
+    cuerpo = request.get_json(silent=True) or {}
+    ip_objetivo = (cuerpo.get("ip") or "").strip()
+    accion = (cuerpo.get("accion") or "").strip().lower()
+
+    if not ip_objetivo or accion != "desbloquear":
+        return jsonify({"exito": False, "mensaje": "Petición inválida"}), 400
+
+    desbloquear_ip_visitante(ip_objetivo)
+    return jsonify({"exito": True, "ip": ip_objetivo})
+
+
 @aplicacion.get("/monitor/api/stats")
 @requiere_autenticacion_monitor
 def monitor_api_estadisticas():
@@ -2542,7 +3031,7 @@ def monitor_api_estadisticas():
         alertas_graves — últimas 10 alertas Crítica/Alta dentro del período.
     """
     periodo = _periodo_monitor_desde_request()
-    estadisticas_bd = obtener_estadisticas(periodo=periodo)
+    estadisticas_bd = obtener_estadisticas(periodo=periodo, ambito="publico")
     ataques_por_tipo = dict(estadisticas_bd.get("ataques_por_tipo") or {})
     actividad = estadisticas_bd.get("actividad_por_periodo") or {}
 
