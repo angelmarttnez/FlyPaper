@@ -141,6 +141,21 @@ def notificar_login_monitor(usuario, ip, timestamp):
     enviar_notificacion_telegram(mensaje, message_thread_id=TELEGRAM_TOPIC_LOGINS)
 
 
+def notificar_nuevo_registro(username, ip, timestamp):
+    """Avisa en el topic de logins de un alta en /register."""
+    usuario_seguro = html.escape(str(username or ""))
+    ip_segura = html.escape(str(ip or ""))
+    hora_segura = html.escape(str(timestamp or ""))
+
+    mensaje = (
+        "👤 <b>Nuevo Registro</b>\n"
+        f"🆔 Usuario: <code>{usuario_seguro}</code>\n"
+        f"🌐 IP: <code>{ip_segura}</code>\n"
+        f"🕐 Hora: <code>{hora_segura}</code>"
+    )
+    enviar_notificacion_telegram(mensaje, message_thread_id=TELEGRAM_TOPIC_LOGINS)
+
+
 def notificar_ataque_critico(tipo_ataque, ip, ruta, payload, timestamp):
     """Avisa en el topic de ataques de un incidente con gravedad Crítica."""
     tipo_seguro = html.escape(str(tipo_ataque or ""))
