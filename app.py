@@ -78,7 +78,11 @@ from database import (
     reiniciar_progreso_ctf_por_usuario,
     verificar_usuario_privado,
     verificar_admin_panel_privado,
-    crear_usuario_publico,
+    registrar_usuario,
+    verificar_usuario_registrado,
+    contar_usuarios_registrados,
+    limpiar_usuarios_inactivos,
+    LIMITE_USUARIOS_REGISTRADOS,
     verificar_credencial_usuario_bd,
     obtener_usuarios_para_panel_admin,
     ROL_PRIV_MONITOR,
@@ -111,6 +115,7 @@ from telegram_notifier import (
     notificar_ataque_critico,
     notificar_login_admin,
     notificar_login_monitor,
+    notificar_nuevo_registro,
     notificar_resumen_diario,
 )
 from detector import (
@@ -135,6 +140,17 @@ from timezone_fp import (
 
 # Intervalo entre ejecuciones del hilo de fondo (limpieza + anomalías IA, 30 minutos).
 INTERVALO_LIMPIEZA_COMENTARIOS_SEG = 30 * 60
+
+# Nombres reservados: no pueden usarse en el registro público.
+USERNAMES_PROHIBIDOS = frozenset({
+    "admin", "administrator", "root", "superuser",
+    "analyst", "monitor", "system", "flypaper",
+    "soporte", "support", "test", "demo", "null",
+    "undefined", "anonymous", "anon", "guest",
+})
+
+# Caracteres peligrosos adicionales al regex de registro (XSS, inyección, etc.).
+_PATRON_USERNAME_CARACTERES_PELIGROSOS = re.compile(r"[<>'\"\\;/`\x00]")
 
 # Evita generar más de un resumen automático por día (ventana 23:59 Europe/Madrid).
 _ultima_fecha_resumen_auto = None
@@ -615,7 +631,11 @@ def ejecutar_deteccion_anomalias_fondo():
 def tarea_periodica_fondo():
     """
     Bucle del hilo en segundo plano: limpieza de comentarios y anomalías IA cada 30 minutos.
+
+    La limpieza de usuarios inactivos en flypaper_users.db corre cada 24 horas
+    (48 ciclos × 30 min).
     """
+    ciclos = 0
     while True:
         try:
             limpiar_comentarios_antiguos()
@@ -632,6 +652,14 @@ def tarea_periodica_fondo():
             logging.error(
                 "[FlyPaper] Error en el scheduler de resumen diario: %s", exc
             )
+        # 48 ciclos de 30 min = 24 h: eliminar cuentas sin actividad en 60 días.
+        if ciclos % 48 == 0:
+            try:
+                eliminados = limpiar_usuarios_inactivos()
+                print(f"[FlyPaper] Usuarios inactivos eliminados: {eliminados}")
+            except Exception as exc:
+                print(f"[FlyPaper] Error limpieza usuarios: {exc}")
+        ciclos += 1
         time.sleep(INTERVALO_LIMPIEZA_COMENTARIOS_SEG)
 
 
@@ -1733,13 +1761,6 @@ def mostrar_login():
     return respuesta
 
 
-# Usuarios de demostración sin privilegios (acceso solo a /search, /blog y /objetivos).
-USUARIOS_DEMO_PUBLICOS = {
-    "Angel": {"password": "Angel123", "redirige": "/search"},
-    "Carlos": {"password": "Carlos123", "redirige": "/search"},
-}
-
-
 def _redirigir_si_no_es_admin():
     """
     Protege rutas /admin: requiere sesión activa y rol «admin».
@@ -1761,6 +1782,11 @@ def _iniciar_sesion_publica(nombre, rol):
     session["usuario"] = nombre
     session["rol"] = rol
     _marcar_actividad_sesion_publica()
+
+
+def _iniciar_sesion_usuario(nombre, rol):
+    """Inicia sesión para cuentas creadas en flypaper_users.db (/register)."""
+    _iniciar_sesion_publica(nombre, rol)
 
 
 def _iniciar_sesion_admin_panel(nombre):
@@ -1826,53 +1852,74 @@ def procesar_admin_login():
 
 @aplicacion.get("/register")
 def mostrar_registro():
-    """Formulario de alta abierta en la base de datos pública (flypaper.db)."""
-    mensaje_error = request.args.get("error")
-    mensaje_exito = request.args.get("exito")
-    destino_siguiente = _destino_tras_login_seguro(request.args.get("next"))
-    return render_template(
-        "register.html",
-        mensaje_error=mensaje_error,
-        mensaje_exito=mensaje_exito,
-        destino_siguiente=destino_siguiente,
-    )
+    """Formulario de alta en flypaper_users.db (bcrypt)."""
+    if session.get("logueado") is True:
+        return redirect("/search")
+    return render_template("register.html")
 
 
 @aplicacion.post("/register")
-@limiter.limit("10 per minute")
+@limiter.limit("3 per hour")
 def procesar_registro():
-    """Crea un usuario estándar sin privilegios de administración."""
-    usuario = request.form.get("username", "")
-    contrasena = request.form.get("password", "")
-    contrasena_rep = request.form.get("password_confirm", "")
-    email = request.form.get("email", "")
-    destino = _destino_tras_login_seguro(
-        request.form.get("next") or request.args.get("next")
+    """Crea una cuenta en usuarios_registrados y abre sesión automáticamente."""
+    username = request.form.get("usuario", "").strip()
+    password = request.form.get("password", "")
+    confirmar = request.form.get("confirmar_password", "")
+
+    if password != confirmar:
+        return render_template(
+            "register.html",
+            error="Las contraseñas no coinciden",
+        )
+
+    if username.lower() in USERNAMES_PROHIBIDOS:
+        return render_template(
+            "register.html",
+            error="Ese nombre de usuario no está disponible",
+        )
+
+    if len(password) < 8:
+        return render_template(
+            "register.html",
+            error="La contraseña debe tener al menos 8 caracteres",
+        )
+
+    if _PATRON_USERNAME_CARACTERES_PELIGROSOS.search(username):
+        return render_template(
+            "register.html",
+            error="El nombre de usuario contiene caracteres no permitidos",
+        )
+
+    resultado = registrar_usuario(username, password)
+    if resultado["exito"]:
+        session.permanent = True
+        session["logueado"] = True
+        session["usuario"] = username
+        session["rol"] = "usuario"
+        _marcar_actividad_sesion_publica()
+        threading.Thread(
+            target=notificar_nuevo_registro,
+            args=(username, obtener_ip_cliente(), marca_ahora()),
+            daemon=True,
+        ).start()
+        return redirect("/search")
+
+    return render_template(
+        "register.html",
+        error=resultado["mensaje"],
     )
-
-    def _volver_registro(**params):
-        if destino:
-            params["next"] = destino
-        return redirect(url_for("mostrar_registro", **params))
-
-    if contrasena != contrasena_rep:
-        return _volver_registro(error="Las contraseñas no coinciden.")
-
-    resultado = crear_usuario_publico(usuario, contrasena, email=email)
-    if not resultado.get("exito"):
-        return _volver_registro(error=resultado.get("mensaje", "No se pudo registrar."))
-
-    _iniciar_sesion_publica(usuario.strip(), ROL_USUARIO_NORMAL)
-    return redirect(destino or "/search")
 
 
 @aplicacion.post("/login")
 @limiter.limit("10 per minute")
 def procesar_login():
     """
-    Login del portal público: demo, tabla usuarios (MD5) y cuentas nuevas.
+    Login unificado del portal: cuentas privilegiadas, señuelo CTF y registro real.
 
-    No consulta flypaper_priv.db ni concede rol admin bajo ningún concepto.
+    Orden de verificación:
+    1. flypaper_priv.db (admin / monitor)
+    2. flypaper.db (usuarios señuelo del laboratorio)
+    3. flypaper_users.db (registro bcrypt en /register)
     """
     usuario_enviado = request.form.get("username", "")
     contrasena_enviada = request.form.get("password", "")
@@ -1883,16 +1930,33 @@ def procesar_login():
 
     destino = _destino_tras_login_seguro(request.form.get("next"))
 
-    datos_usuario = USUARIOS_DEMO_PUBLICOS.get(usuario_enviado)
-    if datos_usuario is not None and datos_usuario["password"] == contrasena_enviada:
-        _iniciar_sesion_publica(usuario_enviado, ROL_USUARIO_NORMAL)
-        return redirect(destino or datos_usuario["redirige"])
+    # 1) Cuentas privilegiadas (admin_panel y monitor en flypaper_priv.db).
+    cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
+    if cuenta_priv is not None:
+        if cuenta_priv.get("rol") == ROL_PRIV_MONITOR:
+            session["analyst"] = True
+            return redirect(cuenta_priv.get("redirige") or "/monitor")
+        _iniciar_sesion_admin_panel(cuenta_priv["username"])
+        return redirect(cuenta_priv.get("redirige") or "/admin")
 
+    # 2) Usuarios señuelo del CTF (MD5 en flypaper.db).
     cuenta_bd = verificar_credencial_usuario_bd(usuario_enviado, contrasena_enviada)
     if cuenta_bd is not None:
         _iniciar_sesion_publica(cuenta_bd["username"], ROL_USUARIO_NORMAL)
         return redirect(destino or "/search")
 
+    # 3) Usuarios registrados con bcrypt (flypaper_users.db).
+    cuenta_registrada = verificar_usuario_registrado(
+        usuario_enviado, contrasena_enviada
+    )
+    if cuenta_registrada is not None:
+        _iniciar_sesion_usuario(
+            cuenta_registrada["username"],
+            cuenta_registrada["rol"],
+        )
+        return redirect(destino or "/search")
+
+    # 4) Credenciales incorrectas.
     if destino:
         return redirect(url_for("mostrar_login", error=1, next=destino))
     return redirect("/login?error=1")
@@ -1940,10 +2004,15 @@ def admin_usuarios():
     if bloqueo is not None:
         return bloqueo
     lista_usuarios = obtener_usuarios_para_panel_admin()
+    stats_registrados = {
+        "total": contar_usuarios_registrados(),
+        "limite": LIMITE_USUARIOS_REGISTRADOS,
+    }
     return render_template(
         "admin/usuarios.html",
         usuarios=lista_usuarios,
         total_usuarios=len(lista_usuarios),
+        stats_registrados=stats_registrados,
     )
 
 

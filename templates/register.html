@@ -1,169 +1,220 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FlyPaper · Crear cuenta</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    min-height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: radial-gradient(ellipse at top, #1a2744 0%, #0a1124 60%, #05080f 100%);
-    color: #e6ecff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-  }
-  .card {
-    width: 100%;
-    max-width: 420px;
-    background: rgba(20, 30, 55, 0.7);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(120, 160, 255, 0.15);
-    border-radius: 16px;
-    padding: 40px 32px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  }
-  .logo {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4f7cff, #2547c9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 26px;
-    color: #fff;
-    margin: 0 auto 20px;
-    box-shadow: 0 8px 24px rgba(79, 124, 255, 0.4);
-    letter-spacing: 1px;
-  }
-  h1 {
-    text-align: center;
-    font-size: 22px;
-    font-weight: 600;
-    margin-bottom: 6px;
-  }
-  .subtitle {
-    text-align: center;
-    color: #8aa0c8;
-    font-size: 14px;
-    margin-bottom: 28px;
-  }
-  .field { margin-bottom: 16px; }
-  label {
-    display: block;
-    font-size: 13px;
-    color: #b8c8e8;
-    margin-bottom: 6px;
-  }
-  input {
-    width: 100%;
-    padding: 12px 14px;
-    background: rgba(10, 17, 36, 0.6);
-    border: 1px solid rgba(120, 160, 255, 0.2);
-    border-radius: 8px;
-    color: #fff;
-    font-size: 14px;
-    outline: none;
-    transition: border-color .2s, box-shadow .2s;
-  }
-  input:focus {
-    border-color: #4f7cff;
-    box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.2);
-  }
-  button {
-    width: 100%;
-    padding: 12px;
-    margin-top: 8px;
-    background: linear-gradient(135deg, #4f7cff, #2547c9);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: transform .1s, box-shadow .2s;
-  }
-  button:hover { box-shadow: 0 8px 20px rgba(79, 124, 255, 0.4); }
-  button:active { transform: translateY(1px); }
-  .auth-links {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 13px;
-  }
-  .auth-links a {
-    color: #8aa0c8;
-    text-decoration: none;
-    font-weight: 500;
-    transition: color .15s;
-  }
-  .auth-links a:hover { color: #e6ecff; }
-  .error {
-    background: rgba(220, 50, 70, 0.15);
-    border: 1px solid rgba(220, 50, 70, 0.4);
-    color: #ff7080;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    margin-bottom: 18px;
-    text-align: center;
-  }
-  .success {
-    background: rgba(34, 197, 94, 0.12);
-    border: 1px solid rgba(34, 197, 94, 0.35);
-    color: #86efac;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    margin-bottom: 18px;
-    text-align: center;
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registro - FlyPaper Corp</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: radial-gradient(ellipse at top, #0a1124, #05080f);
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+
+    .logo-circle {
+      width: 64px;
+      height: 64px;
+      background: #3b82f6;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-weight: 700;
+      font-size: 24px;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .brand {
+      font-size: 22px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #94a3b8;
+      margin-bottom: 24px;
+    }
+
+    .form-group {
+      text-align: left;
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-group input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+
+    .form-group input::placeholder {
+      color: #64748b;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      margin-top: 4px;
+    }
+
+    .btn:hover {
+      background: #2563eb;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .link-row {
+      margin-top: 20px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .link-row a {
+      color: #3b82f6;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .link-row a:hover {
+      text-decoration: underline;
+    }
+
+    .alert-error {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.25);
+      color: #fca5a5;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .alert-success {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.25);
+      color: #86efac;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    footer {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    @media (max-width: 480px) {
+      .card {
+        padding: 32px 24px;
+        margin: 0 16px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo">FP</div>
-    <h1>Crear cuenta</h1>
-    <p class="subtitle">Registro en la plataforma pública de FlyPaper</p>
 
-    {% if mensaje_error %}
-    <div class="error">{{ mensaje_error }}</div>
+  <div class="card">
+    <div class="logo-circle">FP</div>
+    <div class="brand">FlyPaper</div>
+    <div class="title">Crear cuenta</div>
+    <div class="subtitle">Accede a la plataforma interna</div>
+
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
     {% endif %}
-    {% if mensaje_exito %}
-    <div class="success">{{ mensaje_exito }}</div>
+
+    {% if exito %}
+    <div class="alert-success">{{ exito }}</div>
     {% endif %}
 
     <form method="POST" action="/register">
-      {% if destino_siguiente %}
-      <input type="hidden" name="next" value="{{ destino_siguiente }}">
-      {% endif %}
-      <div class="field">
-        <label for="username">Usuario</label>
-        <input type="text" id="username" name="username" required autocomplete="username" minlength="3" />
+      <div class="form-group">
+        <label for="usuario">Usuario</label>
+        <input type="text" id="usuario" name="usuario" placeholder="Elige un nombre de usuario" required autocomplete="username">
       </div>
-      <div class="field">
-        <label for="email">Correo electrónico (opcional)</label>
-        <input type="email" id="email" name="email" autocomplete="email" />
-      </div>
-      <div class="field">
+
+      <div class="form-group">
         <label for="password">Contraseña</label>
-        <input type="password" id="password" name="password" required autocomplete="new-password" minlength="6" />
+        <input type="password" id="password" name="password" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
       </div>
-      <div class="field">
-        <label for="password_confirm">Confirmar contraseña</label>
-        <input type="password" id="password_confirm" name="password_confirm" required autocomplete="new-password" minlength="6" />
+
+      <div class="form-group">
+        <label for="confirmar_password">Confirmar contraseña</label>
+        <input type="password" id="confirmar_password" name="confirmar_password" placeholder="Repite la contraseña" required minlength="8" autocomplete="new-password">
       </div>
-      <button type="submit">Registrarse</button>
+
+      <button type="submit" class="btn">Registrarse</button>
     </form>
 
-    <p class="auth-links">
-      <a href="{% if destino_siguiente %}/login?next={{ destino_siguiente|urlencode }}{% else %}/login{% endif %}">Ya tengo cuenta — Iniciar sesión</a>
-    </p>
+    <div class="link-row">
+      ¿Ya tienes cuenta? <a href="/login">Iniciar sesión</a>
+    </div>
   </div>
+
+  <footer>&copy; 2026 FlyPaper Corp. All rights reserved.</footer>
+
 </body>
 </html>
