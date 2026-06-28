@@ -5,6 +5,7 @@ Esquema relacional SQLite: eventos del honeypot, usuarios/posts del entorno fals
 flags de CTF y tablas auxiliares. Incluye población inicial del escenario de laboratorio.
 """
 
+import bcrypt
 import hashlib
 import json
 import re
@@ -56,6 +57,14 @@ RUTA_BD = RUTA_RAIZ_PROYECTO / "flypaper.db"
 RUTA_BD_PRIVADA = RUTA_RAIZ_PROYECTO / "flypaper_priv.db"
 # Contenido señuelo de /secure/*: sin usuarios, flags ni datos del laboratorio CTF.
 RUTA_BD_AUTOBAN = RUTA_RAIZ_PROYECTO / "flypaper_autoban.db"
+# Cuentas reales del portal público (registro /register con bcrypt).
+RUTA_BD_USERS = RUTA_RAIZ_PROYECTO / "flypaper_users.db"
+
+# Validación de nombre de usuario en el registro abierto.
+_PATRON_USERNAME_REGISTRO = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
+
+# Tope de cuentas en flypaper_users.db (protección contra saturación del registro).
+LIMITE_USUARIOS_REGISTRADOS = 500
 
 
 def obtener_conexion():
@@ -81,6 +90,36 @@ def obtener_conexion_privada():
     conexion = sqlite3.connect(RUTA_BD_PRIVADA)
     conexion.row_factory = sqlite3.Row
     return conexion
+
+
+def obtener_conexion_users():
+    """
+    Conexión a la BD de usuarios registrados vía /register (bcrypt).
+
+    Returns:
+        sqlite3.Connection: Conexión a `flypaper_users.db`.
+    """
+    conexion = sqlite3.connect(RUTA_BD_USERS)
+    conexion.row_factory = sqlite3.Row
+    return conexion
+
+
+def inicializar_db_users():
+    """Crea la tabla de usuarios registrados si no existe."""
+    with obtener_conexion_users() as conexion:
+        conexion.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS usuarios_registrados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                fecha_registro DATETIME,
+                ultimo_login DATETIME,
+                activo INTEGER DEFAULT 1
+            );
+            """
+        )
+        conexion.commit()
 
 
 def obtener_conexion_autoban():
@@ -531,6 +570,185 @@ def inicializar_db():
     _migrar_cuentas_privilegiadas_fuera_de_usuarios()
     _migrar_gravedades_eventos_legacy()
     inicializar_db_autoban()
+    inicializar_db_users()
+
+
+def _username_existe_en_usuarios_publicos(username):
+    """True si el nombre ya figura en la tabla señuelo `usuarios` de flypaper.db."""
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT 1 FROM usuarios WHERE username = ? LIMIT 1;",
+            (username,),
+        )
+        return cursor.fetchone() is not None
+
+
+def contar_usuarios_registrados():
+    """
+    Cuenta todas las filas de usuarios_registrados (activos e inactivos).
+
+    Returns:
+        int: Total de registros en flypaper_users.db.
+    """
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("SELECT COUNT(*) AS total FROM usuarios_registrados;")
+        fila = cursor.fetchone()
+    return int(fila["total"]) if fila else 0
+
+
+def limpiar_usuarios_inactivos():
+    """
+    Elimina cuentas activas sin uso en los últimos 60 días.
+
+    Criterios:
+    - ultimo_login anterior a hace 60 días, o
+    - sin ultimo_login y fecha_registro anterior a hace 60 días.
+
+    Returns:
+        int: Número de filas eliminadas.
+    """
+    fecha_limite = formatear_marca(hace_tiempo(days=60))
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            DELETE FROM usuarios_registrados
+            WHERE activo = 1
+              AND (
+                    (ultimo_login IS NOT NULL AND ultimo_login < ?)
+                 OR (ultimo_login IS NULL AND fecha_registro < ?)
+              );
+            """,
+            (fecha_limite, fecha_limite),
+        )
+        eliminados = cursor.rowcount
+        conexion.commit()
+    print(f"[FlyPaper] Limpieza usuarios inactivos: {eliminados} eliminado(s)")
+    return eliminados
+
+
+def registrar_usuario(username, password):
+    """
+    Alta de usuario en flypaper_users.db con contraseña bcrypt.
+
+    No inserta en flypaper.db: los registrados no aparecen en /admin/usuarios.
+
+    Returns:
+        dict: {"exito": True} o {"exito": False, "mensaje": "..."}
+    """
+    nombre = (username or "").strip()
+    clave = password or ""
+
+    if not _PATRON_USERNAME_REGISTRO.match(nombre):
+        return {
+            "exito": False,
+            "mensaje": "Usuario inválido: use 3-20 caracteres (letras, números y _).",
+        }
+    if len(clave) < 8:
+        return {
+            "exito": False,
+            "mensaje": "La contraseña debe tener al menos 8 caracteres.",
+        }
+
+    total = contar_usuarios_registrados()
+    if total >= LIMITE_USUARIOS_REGISTRADOS:
+        return {
+            "exito": False,
+            "mensaje": (
+                "El registro está temporalmente cerrado. Inténtalo más tarde."
+            ),
+        }
+
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT 1 FROM usuarios_registrados WHERE username = ? LIMIT 1;",
+            (nombre,),
+        )
+        if cursor.fetchone():
+            return {
+                "exito": False,
+                "mensaje": "Ese nombre de usuario ya está registrado.",
+            }
+
+    if _username_existe_en_usuarios_publicos(nombre):
+        return {
+            "exito": False,
+            "mensaje": "Ese nombre de usuario no está disponible.",
+        }
+
+    # gensalt() usa cost factor 12 por defecto.
+    hash_bytes = bcrypt.hashpw(clave.encode("utf-8"), bcrypt.gensalt())
+    password_hash = hash_bytes.decode("utf-8")
+    marca = marca_ahora()
+
+    try:
+        with obtener_conexion_users() as conexion:
+            cursor = conexion.cursor()
+            cursor.execute(
+                """
+                INSERT INTO usuarios_registrados (
+                    username, password_hash, fecha_registro, activo
+                ) VALUES (?, ?, ?, 1);
+                """,
+                (nombre, password_hash, marca),
+            )
+            conexion.commit()
+    except sqlite3.IntegrityError:
+        return {
+            "exito": False,
+            "mensaje": "Ese nombre de usuario ya está registrado.",
+        }
+
+    return {"exito": True}
+
+
+def verificar_usuario_registrado(username, password):
+    """
+    Valida credenciales contra usuarios_registrados (bcrypt).
+
+    Returns:
+        dict | None: {"username": str, "rol": "usuario"} si es correcto; None si falla.
+    """
+    nombre = (username or "").strip()
+    clave = password or ""
+    if not nombre or not clave:
+        return None
+
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT username, password_hash
+            FROM usuarios_registrados
+            WHERE username = ? AND activo = 1
+            LIMIT 1;
+            """,
+            (nombre,),
+        )
+        fila = cursor.fetchone()
+
+    if fila is None:
+        return None
+
+    try:
+        hash_almacenado = fila["password_hash"].encode("utf-8")
+        if not bcrypt.checkpw(clave.encode("utf-8"), hash_almacenado):
+            return None
+    except (ValueError, TypeError):
+        return None
+
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "UPDATE usuarios_registrados SET ultimo_login = ? WHERE username = ?;",
+            (marca_ahora(), nombre),
+        )
+        conexion.commit()
+
+    return {"username": fila["username"], "rol": ROL_USUARIO_NORMAL}
 
 
 def generar_flag_ctf_aleatoria():
