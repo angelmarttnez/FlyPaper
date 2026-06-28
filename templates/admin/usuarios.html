@@ -49,6 +49,9 @@ tr:hover td{background:#1c2128}
 .badge-soporte{background:#6e768133;color:#8b949e;border:1px solid #6e768155}
 .badge-default{background:#8b949e33;color:#8b949e;border:1px solid #30363d}
 .empty{padding:40px;text-align:center;color:#8b949e}
+.card-info .info-body{padding:20px;font-size:14px}
+.card-info .info-body strong{color:#58a6ff}
+.card-info .info-note{color:#8b949e;font-size:13px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -132,6 +135,15 @@ tr:hover td{background:#1c2128}
     {% else %}
     <p class="empty">No hay usuarios en la base de datos.</p>
     {% endif %}
+  </div>
+  <div class="card card-info">
+    <div class="toolbar">
+      <span>Registro público (/register)</span>
+    </div>
+    <div class="info-body">
+      <p>Usuarios registrados: <strong>{{ stats_registrados.total }}</strong> / {{ stats_registrados.limite }}</p>
+      <p class="info-note">Cuentas reales en flypaper_users.db. No se muestran nombres ni datos personales.</p>
+    </div>
   </div>
 </main>
 </body>

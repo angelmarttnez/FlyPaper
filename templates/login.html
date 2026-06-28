@@ -170,9 +170,10 @@
       <button type="submit">Iniciar sesión</button>
     </form>
 
-    <p class="auth-links">
-      <a href="{% if destino_siguiente %}/register?next={{ destino_siguiente|urlencode }}{% else %}/register{% endif %}">Crear cuenta</a>
-    </p>
+    <div style="text-align:center; margin-top:12px; font-size:13px; color:#94a3b8">
+      ¿No tienes cuenta?
+      <a href="{% if destino_siguiente %}/register?next={{ destino_siguiente|urlencode }}{% else %}/register{% endif %}" style="color:#3b82f6; font-weight:500">Regístrate</a>
+    </div>
     <a href="/" class="btn-volver">Volver al inicio</a>
   </div>
 
