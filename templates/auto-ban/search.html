@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FlyPaper · Búsqueda interna</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a1124;
+    color: #e6ecff;
+    min-height: 100vh;
+  }
+  .navbar {
+    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
+    border-bottom: 1px solid #1f2742;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+  }
+  .navbar .logo {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.5px;
+  }
+  .navbar .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
+  .nav-links { display: flex; gap: 8px; list-style: none; }
+  .nav-links a {
+    color: #b4b8c5;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover { background: #1a2138; color: #fff; }
+  main {
+    padding: 40px 32px;
+    max-width: 1100px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  h1 { font-size: 26px; font-weight: 600; margin-bottom: 6px; }
+  .subtitle { color: #8aa0c8; font-size: 14px; margin-bottom: 28px; }
+  form.search {
+    display: flex;
+    gap: 10px;
+    background: rgba(15, 25, 51, 0.7);
+    border: 1px solid rgba(120, 160, 255, 0.15);
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 28px;
+  }
+  form.search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 15px;
+  }
+  form.search button {
+    background: linear-gradient(135deg, #4f7cff, #2547c9);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .sql-error {
+    background: rgba(220, 50, 70, 0.12);
+    border: 1px solid rgba(220, 50, 70, 0.45);
+    border-left: 4px solid #ef4444;
+    color: #ff9aa8;
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .sql-error strong { color: #ff7080; display: block; margin-bottom: 8px; }
+  .results {
+    background: rgba(15, 25, 51, 0.6);
+    border: 1px solid rgba(120, 160, 255, 0.12);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .results-header {
+    padding: 16px 22px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .results-header h2 { font-size: 15px; font-weight: 600; }
+  .results-header .count { color: #8aa0c8; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    text-align: left;
+    padding: 14px 22px;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(120, 160, 255, 0.06);
+  }
+  th {
+    color: #8aa0c8;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    background: rgba(10, 17, 36, 0.4);
+  }
+  tbody tr:hover { background: rgba(79, 124, 255, 0.05); }
+  .empty { text-align: center; color: #8aa0c8; padding: 28px; }
+  .excerpt { color: #b8c8e8; max-width: 480px; }
+  footer {
+    text-align: center;
+    padding: 24px;
+    color: #5f7299;
+    font-size: 12px;
+    border-top: 1px solid rgba(120, 160, 255, 0.08);
+  }
+</style>
+</head>
+<body>
+  {% include 'auto-ban/navbar.html' %}
+
+  <main>
+    <h1>Búsqueda interna</h1>
+    <p class="subtitle">Busca en publicaciones del blog (columnas: id, título, contenido, autor).</p>
+
+    <form class="search" method="POST" action="/secure/search">
+      <input type="text" name="query" placeholder="Buscar en títulos y contenido..." value="{{ query or '' }}" autocomplete="off" />
+      <button type="submit">Buscar</button>
+    </form>
+
+    {% if error_sql %}
+    <div class="sql-error" role="alert">
+      <strong>Error de base de datos (SQLite):</strong>
+      {{ error_sql }}
+    </div>
+    {% endif %}
+
+    {% if query is defined or error_sql %}
+    <section class="results">
+      <div class="results-header">
+        <h2>Resultados de búsqueda</h2>
+        <span class="count">{{ total_resultados or 0 }} coincidencia(s)</span>
+      </div>
+      {% if resultados and resultados|length > 0 %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Título</th>
+            <th>Contenido</th>
+            <th>Autor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in resultados %}
+          <tr>
+            <td>{{ fila.id }}</td>
+            <td>{{ fila.titulo }}</td>
+            <td class="excerpt">{% set txt = fila.contenido or '' %}{{ txt[:120] }}{% if txt|length > 120 %}…{% endif %}</td>
+            <td>{{ fila.autor }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No se encontraron publicaciones para esta consulta.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+
+  <footer>© 2026 Portal corporativo. Todos los derechos reservados.</footer>
+</body>
+</html>
