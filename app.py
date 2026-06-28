@@ -107,6 +107,12 @@ from database import (
     obtener_ips_distintas_eventos,
 )
 from ai_analyzer import analizar_payload, generar_resumen_diario, detectar_anomalias
+from telegram_notifier import (
+    notificar_ataque_critico,
+    notificar_login_admin,
+    notificar_login_monitor,
+    notificar_resumen_diario,
+)
 from detector import (
     GRAVEDAD_CRITICA,
     TIPO_TRAFICO_NORMAL,
@@ -142,6 +148,10 @@ cache_geoip = {}
 
 # Último resultado de detección de anomalías (actualizado por el hilo de fondo).
 _cache_anomalias = {"datos": None, "actualizado_en": None}
+
+# Control de spam en notificaciones Telegram de ataques críticos (1 por IP / 5 min).
+ultima_notif_critica = {}
+VENTANA_NOTIF_CRITICA_TELEGRAM_SEG = 5 * 60
 
 # Timestamps de comentarios enviados por IP (anti-spam en memoria).
 # Ejemplo: {"203.0.113.5": [datetime, datetime, ...]}
@@ -567,6 +577,11 @@ def _generar_y_guardar_resumen_automatico(fecha):
                 len(texto),
             )
             _ultima_fecha_resumen_auto = fecha
+            threading.Thread(
+                target=notificar_resumen_diario,
+                args=(fecha, texto, total),
+                daemon=True,
+            ).start()
         else:
             registrar_resumen_log(fecha, "automatico", total, 0, ok=False)
     except Exception as exc:
@@ -1076,6 +1091,47 @@ def _payload_registro_vacio(payload):
     if isinstance(payload, dict):
         return len(payload) == 0
     return False
+
+
+def _notificar_en_hilo(callback, *args, **kwargs):
+    """Ejecuta una notificación Telegram en segundo plano sin bloquear la respuesta HTTP."""
+    threading.Thread(target=callback, args=args, kwargs=kwargs, daemon=True).start()
+
+
+def _encolar_notificacion_ataque_critico(ip, tipo_ataque, ruta, payload, timestamp=None):
+    """
+    Envía alerta Telegram por ataque crítico en ámbito público.
+
+    Limita a una notificación por IP cada VENTANA_NOTIF_CRITICA_TELEGRAM_SEG segundos.
+    """
+    if (tipo_ataque or "").strip() == TIPO_TRAFICO_NORMAL:
+        return
+
+    ahora = ahora_naive()
+    ultima_marca = ultima_notif_critica.get(ip)
+    if ultima_marca is not None:
+        if (ahora - ultima_marca).total_seconds() < VENTANA_NOTIF_CRITICA_TELEGRAM_SEG:
+            return
+
+    ultima_notif_critica[ip] = ahora
+    marca = timestamp or marca_ahora()
+
+    if isinstance(payload, dict):
+        payload_texto = json.dumps(payload, ensure_ascii=False)
+    else:
+        payload_texto = str(payload or "")
+
+    threading.Thread(
+        target=notificar_ataque_critico,
+        args=(
+            tipo_ataque,
+            ip,
+            ruta,
+            payload_texto[:120],
+            marca,
+        ),
+        daemon=True,
+    ).start()
 
 
 def construir_payload_url_404():
@@ -1615,6 +1671,20 @@ def registrar_evento_honeypot(respuesta):
     if peticion_id and evento_id:
         vincular_registro_peticion_evento(peticion_id, evento_id)
 
+    # Alerta Telegram: ataques críticos en tráfico público (máx. 1 por IP / 5 min).
+    if (
+        gravedad_evento == GRAVEDAD_CRITICA
+        and ambito_evento == "publico"
+        and tipo_ataque_detectado != TIPO_TRAFICO_NORMAL
+    ):
+        _encolar_notificacion_ataque_critico(
+            ip_visitante,
+            tipo_ataque_detectado,
+            ruta_visitada,
+            payload_peticion,
+            marca_ahora(),
+        )
+
     return respuesta
 
 
@@ -1742,6 +1812,12 @@ def procesar_admin_login():
     cuenta_admin = verificar_admin_panel_privado(usuario_enviado, contrasena_enviada)
     if cuenta_admin is not None:
         _iniciar_sesion_admin_panel(cuenta_admin["username"])
+        _notificar_en_hilo(
+            notificar_login_admin,
+            cuenta_admin["username"],
+            ip_peticion,
+            marca_ahora(),
+        )
         destino = cuenta_admin.get("redirige") or "/admin"
         return redirect(destino)
 
@@ -2381,6 +2457,16 @@ def procesar_busqueda():
         ambito="publico",
     )
 
+    # POST /search omite after_request; notificar aquí si es ataque crítico.
+    if gravedad == GRAVEDAD_CRITICA and tipo_ataque != TIPO_TRAFICO_NORMAL:
+        _encolar_notificacion_ataque_critico(
+            obtener_ip_cliente(),
+            tipo_ataque,
+            "/search",
+            payload_registro,
+            marca_ahora(),
+        )
+
     return _plantilla_publica(
         "search.html",
         nav_activo="search",
@@ -2574,6 +2660,16 @@ def pagina_no_encontrada(e):
         ambito="publico",
     )
     g.evento_404_publico_registrado = True
+
+    # Notificación Telegram si el 404 público se clasifica como ataque crítico.
+    if gravedad == GRAVEDAD_CRITICA and tipo != TIPO_TRAFICO_NORMAL:
+        _encolar_notificacion_ataque_critico(
+            ip,
+            tipo,
+            ruta,
+            {"url_intentada": url_completa},
+            marca_ahora(),
+        )
 
     return render_template("404.html"), 404
 
@@ -2832,6 +2928,12 @@ def monitor_login_post():
     cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
     if cuenta_priv is not None and cuenta_priv.get("rol") == ROL_PRIV_MONITOR:
         session["analyst"] = True
+        _notificar_en_hilo(
+            notificar_login_monitor,
+            "analyst",
+            obtener_ip_cliente(),
+            marca_ahora(),
+        )
         return redirect(url_for("monitor_dashboard"))
 
     # Fallo: misma URL con query para que la plantilla muestre el error.
