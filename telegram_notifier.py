@@ -156,6 +156,26 @@ def notificar_nuevo_registro(username, ip, timestamp):
     enviar_notificacion_telegram(mensaje, message_thread_id=TELEGRAM_TOPIC_LOGINS)
 
 
+def notificar_flag_resuelta(username, reto_nombre, puntos, timestamp):
+    """Avisa en el topic de logins cuando un jugador captura una flag CTF."""
+    usuario_seguro = html.escape(str(username or ""))
+    reto_seguro = html.escape(str(reto_nombre or ""))
+    puntos_seguros = html.escape(str(puntos if puntos is not None else ""))
+    hora_segura = html.escape(str(timestamp or ""))
+
+    mensaje = (
+        "🚩 <b>Flag Capturada</b>\n"
+        f"👤 Usuario: <code>{usuario_seguro}</code>\n"
+        f"🎯 Reto: <code>{reto_seguro}</code>\n"
+        f"⭐ Puntos: <code>{puntos_seguros}</code>\n"
+        f"🕐 Hora: <code>{hora_segura}</code>"
+    )
+    enviar_notificacion_telegram(
+        mensaje,
+        message_thread_id=TELEGRAM_TOPIC_LOGINS,
+    )
+
+
 def notificar_ataque_critico(tipo_ataque, ip, ruta, payload, timestamp):
     """Avisa en el topic de ataques de un incidente con gravedad Crítica."""
     tipo_seguro = html.escape(str(tipo_ataque or ""))
