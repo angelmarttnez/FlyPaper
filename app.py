@@ -83,6 +83,9 @@ from database import (
     contar_usuarios_registrados,
     limpiar_usuarios_inactivos,
     LIMITE_USUARIOS_REGISTRADOS,
+    obtener_puntos_usuario,
+    obtener_ranking_ctf,
+    obtener_completados_por_reto,
     verificar_credencial_usuario_bd,
     obtener_usuarios_para_panel_admin,
     ROL_PRIV_MONITOR,
@@ -116,6 +119,7 @@ from telegram_notifier import (
     notificar_login_admin,
     notificar_login_monitor,
     notificar_nuevo_registro,
+    notificar_flag_resuelta,
     notificar_resumen_diario,
 )
 from detector import (
@@ -164,6 +168,14 @@ cache_geoip = {}
 
 # Último resultado de detección de anomalías (actualizado por el hilo de fondo).
 _cache_anomalias = {"datos": None, "actualizado_en": None}
+
+# Caché del ranking CTF público (/api/ranking-ctf).
+_cache_ranking = {"datos": None, "actualizado_en": None}
+TTL_RANKING = 300
+
+# Caché de completados por reto (/api/completados-por-reto).
+_cache_completados = {"datos": None, "actualizado_en": None}
+TTL_COMPLETADOS = 300
 
 # Control de spam en notificaciones Telegram de ataques críticos (1 por IP / 5 min).
 ultima_notif_critica = {}
@@ -2743,6 +2755,17 @@ def pagina_no_encontrada(e):
     return render_template("404.html"), 404
 
 
+def _invalidar_cache_ranking():
+    """
+    Vacía la caché del ranking y de completados por reto.
+
+    Se invoca al resolver una flag por primera vez o al reiniciar progreso CTF.
+    """
+    global _cache_ranking, _cache_completados
+    _cache_ranking = {"datos": None, "actualizado_en": None}
+    _cache_completados = {"datos": None, "actualizado_en": None}
+
+
 @aplicacion.get("/objetivos")
 @limiter.limit("30 per minute")
 def pagina_objetivos():
@@ -2753,6 +2776,9 @@ def pagina_objetivos():
     flags = obtener_flags_con_estado_por_usuario(usuario_id)
     resueltas = contar_flags_resueltas_por_usuario(usuario_id)
     total = len(flags)
+    ranking = obtener_ranking_ctf(limite=20)
+    completados_por_reto = obtener_completados_por_reto()
+    puntos_usuario_actual = obtener_puntos_usuario(usuario_id)
 
     return _plantilla_publica(
         "objetivos.html",
@@ -2760,8 +2786,68 @@ def pagina_objetivos():
         flags=flags,
         resueltas=resueltas,
         total=total if total else 2,
+        ranking=ranking,
+        completados_por_reto=completados_por_reto,
+        puntos_usuario_actual=puntos_usuario_actual,
         reto_sqli_titulo=RETO_CTF_SQLI,
     )
+
+
+@aplicacion.get("/api/ranking-ctf")
+@limiter.limit("60 per minute")
+def api_ranking_ctf():
+    """
+    API pública con el top 20 del ranking CTF (solo usuarios registrados).
+
+    Respuesta cacheada en memoria 5 minutos para reducir carga en SQLite.
+    """
+    ahora = ahora_naive()
+    if (
+        _cache_ranking["datos"] is not None
+        and _cache_ranking["actualizado_en"] is not None
+        and (ahora - _cache_ranking["actualizado_en"]).total_seconds() < TTL_RANKING
+    ):
+        return jsonify(_cache_ranking["datos"])
+
+    ranking = obtener_ranking_ctf(limite=20)
+    datos = {
+        "ranking": [
+            {
+                "posicion": jugador["posicion"],
+                "username": jugador["username"],
+                "puntos": jugador["puntos"],
+                "retos": jugador["retos"],
+                "ultimo_completado": jugador.get("ultimo_completado") or "",
+            }
+            for jugador in ranking
+        ]
+    }
+    _cache_ranking["datos"] = datos
+    _cache_ranking["actualizado_en"] = ahora
+    return jsonify(datos)
+
+
+@aplicacion.get("/api/completados-por-reto")
+@limiter.limit("60 per minute")
+def api_completados_por_reto():
+    """
+    API pública con usuarios registrados que completaron cada reto.
+
+    Respuesta cacheada en memoria 5 minutos (se invalida al resolver flags).
+    """
+    ahora = ahora_naive()
+    if (
+        _cache_completados["datos"] is not None
+        and _cache_completados["actualizado_en"] is not None
+        and (ahora - _cache_completados["actualizado_en"]).total_seconds()
+        < TTL_COMPLETADOS
+    ):
+        return jsonify(_cache_completados["datos"])
+
+    datos = obtener_completados_por_reto()
+    _cache_completados["datos"] = datos
+    _cache_completados["actualizado_en"] = ahora
+    return jsonify(datos)
 
 
 @aplicacion.post("/objetivos/submit")
@@ -2780,6 +2866,20 @@ def objetivos_submit():
 
     usuario_id = session.get("usuario") or ""
     resultado = enviar_flag_por_usuario(usuario_id, flag_enviada)
+
+    if resultado.get("exito") is True and resultado.get("ya_resuelta") is False:
+        _invalidar_cache_ranking()
+        threading.Thread(
+            target=notificar_flag_resuelta,
+            args=(
+                session.get("usuario"),
+                resultado.get("reto_nombre"),
+                resultado.get("puntos"),
+                marca_ahora(),
+            ),
+            daemon=True,
+        ).start()
+
     return jsonify(resultado)
 
 
@@ -2793,6 +2893,7 @@ def objetivos_reset_progreso():
     usuario_id = session.get("usuario") or ""
     reiniciar_progreso_ctf_por_usuario(usuario_id)
     total = len(obtener_flags_publicas())
+    _invalidar_cache_ranking()
     return jsonify(
         {
             "exito": True,

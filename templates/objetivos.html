@@ -363,6 +363,27 @@
     background: rgba(0, 255, 140, 0.08);
   }
   .btn-reset-retos:disabled { opacity: 0.5; cursor: wait; }
+
+  .ranking { margin-top: 48px; }
+  .ranking h2 { font-size: 22px; margin-bottom: 8px; color: #fff; }
+  .ranking .subtitle { color: #7a9b8a; font-size: 14px; margin-bottom: 0; }
+  .ranking table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  .ranking th {
+    color: #8b949e; font-size: 12px; text-transform: uppercase;
+    padding: 8px; border-bottom: 1px solid #21262d; text-align: left;
+  }
+  .ranking td { padding: 10px 8px; border-bottom: 1px solid #21262d; font-size: 14px; }
+  .fila-actual { background: rgba(88,166,255,0.08); font-weight: 600; }
+  .tus-puntos { margin-top: 12px; text-align: center; color: #58a6ff; font-size: 14px; }
+  .completados-lista { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .completado-badge {
+    background: rgba(63,185,80,0.12); color: #3fb950;
+    border: 1px solid rgba(63,185,80,0.3);
+    padding: 3px 8px; border-radius: 4px; font-size: 11px;
+  }
+  .completado-mas { color: #8b949e; font-size: 11px; padding: 3px 0; }
+  .sin-completados { color: #8b949e; font-size: 12px; margin-top: 8px; font-style: italic; }
+  .ranking-estado { font-size: 11px; color: #5a7a6a; margin-left: 6px; font-weight: 400; }
 </style>
 </head>
 <body class="nav-tema-ctf">
@@ -430,6 +451,26 @@
         {% else %}
         <div class="hint">{{ flag.pista }}</div>
         {% endif %}
+        {% if completados_por_reto.get(flag.reto_nombre) %}
+        <div class="completados-contenedor">
+        <div class="completados-lista">
+          {% for c in completados_por_reto[flag.reto_nombre][:5] %}
+          <span class="completado-badge">
+            ✓ {{ c.username }} · {{ c.fecha[:10] }}
+          </span>
+          {% endfor %}
+          {% if completados_por_reto[flag.reto_nombre]|length > 5 %}
+          <span class="completado-mas">
+            +{{ completados_por_reto[flag.reto_nombre]|length - 5 }} más
+          </span>
+          {% endif %}
+        </div>
+        </div>
+        {% else %}
+        <div class="completados-contenedor">
+        <div class="sin-completados">Nadie ha completado este reto aún</div>
+        </div>
+        {% endif %}
       </div>
       {% else %}
       <div style="grid-column:1/-1;text-align:center;padding:40px;color:#5a7a6a;">No hay retos disponibles.</div>
@@ -445,6 +486,46 @@
       </form>
       <div class="result" id="result"></div>
     </section>
+
+    <section class="ranking" data-total-retos="{{ total }}" data-usuario-actual="{% if sesion_logueado %}{{ sesion_etiqueta }}{% endif %}">
+      <h2>🏆 Tabla de Clasificación</h2>
+      <p class="subtitle">Top 20 — Solo usuarios registrados<span id="ranking-estado" class="ranking-estado"></span></p>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Usuario</th>
+            <th>Puntos</th>
+            <th>Retos</th>
+            <th>Último logro</th>
+          </tr>
+        </thead>
+        <tbody id="ranking-tbody">
+          {% for jugador in ranking %}
+          <tr class="{{ 'fila-actual' if jugador.username == sesion_etiqueta else '' }}">
+            <td>
+              {% if jugador.posicion == 1 %}🥇
+              {% elif jugador.posicion == 2 %}🥈
+              {% elif jugador.posicion == 3 %}🥉
+              {% else %}{{ jugador.posicion }}
+              {% endif %}
+            </td>
+            <td>{{ jugador.username }}</td>
+            <td><b>{{ jugador.puntos }} pts</b></td>
+            <td>{{ jugador.retos }}/{{ total }}</td>
+            <td>{{ jugador.ultimo_completado[:10] }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">Sé el primero en completar un reto</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if puntos_usuario_actual > 0 %}
+      <p class="tus-puntos" id="tus-puntos-el">Tus puntos: <b>{{ puntos_usuario_actual }} pts</b></p>
+      {% else %}
+      <p class="tus-puntos" id="tus-puntos-el" style="display:none"></p>
+      {% endif %}
+    </section>
   </main>
 
   <script>
@@ -452,6 +533,109 @@
     const input = document.getElementById('flagInput');
     const result = document.getElementById('result');
     const btn = form.querySelector('button');
+
+    const seccionRanking = document.querySelector('.ranking');
+    const USUARIO_ACTUAL = seccionRanking?.dataset.usuarioActual || '';
+    const TOTAL_RETOS = Number(seccionRanking?.dataset.totalRetos) || 0;
+
+    function escapeHtml(texto) {
+      return String(texto)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function medallaPosicion(pos) {
+      if (pos === 1) return '🥇';
+      if (pos === 2) return '🥈';
+      if (pos === 3) return '🥉';
+      return String(pos);
+    }
+
+    function renderRankingTabla(ranking) {
+      const tbody = document.getElementById('ranking-tbody');
+      if (!tbody) return;
+      if (!ranking.length) {
+        tbody.innerHTML = '<tr><td colspan="5">Sé el primero en completar un reto</td></tr>';
+        return;
+      }
+      tbody.innerHTML = ranking.map((j) => {
+        const filaActual = USUARIO_ACTUAL && j.username === USUARIO_ACTUAL
+          ? ' class="fila-actual"' : '';
+        const ultimo = j.ultimo_completado
+          ? String(j.ultimo_completado).slice(0, 10) : '—';
+        return `<tr${filaActual}>
+          <td>${medallaPosicion(j.posicion)}</td>
+          <td>${escapeHtml(j.username)}</td>
+          <td><b>${j.puntos} pts</b></td>
+          <td>${j.retos}/${TOTAL_RETOS}</td>
+          <td>${escapeHtml(ultimo)}</td>
+        </tr>`;
+      }).join('');
+
+      if (USUARIO_ACTUAL) {
+        const jugador = ranking.find((j) => j.username === USUARIO_ACTUAL);
+        const elPuntos = document.getElementById('tus-puntos-el');
+        if (elPuntos && jugador) {
+          elPuntos.style.display = '';
+          elPuntos.innerHTML = `Tus puntos: <b>${jugador.puntos} pts</b>`;
+        }
+      }
+    }
+
+    async function cargarRanking() {
+      const estado = document.getElementById('ranking-estado');
+      if (estado) estado.textContent = ' · actualizando…';
+      try {
+        const res = await fetch('/api/ranking-ctf');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        renderRankingTabla(data.ranking || []);
+      } catch (err) {
+        // Mantener la tabla anterior si falla el fetch.
+      } finally {
+        if (estado) estado.textContent = '';
+      }
+    }
+
+    function renderCompletadosReto(contenedor, lista) {
+      if (!contenedor) return;
+      if (!lista || !lista.length) {
+        contenedor.innerHTML = '<div class="sin-completados">Nadie ha completado este reto aún</div>';
+        return;
+      }
+      const visibles = lista.slice(0, 5);
+      let html = '<div class="completados-lista">';
+      visibles.forEach((c) => {
+        const fecha = c.fecha ? String(c.fecha).slice(0, 10) : '—';
+        html += `<span class="completado-badge">✓ ${escapeHtml(c.username)} · ${escapeHtml(fecha)}</span>`;
+      });
+      if (lista.length > 5) {
+        html += `<span class="completado-mas">+${lista.length - 5} más</span>`;
+      }
+      html += '</div>';
+      contenedor.innerHTML = html;
+    }
+
+    function renderCompletadosPorReto(completadosPorReto) {
+      document.querySelectorAll('.challenge[data-reto]').forEach((card) => {
+        const reto = card.dataset.reto;
+        const contenedor = card.querySelector('.completados-contenedor');
+        renderCompletadosReto(contenedor, completadosPorReto[reto] || []);
+      });
+    }
+
+    async function cargarCompletados() {
+      try {
+        const res = await fetch('/api/completados-por-reto');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        renderCompletadosPorReto(data || {});
+      } catch (err) {
+        // Mantener badges anteriores si falla el fetch.
+      }
+    }
 
     function actualizarProgresoUI(resueltas, total) {
       const elRes = document.getElementById('contador-resueltas');
@@ -500,6 +684,8 @@
         if (data.exito === true) {
           desmarcarTodosLosRetos();
           actualizarProgresoUI(data.resueltas ?? 0, data.total ?? 0);
+          cargarRanking();
+          cargarCompletados();
           result.className = 'result show success';
           result.textContent = 'Correcto: ' + (data.mensaje || 'Progreso restablecido.');
         } else {
@@ -551,6 +737,17 @@
           if (data.resueltas !== undefined && data.total !== undefined) {
             actualizarProgresoUI(data.resueltas, data.total);
           }
+          if (!data.ya_resuelta) {
+            cargarRanking();
+            cargarCompletados();
+            const elPuntos = document.getElementById('tus-puntos-el');
+            if (elPuntos && data.puntos) {
+              const match = elPuntos.textContent.match(/(\d+)/);
+              const actual = match ? parseInt(match[1], 10) : 0;
+              elPuntos.style.display = '';
+              elPuntos.innerHTML = `Tus puntos: <b>${actual + Number(data.puntos)} pts</b>`;
+            }
+          }
           input.value = '';
         }
       } catch (err) {
@@ -560,6 +757,11 @@
         btn.disabled = false;
       }
     });
+
+    cargarRanking();
+    cargarCompletados();
+    setInterval(cargarRanking, 30000);
+    setInterval(cargarCompletados, 30000);
   </script>
 </body>
 </html>

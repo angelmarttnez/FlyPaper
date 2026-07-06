@@ -144,6 +144,13 @@
   footer .links a{color:var(--blue);font-family:'JetBrains Mono',monospace;font-size:12px}
   footer .links a:hover{text-decoration:underline}
 
+  .ranking-preview { max-width: 400px; margin: 0 auto; text-align: center; }
+  .ranking-item {
+    display: flex; justify-content: space-between;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+
   @media(max-width:768px){
     .grid-features{grid-template-columns:1fr}
     h1{font-size:36px}
@@ -242,6 +249,16 @@
   </div>
 </section>
 
+<section>
+  <div class="section-head">
+    <h2>🏆 CTF — Tabla de Clasificación</h2>
+    <p>Los mejores jugadores del laboratorio FlyPaper.</p>
+  </div>
+  <div class="ranking-preview">
+    <div id="ranking-container">Cargando...</div>
+  </div>
+</section>
+
 <footer>
   <div>FlyPaper Corp © 2026 — Solo uso interno. Toda la actividad es monitorizada y registrada.</div>
   <div class="links">
@@ -264,6 +281,44 @@
     s.style.transform=`scale(${scale})`;
     p.appendChild(s);
   }
+
+  // Ranking CTF (top 3 desde API pública, actualización cada 30 s)
+  function renderRankingIndex(ranking) {
+    const contenedor = document.getElementById('ranking-container');
+    if (!contenedor) return;
+    const top3 = (ranking || []).slice(0, 3);
+    if (top3.length === 0) {
+      contenedor.innerHTML = '<p style="color:#8b949e">Sé el primero en completar un reto</p>';
+      return;
+    }
+    const medallas = ['🥇', '🥈', '🥉'];
+    contenedor.innerHTML = top3.map((j, i) => (
+      `<div class="ranking-item">
+        <span>${medallas[i]} ${j.username}</span>
+        <span><b>${j.puntos} pts</b></span>
+      </div>`
+    )).join('');
+  }
+
+  let rankingIndexCargado = false;
+
+  async function cargarRankingIndex() {
+    try {
+      const res = await fetch('/api/ranking-ctf');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      renderRankingIndex(data.ranking);
+      rankingIndexCargado = true;
+    } catch (err) {
+      const contenedor = document.getElementById('ranking-container');
+      if (contenedor && !rankingIndexCargado) {
+        contenedor.innerHTML = '<p style="color:#8b949e">No disponible</p>';
+      }
+    }
+  }
+
+  cargarRankingIndex();
+  setInterval(cargarRankingIndex, 30000);
 </script>
 </body>
 </html>
