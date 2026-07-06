@@ -2803,6 +2803,127 @@ def obtener_flags_con_estado_por_usuario(usuario_id):
     return flags
 
 
+def _usernames_registrados_set():
+    """
+    Conjunto de nombres de usuario en flypaper_users.db (activos).
+
+    El ranking CTF solo incluye jugadores con cuenta real en /register.
+    """
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "SELECT username FROM usuarios_registrados WHERE activo = 1;"
+        )
+        return {fila["username"] for fila in cursor.fetchall()}
+
+
+def obtener_ranking_ctf(limite=20):
+    """
+    Top de jugadores por puntos CTF (solo usuarios registrados en flypaper_users.db).
+
+    Une objetivos_completados con flags en flypaper.db y filtra cuentas reales.
+
+    Returns:
+        list[dict]: username, puntos, retos, ultimo_completado, posicion.
+    """
+    consulta = """
+    SELECT
+        oc.usuario_id AS username,
+        SUM(f.puntos) AS puntos_totales,
+        COUNT(oc.flag_id) AS retos_completados,
+        MAX(oc.fecha) AS ultimo_completado
+    FROM objetivos_completados oc
+    JOIN flags f ON f.id = oc.flag_id
+    GROUP BY oc.usuario_id
+    ORDER BY puntos_totales DESC, ultimo_completado ASC
+    LIMIT ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (limite,))
+        filas = cursor.fetchall()
+
+    registrados = _usernames_registrados_set()
+    ranking = []
+    for fila in filas:
+        username = fila["username"]
+        if username not in registrados:
+            continue
+        ranking.append(
+            {
+                "username": username,
+                "puntos": int(fila["puntos_totales"] or 0),
+                "retos": int(fila["retos_completados"] or 0),
+                "ultimo_completado": fila["ultimo_completado"] or "",
+            }
+        )
+
+    for posicion, entrada in enumerate(ranking, start=1):
+        entrada["posicion"] = posicion
+
+    return ranking
+
+
+def obtener_completados_por_reto():
+    """
+    Usuarios registrados que completaron cada reto, agrupados por nombre del reto.
+
+    Returns:
+        dict[str, list[dict]]: reto_nombre → [{username, fecha}, ...]
+    """
+    consulta = """
+    SELECT f.reto_nombre, oc.usuario_id, oc.fecha
+    FROM objetivos_completados oc
+    JOIN flags f ON f.id = oc.flag_id
+    ORDER BY f.id ASC, oc.fecha ASC;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta)
+        filas = cursor.fetchall()
+
+    registrados = _usernames_registrados_set()
+    agrupado = {}
+    for fila in filas:
+        username = fila["usuario_id"]
+        if username not in registrados:
+            continue
+        reto = fila["reto_nombre"]
+        agrupado.setdefault(reto, []).append(
+            {
+                "username": username,
+                "fecha": fila["fecha"] or "",
+            }
+        )
+    return agrupado
+
+
+def obtener_puntos_usuario(usuario_id):
+    """
+    Suma de puntos CTF de un usuario en objetivos_completados.
+
+    Returns:
+        int: Total de puntos (0 si no tiene retos completados).
+    """
+    if not usuario_id:
+        return 0
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT SUM(f.puntos) AS puntos_totales
+            FROM objetivos_completados oc
+            JOIN flags f ON f.id = oc.flag_id
+            WHERE oc.usuario_id = ?;
+            """,
+            (usuario_id,),
+        )
+        fila = cursor.fetchone()
+    if fila is None or fila["puntos_totales"] is None:
+        return 0
+    return int(fila["puntos_totales"])
+
+
 def enviar_flag(ip, flag_texto):
     """
     Valida y registra una flag enviada por el jugador.
