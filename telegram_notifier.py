@@ -156,6 +156,45 @@ def notificar_nuevo_registro(username, ip, timestamp):
     enviar_notificacion_telegram(mensaje, message_thread_id=TELEGRAM_TOPIC_LOGINS)
 
 
+def enviar_codigo_2fa(username, codigo, ip):
+    """Envía el código OTP de verificación en dos pasos al topic de logins."""
+    usuario_seguro = html.escape(str(username or ""))
+    codigo_seguro = html.escape(str(codigo or ""))
+    ip_segura = html.escape(str(ip or ""))
+
+    mensaje = (
+        "🔐 <b>Código de verificación FlyPaper</b>\n\n"
+        f"👤 Usuario: <code>{usuario_seguro}</code>\n"
+        f"🔑 Código: <b><code>{codigo_seguro}</code></b>\n"
+        f"🌐 IP: <code>{ip_segura}</code>\n"
+        f"⏱ Válido durante 5 minutos\n\n"
+        "<i>Si no has iniciado sesión tú, "
+        "cambia tu contraseña inmediatamente.</i>"
+    )
+    return enviar_notificacion_telegram(
+        mensaje,
+        message_thread_id=TELEGRAM_TOPIC_LOGINS,
+    )
+
+
+def notificar_2fa_fallido(username, ip, intentos):
+    """Avisa en Telegram de un intento fallido de verificación 2FA."""
+    usuario_seguro = html.escape(str(username or ""))
+    ip_segura = html.escape(str(ip or ""))
+    intentos_seguros = html.escape(str(intentos))
+
+    mensaje = (
+        "⚠️ <b>Intento 2FA fallido</b>\n"
+        f"👤 Usuario: <code>{usuario_seguro}</code>\n"
+        f"🌐 IP: <code>{ip_segura}</code>\n"
+        f"❌ Intentos fallidos: <code>{intentos_seguros}</code>"
+    )
+    enviar_notificacion_telegram(
+        mensaje,
+        message_thread_id=TELEGRAM_TOPIC_LOGINS,
+    )
+
+
 def notificar_flag_resuelta(username, reto_nombre, puntos, timestamp):
     """Avisa en el topic de logins cuando un jugador captura una flag CTF."""
     usuario_seguro = html.escape(str(username or ""))
