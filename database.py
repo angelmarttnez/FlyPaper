@@ -1161,6 +1161,14 @@ def _inicializar_bd_privada():
         nombre TEXT,
         email TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS codigos_2fa (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        codigo TEXT NOT NULL,
+        creado_en DATETIME NOT NULL,
+        usado INTEGER DEFAULT 0
+    );
     """
     with obtener_conexion_privada() as conexion:
         conexion.executescript(ddl)
@@ -1320,6 +1328,102 @@ def verificar_admin_panel_privado(username, password):
     if cuenta is None or cuenta.get("rol") != ROL_PRIV_ADMIN_PANEL:
         return None
     return cuenta
+
+
+def generar_codigo_2fa(username):
+    """
+    Genera un código OTP de 6 dígitos para verificación 2FA por Telegram.
+
+    Invalida códigos previos del mismo usuario antes de insertar uno nuevo.
+
+    Returns:
+        str: Código numérico de 6 caracteres.
+    """
+    nombre = (username or "").strip()
+    if not nombre:
+        return None
+
+    codigo = str(secrets.randbelow(1000000)).zfill(6)
+    marca = marca_ahora()
+
+    with obtener_conexion_privada() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            "DELETE FROM codigos_2fa WHERE username = ?;",
+            (nombre,),
+        )
+        cursor.execute(
+            """
+            INSERT INTO codigos_2fa (username, codigo, creado_en, usado)
+            VALUES (?, ?, ?, 0);
+            """,
+            (nombre, codigo, marca),
+        )
+        conexion.commit()
+
+    return codigo
+
+
+def verificar_codigo_2fa(username, codigo_introducido):
+    """
+    Valida un código 2FA pendiente (no usado y con menos de 5 minutos de antigüedad).
+
+    Returns:
+        bool: True si el código es correcto y se marca como usado.
+    """
+    nombre = (username or "").strip()
+    codigo = (codigo_introducido or "").strip()
+    if not nombre or not codigo:
+        return False
+
+    with obtener_conexion_privada() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, creado_en
+            FROM codigos_2fa
+            WHERE username = ? AND usado = 0 AND codigo = ?
+            LIMIT 1;
+            """,
+            (nombre, codigo),
+        )
+        fila = cursor.fetchone()
+        if fila is None:
+            return False
+
+        minutos = minutos_desde_marca(fila["creado_en"])
+        if minutos is None or minutos > 5:
+            return False
+
+        cursor.execute(
+            "UPDATE codigos_2fa SET usado = 1 WHERE id = ?;",
+            (fila["id"],),
+        )
+        conexion.commit()
+
+    return True
+
+
+def limpiar_codigos_2fa_expirados():
+    """
+    Elimina códigos 2FA usados o con más de 10 minutos de antigüedad.
+
+    Returns:
+        int: Filas eliminadas.
+    """
+    limite = formatear_marca(hace_tiempo(minutes=10))
+    with obtener_conexion_privada() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            DELETE FROM codigos_2fa
+            WHERE creado_en < ? OR usado = 1;
+            """,
+            (limite,),
+        )
+        eliminados = cursor.rowcount
+        conexion.commit()
+    return eliminados
 
 
 def crear_usuario_publico(username, password, email=None, nombre=None):
