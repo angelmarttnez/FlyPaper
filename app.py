@@ -78,6 +78,9 @@ from database import (
     reiniciar_progreso_ctf_por_usuario,
     verificar_usuario_privado,
     verificar_admin_panel_privado,
+    generar_codigo_2fa,
+    verificar_codigo_2fa,
+    limpiar_codigos_2fa_expirados,
     registrar_usuario,
     verificar_usuario_registrado,
     contar_usuarios_registrados,
@@ -119,6 +122,8 @@ from telegram_notifier import (
     notificar_login_admin,
     notificar_login_monitor,
     notificar_nuevo_registro,
+    enviar_codigo_2fa,
+    notificar_2fa_fallido,
     notificar_flag_resuelta,
     notificar_resumen_diario,
 )
@@ -144,6 +149,9 @@ from timezone_fp import (
 
 # Intervalo entre ejecuciones del hilo de fondo (limpieza + anomalías IA, 30 minutos).
 INTERVALO_LIMPIEZA_COMENTARIOS_SEG = 30 * 60
+
+# Máximo de intentos fallidos de 2FA antes de invalidar la sesión temporal.
+MAX_INTENTOS_2FA_FALLIDOS = 3
 
 # Nombres reservados: no pueden usarse en el registro público.
 USERNAMES_PROHIBIDOS = frozenset({
@@ -671,6 +679,11 @@ def tarea_periodica_fondo():
                 print(f"[FlyPaper] Usuarios inactivos eliminados: {eliminados}")
             except Exception as exc:
                 print(f"[FlyPaper] Error limpieza usuarios: {exc}")
+            try:
+                codigos_2fa = limpiar_codigos_2fa_expirados()
+                print(f"[FlyPaper] Códigos 2FA expirados eliminados: {codigos_2fa}")
+            except Exception as exc:
+                print(f"[FlyPaper] Error limpieza códigos 2FA: {exc}")
         ciclos += 1
         time.sleep(INTERVALO_LIMPIEZA_COMENTARIOS_SEG)
 
@@ -1749,6 +1762,7 @@ def mostrar_login():
     """
     mensaje_timeout = None
     mensaje_cierre = None
+    mensaje_2fa_bloqueado = None
     if request.args.get("reason") == "timeout":
         mensaje_timeout = (
             "Tu sesión ha expirado por inactividad (15 minutos). "
@@ -1756,6 +1770,10 @@ def mostrar_login():
         )
     elif request.args.get("cerrado") == "1":
         mensaje_cierre = "Has cerrado sesión. Vuelve a iniciar sesión para continuar."
+    elif request.args.get("error") == "2fa":
+        mensaje_2fa_bloqueado = (
+            "Demasiados intentos fallidos. Inicia sesión de nuevo."
+        )
 
     destino_siguiente = _destino_tras_login_seguro(request.args.get("next"))
 
@@ -1764,6 +1782,7 @@ def mostrar_login():
             "login.html",
             mensaje_timeout=mensaje_timeout,
             mensaje_cierre=mensaje_cierre,
+            mensaje_2fa_bloqueado=mensaje_2fa_bloqueado,
             destino_siguiente=destino_siguiente,
         )
     )
@@ -1810,6 +1829,66 @@ def _iniciar_sesion_admin_panel(nombre):
     _marcar_actividad_sesion_publica()
 
 
+def _limpiar_sesion_2fa():
+    """Elimina el estado temporal de verificación en dos pasos."""
+    for clave in (
+        "_2fa_pendiente",
+        "_2fa_username",
+        "_2fa_rol",
+        "_2fa_redirige",
+        "_2fa_intentos_fallidos",
+    ):
+        session.pop(clave, None)
+
+
+def _iniciar_flujo_2fa_privilegiado(cuenta_priv):
+    """
+    Tras validar contraseña de admin/monitor: genera OTP y redirige a verificación.
+
+    No abre sesión hasta completar POST /admin/verificar-2fa.
+    """
+    session["_2fa_pendiente"] = True
+    session["_2fa_username"] = cuenta_priv["username"]
+    session["_2fa_rol"] = cuenta_priv["rol"]
+    session["_2fa_redirige"] = cuenta_priv.get("redirige")
+    session.pop("_2fa_intentos_fallidos", None)
+
+    codigo = generar_codigo_2fa(cuenta_priv["username"])
+    if codigo:
+        threading.Thread(
+            target=enviar_codigo_2fa,
+            args=(cuenta_priv["username"], codigo, obtener_ip_cliente()),
+            daemon=True,
+        ).start()
+
+    return redirect(url_for("verificar_2fa_get"))
+
+
+def _completar_sesion_tras_2fa(username, rol, redirige):
+    """Abre la sesión real del panel o monitor tras verificar el código 2FA."""
+    ip_peticion = obtener_ip_cliente()
+    _limpiar_sesion_2fa()
+
+    if rol == ROL_PRIV_MONITOR:
+        session["analyst"] = True
+        _notificar_en_hilo(
+            notificar_login_monitor,
+            username,
+            ip_peticion,
+            marca_ahora(),
+        )
+        return redirect(redirige or url_for("monitor_dashboard"))
+
+    _iniciar_sesion_admin_panel(username)
+    _notificar_en_hilo(
+        notificar_login_admin,
+        username,
+        ip_peticion,
+        marca_ahora(),
+    )
+    return redirect(redirige or "/admin")
+
+
 @aplicacion.get("/admin/login")
 def mostrar_admin_login():
     """
@@ -1849,17 +1928,51 @@ def procesar_admin_login():
 
     cuenta_admin = verificar_admin_panel_privado(usuario_enviado, contrasena_enviada)
     if cuenta_admin is not None:
-        _iniciar_sesion_admin_panel(cuenta_admin["username"])
-        _notificar_en_hilo(
-            notificar_login_admin,
-            cuenta_admin["username"],
-            ip_peticion,
-            marca_ahora(),
-        )
-        destino = cuenta_admin.get("redirige") or "/admin"
-        return redirect(destino)
+        return _iniciar_flujo_2fa_privilegiado(cuenta_admin)
 
     return redirect(url_for("mostrar_admin_login", error="admin_portal"))
+
+
+@aplicacion.get("/admin/verificar-2fa")
+def verificar_2fa_get():
+    """Formulario de verificación 2FA tras login de admin o monitor."""
+    if not session.get("_2fa_pendiente"):
+        return redirect(url_for("mostrar_login"))
+    return render_template("verificar_2fa.html")
+
+
+@aplicacion.post("/admin/verificar-2fa")
+@limiter.limit("5 per minute")
+def verificar_2fa_post():
+    """Valida el código OTP enviado por Telegram."""
+    if not session.get("_2fa_pendiente"):
+        return redirect(url_for("mostrar_login"))
+
+    codigo = request.form.get("codigo", "").strip()
+    username = session.get("_2fa_username")
+    rol = session.get("_2fa_rol")
+    redirige = session.get("_2fa_redirige")
+    ip_peticion = obtener_ip_cliente()
+
+    if verificar_codigo_2fa(username, codigo):
+        return _completar_sesion_tras_2fa(username, rol, redirige)
+
+    intentos = int(session.get("_2fa_intentos_fallidos") or 0) + 1
+    session["_2fa_intentos_fallidos"] = intentos
+    threading.Thread(
+        target=notificar_2fa_fallido,
+        args=(username, ip_peticion, intentos),
+        daemon=True,
+    ).start()
+
+    if intentos >= MAX_INTENTOS_2FA_FALLIDOS:
+        _limpiar_sesion_2fa()
+        return redirect(url_for("mostrar_login", error="2fa"))
+
+    return render_template(
+        "verificar_2fa.html",
+        error="Código incorrecto o expirado. Solicita uno nuevo.",
+    )
 
 
 @aplicacion.get("/register")
@@ -1945,11 +2058,7 @@ def procesar_login():
     # 1) Cuentas privilegiadas (admin_panel y monitor en flypaper_priv.db).
     cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
     if cuenta_priv is not None:
-        if cuenta_priv.get("rol") == ROL_PRIV_MONITOR:
-            session["analyst"] = True
-            return redirect(cuenta_priv.get("redirige") or "/monitor")
-        _iniciar_sesion_admin_panel(cuenta_priv["username"])
-        return redirect(cuenta_priv.get("redirige") or "/admin")
+        return _iniciar_flujo_2fa_privilegiado(cuenta_priv)
 
     # 2) Usuarios señuelo del CTF (MD5 en flypaper.db).
     cuenta_bd = verificar_credencial_usuario_bd(usuario_enviado, contrasena_enviada)
@@ -3097,14 +3206,7 @@ def monitor_login_post():
 
     cuenta_priv = verificar_usuario_privado(usuario_enviado, contrasena_enviada)
     if cuenta_priv is not None and cuenta_priv.get("rol") == ROL_PRIV_MONITOR:
-        session["analyst"] = True
-        _notificar_en_hilo(
-            notificar_login_monitor,
-            "analyst",
-            obtener_ip_cliente(),
-            marca_ahora(),
-        )
-        return redirect(url_for("monitor_dashboard"))
+        return _iniciar_flujo_2fa_privilegiado(cuenta_priv)
 
     # Fallo: misma URL con query para que la plantilla muestre el error.
     return redirect("/monitor/login?error=1")
