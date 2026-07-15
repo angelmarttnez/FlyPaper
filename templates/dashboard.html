@@ -169,6 +169,7 @@
   }
   .alerta-item.grav-critico { border-left-color: #ef4444; }
   .alerta-item.grav-alto { border-left-color: #f97316; }
+  .alerta-item.grav-bot { border-left-color: #a855f7; background: rgba(124, 58, 237, 0.12); }
   .alerta-item .alerta-ip {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-weight: 600;
@@ -701,6 +702,7 @@
   tr.fila-grupo { cursor: pointer; transition: background 0.15s; }
   tr.fila-grupo:hover { filter: brightness(1.08); }
   tr.grav-critico { background: rgba(239, 68, 68, 0.18); border-left: 4px solid #ef4444; }
+  tr.grav-bot { background: rgba(124, 58, 237, 0.16); border-left: 4px solid #a855f7; }
   tr.grav-alto { background: rgba(249, 115, 22, 0.18); border-left: 4px solid #f97316; }
   tr.grav-medio { background: rgba(234, 179, 8, 0.15); border-left: 4px solid #eab308; }
   tr.grav-bajo { background: rgba(100, 116, 139, 0.2); border-left: 4px solid #64748b; }
@@ -1059,6 +1061,15 @@
   .badge-gravedad-critica { background: #ef4444; color: #fff; }
   .badge-gravedad-alta { background: #f97316; color: #fff; }
   .badge-gravedad-sospechoso { background: #eab308; color: #111827; }
+  .badge-gravedad-bot {
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    color: #fff;
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+  .badge-waf { background: #6d28d9; color: #f5f3ff; border: 1px solid #a855f7; }
   tr.grav-sospechoso { background: rgba(234, 179, 8, 0.1); border-left: 4px solid #eab308; }
   .alerta-item.grav-sospechoso { border-left-color: #eab308; }
   .mini-grav.sospechoso { background: rgba(234,179,8,0.25); color: #fde047; }
@@ -1286,7 +1297,13 @@
   }
 </style>
 </head>
-<body>
+<body{% if embed_mode %} class="embed-monitor"{% endif %}>
+{% if embed_mode %}
+<style>
+  body.embed-monitor { padding-top: 0 !important; }
+  body.embed-monitor > header { display: none !important; }
+</style>
+{% endif %}
 
 <header>
   <div class="brand">FlyPaper / Security Dashboard</div>
@@ -1296,7 +1313,7 @@
       <span id="badge-critico-header" class="badge-critico-header">Crítica reciente</span>
       <span class="tz-badge" id="monitor-zona-horaria" title="Zona horaria de eventos y gráficos">Europe/Madrid</span>
     </div>
-    <a class="btn-logout" href="/monitor/logout">Cerrar sesión</a>
+    <a class="btn-logout" href="{{ '/admin' if embed_mode else '/admin/logout' }}">{{ 'Volver al panel' if embed_mode else 'Cerrar sesión' }}</a>
   </div>
 </header>
 
@@ -1418,12 +1435,14 @@
                   <option value="Crítica">Solo críticos</option>
                   <option value="Alta">Solo altos</option>
                   <option value="Sospechoso">Solo sospechosos</option>
+                  <option value="BOT / BLOQUEADO">Bots (WAF)</option>
                 </select>
                 <div class="filters" id="filtros-gravedad">
                   <button type="button" class="filter-btn active" data-gravedad="Todos">Ver todos</button>
                   <button type="button" class="filter-btn" data-gravedad="Crítica">Crítica</button>
                   <button type="button" class="filter-btn" data-gravedad="Alta">Alta</button>
                   <button type="button" class="filter-btn" data-gravedad="Sospechoso">Sospechoso</button>
+                  <button type="button" class="filter-btn" data-gravedad="BOT / BLOQUEADO">BOT</button>
                 </div>
               </div>
             </div>
@@ -1805,8 +1824,8 @@
   <p class="aviso-normativo-iso fab-compliance" role="note">
     <strong>Aviso de Auditoría (ISO 27001):</strong> De acuerdo con la política de gestión de incidentes, esta exportación quedará registrada en el log de auditoría del sistema con el timestamp local y el usuario de administración activo.
   </p>
-  <a class="fab fab-secondary" href="/monitor/exportar/headers">Exportar Headers</a>
-  <a class="fab" href="/monitor/exportar">Exportar CSV</a>
+  <a class="fab fab-secondary" href="/admin/exportar/headers">Exportar Headers</a>
+  <a class="fab" href="/admin/exportar">Exportar CSV</a>
 </div>
 
 <!-- Modal de análisis IA por evento (overlay fijo sobre toda la ventana) -->
@@ -1822,11 +1841,11 @@
   /**
    * Dashboard del monitor de seguridad FlyPaper.
    * - Período global: periodoActual → ?periodo= en stats y eventos
-   * - Estadísticas y gráficas: GET /monitor/api/stats?periodo=X
-   * - Eventos detectados: GET /monitor/api/eventos?periodo=X
-   * - Actividad HTTP: GET /monitor/api/actividad-peticiones?periodo=X&ambito=publico|admin
+   * - Estadísticas y gráficas: GET /admin/api/stats?periodo=X
+   * - Eventos detectados: GET /admin/api/eventos?periodo=X
+   * - Actividad HTTP: GET /admin/api/actividad-peticiones?periodo=X&ambito=publico|admin
    * - IPs activas / bloqueo / reporte: endpoints existentes
-   * - IA: /monitor/api/analizar/<id>, /monitor/api/resumen-diario, /monitor/api/anomalias
+   * - IA: /admin/api/analizar/<id>, /admin/api/resumen-diario, /admin/api/anomalias
    */
 
   /** Zona horaria unificada del backend (sin conversión del navegador). */
@@ -1855,7 +1874,7 @@
   let chartActividad = null;
   let chartGravedad = null;
   let chartRutas = null;
-  /** Última respuesta de /monitor/api/stats (para pintar gráficos al abrir el panel). */
+  /** Última respuesta de /admin/api/stats (para pintar gráficos al abrir el panel). */
   let cacheDatosGraficos = null;
 
   /** Pestaña visible: amenazas | autoban | admin */
@@ -1888,6 +1907,7 @@
     'Crítica': '#ef4444',
     'Alta': '#f97316',
     'Sospechoso': '#eab308',
+    'BOT / BLOQUEADO': '#a855f7',
   };
 
   const TOOLTIP_OSCURO = {
@@ -2174,7 +2194,7 @@
     boton.disabled = true;
     boton.textContent = '...';
     try {
-      const res = await fetch('/monitor/desbloquear', {
+      const res = await fetch('/admin/desbloquear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip, accion: 'desbloquear' }),
@@ -2246,7 +2266,7 @@
   async function cargarAutobanStats() {
     if (!pestañaAutobanVisible()) return;
     try {
-      const res = await fetch(urlAutobanConPeriodo('/monitor/api/autoban/stats'));
+      const res = await fetch(urlAutobanConPeriodo('/admin/api/autoban/stats'));
       if (!res.ok) throw new Error('stats no OK');
       const data = await res.json();
       cacheStatsAutoban = data;
@@ -2265,7 +2285,7 @@
   async function cargarAutobanEventos() {
     if (!pestañaAutobanVisible()) return;
     try {
-      const res = await fetch(urlAutobanConPeriodo('/monitor/api/autoban/eventos'));
+      const res = await fetch(urlAutobanConPeriodo('/admin/api/autoban/eventos'));
       if (!res.ok) throw new Error('eventos no OK');
       const data = await res.json();
       gruposCacheAutoban = extraerGruposEventos(data);
@@ -2284,7 +2304,7 @@
   async function refrescarSoloExpulsiones() {
     if (!pestañaAutobanVisible()) return;
     try {
-      const res = await fetch(urlAutobanConPeriodo('/monitor/api/autoban/stats'));
+      const res = await fetch(urlAutobanConPeriodo('/admin/api/autoban/stats'));
       if (!res.ok) return;
       const data = await res.json();
       renderListaExpulsiones(data.ultimas_expulsiones);
@@ -2333,7 +2353,7 @@
   }
 
   function urlActividadPeticiones(ambito) {
-    const base = urlConPeriodo('/monitor/api/actividad-peticiones');
+    const base = urlConPeriodo('/admin/api/actividad-peticiones');
     return `${base}&ambito=${encodeURIComponent(ambito)}`;
   }
 
@@ -2384,7 +2404,7 @@
    */
   async function cargarEstadisticas() {
     try {
-      const res = await fetch(urlConPeriodo('/monitor/api/stats'));
+      const res = await fetch(urlConPeriodo('/admin/api/stats'));
       if (!res.ok) throw new Error('respuesta no OK');
       const data = await res.json();
 
@@ -2409,15 +2429,15 @@
     }
   }
 
-  /** Refresco del panel de alertas cada 10 s vía GET /monitor/api/alertas. */
+  /** Refresco del panel de alertas cada 10 s vía GET /admin/api/alertas. */
   async function refrescarAlertas() {
     try {
-      const resStats = await fetch(urlConPeriodo('/monitor/api/stats'));
+      const resStats = await fetch(urlConPeriodo('/admin/api/stats'));
       if (resStats.ok) {
         const stats = await resStats.json();
         actualizarBadgeCritico(stats.alertas_criticas_recientes);
       }
-      const res = await fetch('/monitor/api/alertas');
+      const res = await fetch('/admin/api/alertas');
       if (!res.ok) return;
       const alertas = await res.json();
       renderAlertas(Array.isArray(alertas) ? alertas : []);
@@ -2741,7 +2761,11 @@
       const esNueva = alertasIdsAnteriores.size > 0 && !alertasIdsAnteriores.has(id);
 
       const g = normalizarGravedad(a.gravedad);
-      const claseGrav = g === 'Crítica' ? 'grav-critico' : 'grav-alto';
+      const claseGrav =
+        g === 'BOT / BLOQUEADO' ? 'grav-bot'
+        : g === 'Crítica' ? 'grav-critico'
+        : g === 'Alta' ? 'grav-alto'
+        : 'grav-sospechoso';
       const tipoAtaque = a.tipo_ataque || a.tipo || 'Tráfico Normal';
       const minTxt = a.hace_min != null
         ? `hace ${a.hace_min} min`
@@ -2793,6 +2817,7 @@
   function normalizarGravedad(g) {
     if (!g || !String(g).trim()) return '';
     const s = String(g).trim().toLowerCase();
+    if (s.includes('bot')) return 'BOT / BLOQUEADO';
     if (s.includes('crit')) return 'Crítica';
     if (s === 'alto' || s === 'alta') return 'Alta';
     if (s.includes('sospech') || s === 'medio' || s === 'bajo') return 'Sospechoso';
@@ -2803,6 +2828,7 @@
 
   function claseFilaGravedad(gravedad) {
     const g = normalizarGravedad(gravedad);
+    if (g === 'BOT / BLOQUEADO') return 'grav-bot';
     if (g === 'Crítica') return 'grav-critico';
     if (g === 'Alta') return 'grav-alto';
     if (g === 'Sospechoso') return 'grav-sospechoso';
@@ -2811,6 +2837,7 @@
 
   function claseGravedadBadge(gravedad) {
     const g = normalizarGravedad(gravedad);
+    if (g === 'BOT / BLOQUEADO') return 'badge-gravedad-bot';
     if (g === 'Crítica') return 'badge-gravedad-critica';
     if (g === 'Alta') return 'badge-gravedad-alta';
     if (g === 'Sospechoso') return 'badge-gravedad-sospechoso';
@@ -2901,6 +2928,7 @@
 
   function badgeClass(tipo) {
     const t = (tipo || '').toLowerCase();
+    if (t.includes('automática') || t.includes('waf')) return 'badge-waf';
     if (t === 'sqli') return 'badge-sqli';
     if (t === 'xss') return 'badge-xss';
     if (t === 'reconocimiento') return 'badge-reconocimiento';
@@ -3057,7 +3085,7 @@
 
     let pet = resumenLocal || null;
     try {
-      const res = await fetch(`/monitor/api/peticion/${peticionId}`);
+      const res = await fetch(`/admin/api/peticion/${peticionId}`);
       if (res.ok) {
         pet = await res.json();
       }
@@ -3190,7 +3218,7 @@
   }
 
   /**
-   * Llama a GET /monitor/api/analizar/<id>?fuente= y muestra el análisis en el modal de IA.
+   * Llama a GET /admin/api/analizar/<id>?fuente= y muestra el análisis en el modal de IA.
    */
   async function analizarRegistroConIA(registroId, fuente, boton, etiquetaBoton) {
     const textoOriginal = etiquetaBoton || 'Analizar con IA';
@@ -3202,7 +3230,7 @@
 
     try {
       const res = await fetch(
-        `/monitor/api/analizar/${registroId}?fuente=${encodeURIComponent(fuente)}`
+        `/admin/api/analizar/${registroId}?fuente=${encodeURIComponent(fuente)}`
       );
       const data = await res.json().catch(() => ({}));
 
@@ -3251,7 +3279,7 @@
     boton.classList.remove('ok');
 
     try {
-      const res = await fetch('/monitor/reportar', {
+      const res = await fetch('/admin/reportar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3308,7 +3336,7 @@
 
   async function cargarIpsExportActividadPublica() {
     try {
-      const res = await fetch('/monitor/api/actividad-publica/ips');
+      const res = await fetch('/admin/api/actividad-publica/ips');
       if (!res.ok) return;
       const data = await res.json();
       ipsActividadPublica = Array.isArray(data.ips) ? data.ips : [];
@@ -3345,7 +3373,7 @@
 
     try {
       const res = await fetch(
-        `/monitor/api/actividad-publica/fechas?ip=${encodeURIComponent(ip)}`
+        `/admin/api/actividad-publica/fechas?ip=${encodeURIComponent(ip)}`
       );
       if (!res.ok) throw new Error('fechas');
       const data = await res.json();
@@ -3371,8 +3399,8 @@
     const fecha = document.getElementById('export-fecha-publica').value;
     const base =
       formato === 'headers'
-        ? '/monitor/exportar/actividad-publica/headers'
-        : '/monitor/exportar/actividad-publica/csv';
+        ? '/admin/exportar/actividad-publica/headers'
+        : '/admin/exportar/actividad-publica/csv';
     const url = `${base}?ip=${encodeURIComponent(ip)}&fecha=${encodeURIComponent(fecha)}`;
     window.location.href = url;
   }
@@ -3387,7 +3415,7 @@
   }
 
   /**
-   * Pinta el panel lateral de anomalías según GET /monitor/api/anomalias.
+   * Pinta el panel lateral de anomalías según GET /admin/api/anomalias.
    */
   function renderPanelAnomalias(data) {
     const cont = document.getElementById('panel-anomalias-contenido');
@@ -3417,7 +3445,7 @@
   /** Refresco del detector de anomalías (cada 5 minutos en el panel lateral). */
   async function cargarAnomalias() {
     try {
-      const res = await fetch('/monitor/api/anomalias');
+      const res = await fetch('/admin/api/anomalias');
       if (!res.ok) return;
       const data = await res.json();
       renderPanelAnomalias(data);
@@ -3615,7 +3643,7 @@
 
   async function cargarIpsActivas() {
     try {
-      const res = await fetch('/monitor/api/ips-activas');
+      const res = await fetch('/admin/api/ips-activas');
       if (!res.ok) return;
       const data = await res.json();
       ipsActivasCache = new Set((data.ips || []).map((ip) => String(ip)));
@@ -3634,7 +3662,7 @@
     boton.textContent = 'Bloqueando...';
     boton.classList.remove('ok');
     try {
-      const res = await fetch('/monitor/bloquear', {
+      const res = await fetch('/admin/bloquear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ip }),
@@ -3667,7 +3695,7 @@
     boton.textContent = 'Enviando...';
     boton.classList.remove('ok');
     try {
-      const res = await fetch('/monitor/reportar', {
+      const res = await fetch('/admin/reportar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3841,7 +3869,7 @@
 
   async function cargarEventos() {
     try {
-      const res = await fetch(urlConPeriodo('/monitor/api/eventos'));
+      const res = await fetch(urlConPeriodo('/admin/api/eventos'));
       if (!res.ok) throw new Error('respuesta no OK');
       const data = await res.json();
       gruposCache = extraerGruposEventos(data);
@@ -3995,7 +4023,7 @@
   setInterval(cargarAnomalias, 5 * 60 * 1000);
 
   /** Precarga ligera de stats autoban para el badge de la pestaña (sin gráficos). */
-  fetch('/monitor/api/autoban/stats?periodo=hoy')
+  fetch('/admin/api/autoban/stats?periodo=hoy')
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
       if (!data) return;

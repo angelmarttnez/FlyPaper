@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acceso restringido · FlyPaper SOC</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(ellipse at top, #1a1028 0%, #0a0e1a 55%, #050508 100%);
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 480px;
+    background: rgba(15, 20, 35, 0.92);
+    border: 1px solid rgba(248, 81, 73, 0.35);
+    border-radius: 16px;
+    padding: 40px 32px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 40px rgba(248, 81, 73, 0.08);
+    text-align: center;
+  }
+  .icono {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(248, 81, 73, 0.25), rgba(210, 153, 34, 0.15));
+    border: 2px solid rgba(248, 81, 73, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #f85149;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: #8b949e;
+    line-height: 1.55;
+    margin-bottom: 24px;
+  }
+  .ip-box {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 15px;
+    color: #58a6ff;
+    word-break: break-all;
+  }
+  .meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 24px;
+    text-align: left;
+    font-size: 12px;
+  }
+  .meta-item {
+    background: rgba(88, 166, 255, 0.06);
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .meta-label {
+    color: #6e7681;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+  .meta-value { color: #c9d1d9; font-weight: 500; }
+  .score {
+    font-size: 13px;
+    color: #d29922;
+    margin-bottom: 24px;
+  }
+  form { margin-top: 8px; }
+  button {
+    width: 100%;
+    padding: 14px 20px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #238636, #2ea043);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s;
+  }
+  button:hover {
+    box-shadow: 0 8px 24px rgba(46, 160, 67, 0.35);
+  }
+  button:active { transform: scale(0.98); }
+  .hint {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #6e7681;
+    line-height: 1.5;
+  }
+  .badge-soc {
+    display: inline-block;
+    margin-bottom: 16px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: rgba(248, 81, 73, 0.12);
+    color: #ff7b72;
+    border: 1px solid rgba(248, 81, 73, 0.35);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge-soc">PERÍMETRO SOC · REPUTACIÓN IP</div>
+    <div class="icono">🛡️</div>
+    <h1>Tráfico clasificado como sospechoso</h1>
+    <p class="subtitle">
+      Tu dirección IP ha sido evaluada automáticamente por nuestro sistema
+      de inteligencia de amenazas y no cumple los criterios de acceso.
+    </p>
+
+    <div class="ip-box">{{ ip }}</div>
+
+    {% if estado %}
+    <div class="meta">
+      <div class="meta-item">
+        <div class="meta-label">País</div>
+        <div class="meta-value">{{ estado.country }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">ISP</div>
+        <div class="meta-value">{{ estado.isp }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">AbuseIPDB</div>
+        <div class="meta-value">{{ estado.abuse_score }}/100</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">VirusTotal</div>
+        <div class="meta-value">{{ estado.vt_positives }} positivos</div>
+      </div>
+    </div>
+    <p class="score">Score de riesgo: <strong>{{ "%.1f"|format(estado.risk_score) }}</strong></p>
+    {% endif %}
+
+    <form method="POST" action="/verify-ip">
+      <button type="submit">Soy humano — Verificar acceso</button>
+    </form>
+
+    <p class="hint">
+      Si crees que se trata de un error, utiliza el botón anterior.
+      El acceso quedará registrado para revisión del equipo de seguridad.
+    </p>
+  </div>
+</body>
+</html>
