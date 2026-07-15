@@ -3,6 +3,7 @@ flypaper.db
 flypaper_priv.db
 flypaper_autoban.db
 flypaper_users.db
+ip_cache.db
 
 # Variables de entorno con API keys — NUNCA subir esto
 .env

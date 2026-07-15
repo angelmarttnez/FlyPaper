@@ -8,6 +8,8 @@ flags de CTF y tablas auxiliares. Incluye población inicial del escenario de la
 import bcrypt
 import hashlib
 import json
+import logging
+import os
 import re
 import secrets
 import sqlite3
@@ -47,6 +49,16 @@ ROL_USUARIO_ADMIN_BD = "admin"
 # Cuentas reales de panel / monitor viven solo en `usuarios_privados`.
 ROL_PRIV_ADMIN_PANEL = "admin_panel"
 ROL_PRIV_MONITOR = "monitor"
+# Cuentas legacy de laboratorio eliminadas del bootstrap (admin/analyst).
+USUARIOS_PRIVADOS_LEGACY_ELIMINAR = ("admin", "analyst")
+
+logger = logging.getLogger(__name__)
+
+# Metadatos de super-administradores; contraseñas solo vía variables de entorno.
+_SUPER_ADMIN_BOOTSTRAP_ENV = (
+    ("Mart.Angel", "INITIAL_ADMIN_ANGEL_PASSWORD", "Martí Angel", "mart.angel@flypaper.internal"),
+    ("Best.Carlos", "INITIAL_ADMIN_CARLOS_PASSWORD", "Best Carlos", "best.carlos@flypaper.internal"),
+)
 # Formato estricto: flag{10 caracteres alfanuméricos} (grupo 1 = cuerpo de la flag).
 PATRON_FLAG_CTF = re.compile(r"^flag\{([a-zA-Z0-9]{10})\}$")
 
@@ -1213,55 +1225,96 @@ def _migrar_privados_desde_bd_publica_si_existe():
         priv.commit()
 
 
+def _hash_contrasena_privada(password: str) -> str:
+    """Genera hash bcrypt (utf-8) para usuarios_privados."""
+    hash_bytes = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hash_bytes.decode("utf-8")
+
+
+def _verificar_hash_privado(password: str, hash_almacenado: str) -> bool:
+    """Compara contraseña en texto plano con hash bcrypt almacenado."""
+    if password is None or not hash_almacenado:
+        return False
+    try:
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            hash_almacenado.encode("utf-8"),
+        )
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _cuentas_super_admin_bootstrap():
+    """
+    Super-administradores SOC para bootstrapping inicial.
+
+    Las contraseñas se leen de variables de entorno (nunca del código fuente).
+    Si falta una variable, se omite esa cuenta y se registra un warning.
+    """
+    cuentas = []
+    for username, env_key, nombre, email in _SUPER_ADMIN_BOOTSTRAP_ENV:
+        password = os.getenv(env_key)
+        if not password or not str(password).strip():
+            logger.warning(
+                "Bootstrap SOC: omitida cuenta %s (%s no definida en el entorno).",
+                username,
+                env_key,
+            )
+            continue
+        cuentas.append(
+            (
+                username,
+                str(password).strip(),
+                ROL_PRIV_ADMIN_PANEL,
+                "/admin",
+                nombre,
+                email,
+            )
+        )
+    return tuple(cuentas)
+
+
+def _eliminar_cuentas_privadas_legacy(cursor):
+    """Elimina cuentas de laboratorio obsoletas de flypaper_priv.db."""
+    for username in USUARIOS_PRIVADOS_LEGACY_ELIMINAR:
+        cursor.execute(
+            "DELETE FROM usuarios_privados WHERE username = ?;",
+            (username,),
+        )
+        cursor.execute(
+            "DELETE FROM codigos_2fa WHERE username = ?;",
+            (username,),
+        )
+
+
 def asegurar_cuentas_privilegiadas():
     """
-    Cuentas con acceso a /admin o /monitor; solo en flypaper_priv.db (fuera del SQLi).
+    Bootstrap seguro de super-administradores en flypaper_priv.db.
 
-    Contraseñas en texto plano en BD (entorno de laboratorio).
+    - Elimina cuentas legacy (admin/analyst).
+    - Crea Mart.Angel y Best.Carlos solo si no existen (hash bcrypt, sin texto plano).
+    - No sobrescribe contraseñas de cuentas ya existentes.
     """
-    cuentas = [
-        (
-            "admin",
-            "admin",
-            ROL_PRIV_ADMIN_PANEL,
-            "/admin",
-            "Administrador del panel",
-            "admin@flypaper.internal",
-        ),
-        (
-            "analyst",
-            "FlyPaper2026!",
-            ROL_PRIV_MONITOR,
-            None,
-            "Analista SOC",
-            "analyst@flypaper.internal",
-        ),
-    ]
     with obtener_conexion_privada() as conexion:
         cursor = conexion.cursor()
-        for username, password, rol, redirige, nombre, email in cuentas:
+        _eliminar_cuentas_privadas_legacy(cursor)
+
+        for username, password, rol, redirige, nombre, email in _cuentas_super_admin_bootstrap():
             cursor.execute(
                 "SELECT id FROM usuarios_privados WHERE username = ?;",
                 (username,),
             )
             if cursor.fetchone():
-                cursor.execute(
-                    """
-                    UPDATE usuarios_privados
-                    SET password_hash = ?, rol = ?, redirige = ?, nombre = ?, email = ?
-                    WHERE username = ?;
-                    """,
-                    (password, rol, redirige, nombre, email, username),
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO usuarios_privados (
-                        username, password_hash, rol, redirige, nombre, email
-                    ) VALUES (?, ?, ?, ?, ?, ?);
-                    """,
-                    (username, password, rol, redirige, nombre, email),
-                )
+                continue
+            password_hash = _hash_contrasena_privada(password)
+            cursor.execute(
+                """
+                INSERT INTO usuarios_privados (
+                    username, password_hash, rol, redirige, nombre, email
+                ) VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (username, password_hash, rol, redirige, nombre, email),
+            )
         conexion.commit()
 
 
@@ -1274,8 +1327,8 @@ def _migrar_cuentas_privilegiadas_fuera_de_usuarios():
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
-            "DELETE FROM usuarios WHERE username = ?;",
-            ("analyst",),
+            "DELETE FROM usuarios WHERE username IN (?, ?);",
+            ("analyst", "admin"),
         )
         conexion.commit()
     purgar_usuarios_admin_de_tabla_publica()
@@ -1285,32 +1338,33 @@ def _migrar_cuentas_privilegiadas_fuera_de_usuarios():
 
 def verificar_usuario_privado(username, password):
     """
-    Autenticación contra `usuarios_privados` (panel /admin y monitor).
+    Autenticación contra `usuarios_privados` (panel /admin) con bcrypt.
 
     Returns:
         dict | None: {"rol", "redirige", "username"} si las credenciales son válidas.
     """
-    if not username or password is None:
+    nombre = (username or "").strip()
+    clave = password or ""
+    if not nombre or not clave:
         return None
     with obtener_conexion_privada() as conexion:
         cursor = conexion.cursor()
         cursor.execute(
             """
-            SELECT username, rol, redirige
+            SELECT username, password_hash, rol, redirige
             FROM usuarios_privados
-            WHERE username = ? AND password_hash = ?;
+            WHERE username = ?;
             """,
-            (username.strip(), password),
+            (nombre,),
         )
         fila = cursor.fetchone()
         if not fila:
             return None
+        if not _verificar_hash_privado(clave, fila["password_hash"]):
+            return None
         redirige = fila["redirige"]
         if not redirige:
-            if fila["rol"] == ROL_PRIV_MONITOR:
-                redirige = "/monitor"
-            elif fila["rol"] == ROL_PRIV_ADMIN_PANEL:
-                redirige = "/admin"
+            redirige = "/admin"
         return {
             "username": fila["username"],
             "rol": fila["rol"],
@@ -2905,6 +2959,60 @@ def obtener_flags_con_estado_por_usuario(usuario_id):
     for flag in flags:
         flag["resuelta"] = flag["id"] in resueltas
     return flags
+
+
+def obtener_ultimas_ips_conexion(limite=3):
+    """
+    Últimas IPs únicas que interactuaron con el honeypot (flypaper.db).
+
+    Returns:
+        list[dict]: ip, ultima_peticion, ultima_ruta.
+    """
+    consulta = """
+    SELECT ip, ultima_peticion, ultima_ruta FROM (
+        SELECT
+            TRIM(ip) AS ip,
+            timestamp AS ultima_peticion,
+            ruta AS ultima_ruta,
+            ROW_NUMBER() OVER (PARTITION BY TRIM(ip) ORDER BY timestamp DESC) AS rn
+        FROM registro_peticiones
+        WHERE ip IS NOT NULL AND TRIM(ip) != ''
+    ) t
+    WHERE rn = 1
+    ORDER BY ultima_peticion DESC
+    LIMIT ?;
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(consulta, (limite,))
+        return [dict(fila) for fila in cursor.fetchall()]
+
+
+def obtener_ultimo_evento_critico():
+    """
+    Evento más reciente con gravedad Crítica en flypaper.db.
+
+    Returns:
+        dict | None
+    """
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute(
+            """
+            SELECT id, ip, tipo_ataque, ruta, gravedad, timestamp, payload
+            FROM eventos
+            WHERE gravedad = ?
+            ORDER BY timestamp DESC
+            LIMIT 1;
+            """,
+            (GRAVEDAD_CRITICA,),
+        )
+        fila = cursor.fetchone()
+    if not fila:
+        return None
+    evento = dict(fila)
+    evento["ip_atacante"] = evento.get("ip") or ""
+    return evento
 
 
 def _usernames_registrados_set():
