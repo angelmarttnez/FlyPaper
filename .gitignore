@@ -1,79 +1,105 @@
-# Bases de datos — nunca subir
+# =============================================================================
+# FlyPaper — .gitignore (DevSecOps hardening)
+# Plantilla de entorno permitida: .env.example (sin secretos reales)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Archivos de entorno y secretos (CRÍTICO)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+secrets.json
+*.pem
+*.key
+credentials.json
+credentials.*.json
+
+# -----------------------------------------------------------------------------
+# 2. Bases de datos SQLite (honeypot, inteligencia, runtime)
+# -----------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Bases de datos del sistema (defensa en profundidad por nombre)
 flypaper.db
 flypaper_priv.db
 flypaper_autoban.db
 flypaper_users.db
 ip_cache.db
 
-# Variables de entorno con API keys — NUNCA subir esto
-.env
-.env.local
-.env.production
-
-# Archivos de Python
+# -----------------------------------------------------------------------------
+# 3. Ecosistema Python y caché
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
 *.pyo
 
-# Archivos old/backup innecesarios
-*_old.py
-*_Old.py
-
-# Sistema operativo
-.DS_Store
-Thumbs.db
-
-# Cursor
-.cursor/
-
-# Python
-*.pyc
-*.pyd
-*.pycache
-
-# Entorno y secretos
-*.env
-secrets.json
-
-# Base de datos local
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-*.log
-logs/
-
 # Entornos virtuales
-venv/
 .venv/
+venv/
 env/
-.env/
 
-# IDEs y editores
-.vscode/
-.idea/
-*.swp
-*.swo
+# Herramientas de desarrollo y calidad
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
 
-# Docker
-*.override.yml
-
-# Archivos compilados y distribución
+# Empaquetado y distribución
 *.egg-info/
 dist/
 build/
 *.egg
 
-# Pytest y cobertura
-.pytest_cache/
-.coverage
-htmlcov/
+# -----------------------------------------------------------------------------
+# 4. Docker e infraestructura local
+# -----------------------------------------------------------------------------
+docker_data/
+*.override.yml
 
-# Jupyter
+# -----------------------------------------------------------------------------
+# 5. Logs y artefactos de ejecución
+# -----------------------------------------------------------------------------
+*.log
+logs/
+
+# -----------------------------------------------------------------------------
+# 6. IDEs, editores y sistema operativo
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# 7. Jupyter y notebooks locales
+# -----------------------------------------------------------------------------
 .ipynb_checkpoints/
 
-# Documentación interna del proyecto (no publicar)
+# -----------------------------------------------------------------------------
+# 8. Código legacy / respaldos locales
+# -----------------------------------------------------------------------------
+*_old.py
+*_Old.py
+
+# -----------------------------------------------------------------------------
+# 9. Documentación interna (no publicar)
+# -----------------------------------------------------------------------------
 informe/
 informe/desarrollo.md
 informe/despliegue.md
