@@ -50,6 +50,7 @@ from flask import (
 from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.database import (
     contar_flags_resueltas_por_usuario,
@@ -963,8 +964,21 @@ aplicacion = Flask(
     template_folder=str(_DIR_PAQUETE_APP / "templates"),
     static_folder=str(_DIR_PAQUETE_APP / "static"),
 )
+# Un reverse proxy de confianza delante del NGWAF (X-Forwarded-*).
+aplicacion.wsgi_app = ProxyFix(
+    aplicacion.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_port=1,
+)
 # Clave para firmar cookies de sesión (login honeypot y otras sesiones).
 aplicacion.secret_key = 'flypaper_secreto_2026'
+
+# Blindaje SOC por defecto; las rutas CTF se relajan en process_response.
+aplicacion.config["SESSION_COOKIE_HTTPONLY"] = True
+aplicacion.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+aplicacion.config["SESSION_COOKIE_SECURE"] = False  # HTTP lab; True bajo TLS/HTTPS
 
 # Sesión pública (/search, /blog, /objetivos, /documentacion): caducidad por inactividad de 15 minutos.
 SESION_PUBLICA_INACTIVIDAD_SEGUNDOS = 900
@@ -973,6 +987,68 @@ CLAVE_ULTIMA_ACTIVIDAD_PUBLICA = "ultima_actividad_publica_ts"
 
 aplicacion.config["PERMANENT_SESSION_LIFETIME"] = SESION_PUBLICA_INACTIVIDAD
 aplicacion.config["SESSION_REFRESH_EACH_REQUEST"] = True
+
+# Prefijos de Excepción Pedagógica (CTF / labs SQLi).
+_PREFIJOS_EXCEPCION_PEDAGOGICA = ("/objetivos/sqli/", "/api/ctf/")
+
+
+def _ruta_es_excepcion_pedagogica(ruta):
+    """True si la ruta es lab CTF/honeypot pedagógico (cookies más laxas)."""
+    if not ruta:
+        return False
+    return any(ruta.startswith(prefijo) for prefijo in _PREFIJOS_EXCEPCION_PEDAGOGICA)
+
+
+def _reescribir_flags_set_cookie(valor_set_cookie, pedagogico):
+    """
+    Reescribe HttpOnly / SameSite / Secure en un header Set-Cookie.
+
+    Excepción Pedagógica → HttpOnly=False, SameSite=Lax, Secure=False.
+    Blindaje SOC → HttpOnly=True, SameSite=Strict, Secure=False (lab HTTP).
+    """
+    if not valor_set_cookie:
+        return valor_set_cookie
+    partes = [p.strip() for p in valor_set_cookie.split(";") if p.strip()]
+    if not partes:
+        return valor_set_cookie
+    nombre_valor = partes[0]
+    conservados = []
+    for parte in partes[1:]:
+        clave = parte.split("=", 1)[0].strip().lower()
+        if clave in ("httponly", "secure", "samesite"):
+            continue
+        conservados.append(parte)
+    if pedagogico:
+        # Excepción Pedagógica: permitir dinámicas de ataque entre sesiones/scripts.
+        conservados.append("SameSite=Lax")
+    else:
+        # Blindaje SOC / resto de la app.
+        conservados.append("HttpOnly")
+        conservados.append("SameSite=Strict")
+    return "; ".join([nombre_valor] + conservados)
+
+
+def _aplicar_politica_cookie_sesion(respuesta, ruta):
+    """Ajusta flags de la cookie de sesión Flask según el contexto de ruta."""
+    nombre_cookie = aplicacion.config.get("SESSION_COOKIE_NAME", "session")
+    pedagogico = _ruta_es_excepcion_pedagogica(ruta)
+    cookies = respuesta.headers.getlist("Set-Cookie")
+    if not cookies:
+        return respuesta
+    respuesta.headers.pop("Set-Cookie", None)
+    for valor in cookies:
+        if valor.lower().startswith(f"{nombre_cookie.lower()}="):
+            valor = _reescribir_flags_set_cookie(valor, pedagogico)
+        respuesta.headers.add("Set-Cookie", valor)
+    return respuesta
+
+
+def _inyectar_cabeceras_blindaje_soc(respuesta):
+    """Blindaje SOC: cabeceras anti-clickjacking y anti-MIME-sniffing."""
+    respuesta.headers["X-Frame-Options"] = "DENY"
+    respuesta.headers["X-Content-Type-Options"] = "nosniff"
+    return respuesta
+
 
 # Límite global por IP (resto de rutas públicas). Rutas /monitor/* quedan exentas más abajo.
 limiter = Limiter(
@@ -1726,11 +1802,12 @@ def _ejecutar_busqueda_autoban_vulnerable(query):
 
 
 def obtener_ip_cliente():
-    """Obtiene la IP del cliente respetando X-Forwarded-For si existe."""
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
-    if "," in ip:
-        ip = ip.split(",")[0].strip()
-    return ip
+    """
+    IP del cliente tras ProxyFix (REMOTE_ADDR ya refleja X-Forwarded-For del proxy).
+
+    Evita spoofing directo de X-Forwarded-For cuando no hay proxy delante.
+    """
+    return (request.remote_addr or "").strip()
 
 
 def ruta_exenta_de_bloqueo_ip(ruta):
@@ -1999,6 +2076,40 @@ def _redirigir_si_no_es_soc():
     if not acceso_soc_autorizado():
         return redirect(url_for("mostrar_admin_login"))
     return None
+
+
+@aplicacion.after_request
+def aplicar_blindaje_selectivo_headers(respuesta):
+    """
+    Endurecimiento selectivo de cabeceras según la ruta.
+
+    - Excepción Pedagógica (/objetivos/sqli/*, /api/ctf/*): sin cabeceras rígidas
+      que rompan dinámicas de ataque en labs.
+    - Blindaje SOC (resto, incl. /admin/*): X-Frame-Options + nosniff.
+    """
+    ruta = request.path or ""
+    if _ruta_es_excepcion_pedagogica(ruta):
+        return respuesta
+    return _inyectar_cabeceras_blindaje_soc(respuesta)
+
+
+# Flask guarda la cookie de sesión DESPUÉS de after_request; ajustamos flags aquí.
+_process_response_original = aplicacion.process_response
+
+
+def process_response_con_politica_cookies(respuesta):
+    """
+    process_response nativo (after_request + save_session) y luego política de cookies.
+
+    Excepción Pedagógica → HttpOnly=False, SameSite=Lax, Secure=False.
+    Blindaje SOC → HttpOnly=True, SameSite=Strict, Secure=False.
+    """
+    respuesta = _process_response_original(respuesta)
+    ruta = request.path or ""
+    return _aplicar_politica_cookie_sesion(respuesta, ruta)
+
+
+aplicacion.process_response = process_response_con_politica_cookies
 
 
 @aplicacion.after_request

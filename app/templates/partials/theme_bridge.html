@@ -1,0 +1,230 @@
+{# Puente CSS: fuerza variables de tema sobre estilos legacy hardcodeados #}
+<style id="flypaper-theme-bridge">
+  body.theme-aware {
+    background: var(--bg-base) !important;
+    color: var(--text-main) !important;
+    font-family: var(--font-ui) !important;
+    text-shadow: var(--text-glow);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Apple Glass: no aplastar el canvas Monterey con un plano --bg-base */
+  html[data-theme="apple-glass"] body.theme-aware,
+  html.theme-apple-glass body.theme-aware {
+    background:
+      radial-gradient(ellipse 80% 60% at 15% 20%, #7EB8F7 0%, transparent 55%),
+      radial-gradient(ellipse 70% 55% at 85% 15%, #D4A5E8 0%, transparent 50%),
+      radial-gradient(ellipse 65% 50% at 70% 80%, #F5B8C8 0%, transparent 55%),
+      radial-gradient(ellipse 55% 45% at 20% 75%, #A8E0D0 0%, transparent 50%),
+      linear-gradient(160deg, #B8C9E0 0%, #D5D0E8 45%, #E8D5E0 100%) !important;
+    background-attachment: fixed !important;
+  }
+
+  /* Cabeceras / navbars siempre por encima del contenido */
+  body.theme-aware .navbar,
+  body.theme-aware > header,
+  body.theme-aware header.top,
+  body.academia-theme .navbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 9990 !important;
+    background: var(--bg-card-soft) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-main) !important;
+    backdrop-filter: blur(var(--glass-blur));
+    isolation: isolate;
+  }
+
+  body.theme-aware .logo,
+  body.theme-aware .navbar .logo,
+  body.theme-aware > header .brand,
+  body.theme-aware aside .brand {
+    color: var(--color-accent) !important;
+    background: none !important;
+    -webkit-text-fill-color: unset !important;
+    text-shadow: var(--accent-glow, none);
+  }
+
+  body.theme-aware .nav-links a {
+    color: var(--text-muted) !important;
+  }
+  body.theme-aware .nav-links a:hover,
+  body.theme-aware .nav-links a.active {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+    color: var(--color-accent) !important;
+  }
+
+  body.theme-aware .card,
+  body.theme-aware .results,
+  body.theme-aware form.search,
+  body.theme-aware .periodo-bar,
+  body.theme-aware .empty,
+  body.theme-aware aside,
+  body.theme-aware .sidebar,
+  body.theme-aware .article,
+  body.theme-aware .stat-badge,
+  body.theme-aware .stat-mapa,
+  body.theme-aware .doc-side,
+  body.theme-aware .side-card,
+  body.theme-aware pre.datos-reporte,
+  body.theme-aware .toolbar,
+  body.theme-aware .toolbar-soc {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    box-shadow: var(--shadow-card) !important;
+    color: var(--text-main) !important;
+    backdrop-filter: blur(var(--glass-blur));
+  }
+
+  body.theme-aware .page-header h1,
+  body.theme-aware .card-title,
+  body.theme-aware .article-title,
+  body.theme-aware .cat-title,
+  body.theme-aware header.top h1,
+  body.theme-aware .card h2 {
+    color: var(--text-main) !important;
+  }
+
+  body.theme-aware .subtitle,
+  body.theme-aware .page-header p,
+  body.theme-aware .card-meta,
+  body.theme-aware .card-excerpt,
+  body.theme-aware .excerpt,
+  body.theme-aware .user-badge,
+  body.theme-aware .tz-badge,
+  body.theme-aware footer,
+  body.theme-aware th,
+  body.theme-aware .muted,
+  body.theme-aware .results-header .count,
+  body.theme-aware .cat-count,
+  body.theme-aware .article-meta,
+  body.theme-aware .brand small {
+    color: var(--text-muted) !important;
+  }
+
+  body.theme-aware input,
+  body.theme-aware select,
+  body.theme-aware textarea,
+  body.theme-aware .toolbar-soc input,
+  body.theme-aware .doc-search,
+  body.theme-aware .doc-search input {
+    background: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-main) !important;
+  }
+
+  body.theme-aware table td,
+  body.theme-aware table th,
+  body.theme-aware .widget-row {
+    border-color: var(--border-color) !important;
+    color: var(--text-main);
+  }
+
+  body.theme-aware code {
+    color: var(--color-accent) !important;
+  }
+
+  body.theme-aware .btn-logout,
+  body.theme-aware .btn-volver,
+  body.theme-aware a.btn-logout {
+    background: transparent !important;
+    color: var(--text-main) !important;
+    border: 1px solid var(--border-color) !important;
+  }
+  body.theme-aware .btn-logout:hover {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+    border-color: var(--border-accent) !important;
+  }
+
+  body.theme-aware form.search button,
+  body.theme-aware .btn-read,
+  body.theme-aware .toggle-btn {
+    background: var(--color-accent) !important;
+    color: var(--color-accent-fg) !important;
+    border-color: var(--color-accent) !important;
+  }
+
+  body.theme-aware nav button.tab-link {
+    color: var(--text-muted) !important;
+  }
+  body.theme-aware nav button.tab-link:hover {
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent) !important;
+    color: var(--text-main) !important;
+  }
+  body.theme-aware nav button.tab-link.active,
+  body.theme-aware .sub-tab.active {
+    color: var(--color-accent) !important;
+    border-color: var(--border-accent) !important;
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent) !important;
+  }
+
+  body.theme-aware .sub-tab,
+  body.theme-aware .cat-btn,
+  body.theme-aware .quick a {
+    color: var(--text-main) !important;
+    border-color: var(--border-color) !important;
+    background: var(--bg-input) !important;
+  }
+  body.theme-aware .cat-btn:hover,
+  body.theme-aware .cat-btn.active {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+    border-color: var(--border-accent) !important;
+    color: var(--color-accent) !important;
+  }
+
+  body.theme-aware a:not(.nav-links a):not(.btn-logout):not(.btn-read):not(.nav-sesion-btn):not(.nav-footer a) {
+    color: var(--color-accent);
+  }
+
+  /* Badges / alertas: usan tokens --alert-* (WCAG AA) */
+  body.theme-aware .badge-critica,
+  body.theme-aware .badge-alta,
+  body.theme-aware .pill.informe,
+  body.theme-aware .badge-admin,
+  body.theme-aware .badge-nis2 {
+    background: var(--alert-error-bg) !important;
+    color: var(--alert-error-fg) !important;
+    border-color: var(--alert-error-border) !important;
+  }
+  body.theme-aware .badge-media,
+  body.theme-aware .pill.vulnerabilidad,
+  body.theme-aware .badge-firma {
+    background: var(--alert-warn-bg) !important;
+    color: var(--alert-warn-fg) !important;
+    border-color: var(--alert-warn-border) !important;
+  }
+  body.theme-aware .badge-baja,
+  body.theme-aware .pill.apuntes,
+  body.theme-aware .widget-row .ok {
+    background: var(--alert-ok-bg) !important;
+    color: var(--alert-ok-fg) !important;
+    border-color: var(--alert-ok-border) !important;
+  }
+  body.theme-aware .widget-row .ok {
+    background: transparent !important;
+    border: none !important;
+  }
+  body.theme-aware .error,
+  body.theme-aware .sql-error,
+  body.theme-aware .alert-acceso,
+  body.theme-aware .alerta-error,
+  body.theme-aware .soc-banner.error,
+  body.theme-aware .filtro-error {
+    background: var(--alert-error-bg) !important;
+    color: var(--alert-error-fg) !important;
+    border: 1px solid var(--alert-error-border) !important;
+  }
+  body.theme-aware .alerta-ok,
+  body.theme-aware .alerta-resuelto {
+    background: var(--alert-ok-bg) !important;
+    color: var(--alert-ok-fg) !important;
+    border: 1px solid var(--alert-ok-border) !important;
+  }
+
+  .theme-switcher-float {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 9999;
+  }
+</style>

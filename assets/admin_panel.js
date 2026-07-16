@@ -97,7 +97,19 @@
     if (tab === 'monitor' && !monitorCargado) {
       monitorCargado = true;
       const iframe = document.getElementById('monitor-iframe');
-      if (iframe && !iframe.src) iframe.src = '/admin/embed/monitor';
+      if (iframe && !iframe.src) {
+        iframe.src = '/admin/embed/monitor';
+        /* Al cargar el embed, empuja el tema activo del panel (sin esperar reload). */
+        iframe.addEventListener('load', function () {
+          const tema = document.documentElement.getAttribute('data-theme') || 'dark';
+          try {
+            iframe.contentWindow.postMessage(
+              { type: 'flypaper-theme', theme: tema },
+              window.location.origin
+            );
+          } catch (e) { /* iframe aún no listo */ }
+        });
+      }
     }
   }
 

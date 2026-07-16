@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FlyPaper Admin — Mapa de Amenazas</title>
@@ -61,8 +62,9 @@ body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
 .marcador-pulso-alta{border-radius:50%;animation:pulso-marcador 2s ease-out infinite}
 .marcador-pulso-sospechoso{border-radius:50%;animation:pulso-marcador 2.2s ease-out infinite}
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
 <aside class="sidebar">
   <div class="logo">Fly<span>Paper</span></div>
   <nav class="nav">

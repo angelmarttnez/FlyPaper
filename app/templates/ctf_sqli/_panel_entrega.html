@@ -1,9 +1,15 @@
-{# Panel de entrega SOC: cuestionario 3 preguntas + flag (bloqueada hasta responder) #}
-<aside class="entrega-panel" id="panel-entrega">
+{# Panel de entrega SOC — cuestionario progresivo (1 pregunta visible a la vez) #}
+<aside class="entrega-panel" id="panel-entrega"
+       data-reto-id="{{ reto.id }}"
+       data-quiz-progreso='{{ quiz_progreso|tojson }}'>
   <div class="entrega-header">
     <span class="entrega-kicker">Panel de entrega · SOC</span>
     <h2>Validación del reto</h2>
-    <p>Responde las 3 preguntas conceptuales. La flag se desbloqueará al completarlas.</p>
+    <p>Cuestionario paso a paso: verifica cada pregunta para desbloquear la siguiente.</p>
+    <div class="quiz-progreso-bar" aria-hidden="true">
+      <div class="quiz-progreso-fill" id="quiz-progreso-fill" style="width:0%"></div>
+    </div>
+    <p class="quiz-progreso-meta" id="quiz-progreso-meta">Paso 1 / 5</p>
   </div>
 
   {% if resuelto %}
@@ -13,105 +19,330 @@
   {% endif %}
 
   <form id="form-entrega-sqli" class="form-entrega" data-reto-id="{{ reto.id }}" novalidate>
-    <label class="campo">
-      <span>P1 · Carácter que rompe la sintaxis SQL</span>
-      <input type="text" name="p1" id="quiz-p1" maxlength="8" placeholder="ej. '" autocomplete="off" required>
-    </label>
+    {% for preg in preguntas_quiz %}
+    <fieldset
+      class="quiz-card quiz-bloque"
+      id="quiz-card-{{ preg.id }}"
+      data-pregunta-id="{{ preg.id }}"
+      data-tipo="{{ preg.tipo }}"
+      data-paso="{{ preg.paso }}"
+      hidden>
+      <div class="quiz-card-head">
+        <span class="quiz-paso-badge">Pregunta {{ preg.paso }} / 5</span>
+        <span class="quiz-check" hidden aria-hidden="true">✓</span>
+      </div>
+      <legend class="quiz-enunciado">{{ preg.enunciado }}</legend>
 
-    <label class="campo">
-      <span>P2 · Caracteres para comentar el resto de la query</span>
-      <input type="text" name="p2" id="quiz-p2" maxlength="8" placeholder="ej. --" autocomplete="off" required>
-    </label>
-
-    <label class="campo">
-      <span>P3 · Tipo de inyección SQL explotada</span>
-      <select name="p3" id="quiz-p3" required>
-        <option value="">— Selecciona —</option>
-        {% for op in p3_opciones %}
-        <option value="{{ op.valor }}">{{ op.texto }}</option>
+      {% if preg.tipo == 'test' %}
+      <div class="quiz-radios" role="radiogroup" aria-label="{{ preg.id }}">
+        {% for op in preg.opciones %}
+        <label class="quiz-radio">
+          <input type="radio"
+                 class="quiz-campo quiz-radio-input"
+                 name="{{ preg.id }}"
+                 value="{{ op.letra }}">
+          <span class="quiz-letra">{{ op.letra }}</span>
+          <span class="quiz-opcion-texto">{{ op.texto }}</span>
+        </label>
         {% endfor %}
-      </select>
-    </label>
+      </div>
+      {% else %}
+      <input type="text"
+             name="{{ preg.id }}"
+             id="quiz-{{ preg.id }}"
+             class="quiz-campo quiz-corta"
+             maxlength="40"
+             placeholder="{{ preg.placeholder or 'una palabra' }}"
+             autocomplete="off">
+      {% endif %}
 
-    <label class="campo">
-      <span>Flag del laboratorio</span>
-      <input type="text" name="flag" id="quiz-flag" placeholder="flag{..........}" autocomplete="off" disabled required>
-      <small id="flag-hint" class="hint-bloqueada">Completa P1, P2 y P3 para habilitar este campo</small>
-    </label>
+      <p class="quiz-feedback" hidden role="status"></p>
+      <button type="button" class="btn-verificar-paso">Verificar respuesta</button>
+    </fieldset>
+    {% endfor %}
 
-    <button type="submit" class="btn-entregar" id="btn-entregar" disabled>Entregar y puntuar</button>
+    <div class="quiz-flag-zona" id="quiz-flag-zona" hidden>
+      <label class="campo">
+        <span>🏁 Flag del laboratorio</span>
+        <input type="text" name="flag" id="quiz-flag" placeholder="flag{..........}" autocomplete="off" required>
+        <small id="flag-hint" class="hint-bloqueada hint-ok">5/5 teórico superado — pega la flag exacta</small>
+      </label>
+      <button type="submit" class="btn-entregar" id="btn-entregar">Entregar y puntuar</button>
+    </div>
+
+    <div class="quiz-candado" id="quiz-candado">
+      <span class="quiz-candado-icon" aria-hidden="true">🔒</span>
+      <p>La flag permanecerá bloqueada hasta completar las 5 preguntas.</p>
+    </div>
+
     <p id="entrega-msg" class="entrega-msg" role="status" hidden></p>
   </form>
 </aside>
 
 <script>
+/**
+ * Cuestionario progresivo CTF (zero-leak).
+ * - Muestra una pregunta a la vez.
+ * - Valida cada paso vía POST /api/ctf/verify-step (sin soluciones en cliente).
+ * - Restaura progreso desde data-quiz-progreso (sesión Flask).
+ */
 (function () {
+  const panel = document.getElementById('panel-entrega');
   const form = document.getElementById('form-entrega-sqli');
-  if (!form) return;
-  const p1 = document.getElementById('quiz-p1');
-  const p2 = document.getElementById('quiz-p2');
-  const p3 = document.getElementById('quiz-p3');
-  const flag = document.getElementById('quiz-flag');
-  const hint = document.getElementById('flag-hint');
-  const btn = document.getElementById('btn-entregar');
-  const msg = document.getElementById('entrega-msg');
-  const retoId = form.dataset.retoId;
+  if (!panel || !form) return;
 
-  function quizCompleto() {
-    return Boolean((p1.value || '').trim() && (p2.value || '').trim() && (p3.value || '').trim());
+  const retoId = Number(panel.dataset.retoId || form.dataset.retoId);
+  const cards = Array.prototype.slice.call(form.querySelectorAll('.quiz-card'));
+  const fill = document.getElementById('quiz-progreso-fill');
+  const meta = document.getElementById('quiz-progreso-meta');
+  const flagZona = document.getElementById('quiz-flag-zona');
+  const candado = document.getElementById('quiz-candado');
+  const flagInput = document.getElementById('quiz-flag');
+  const msg = document.getElementById('entrega-msg');
+
+  let progreso = { completadas: [], respuestas: {}, paso_actual: 1, quiz_completo: false };
+  try {
+    progreso = JSON.parse(panel.dataset.quizProgreso || '{}') || progreso;
+  } catch (e) { /* ignore */ }
+
+  function cardPorPaso(paso) {
+    return cards.find(function (c) { return Number(c.dataset.paso) === paso; });
   }
 
-  function sincronizarFlag() {
-    const ok = quizCompleto();
-    flag.disabled = !ok;
-    btn.disabled = !ok;
-    if (hint) {
-      hint.textContent = ok
-        ? 'Campo desbloqueado — pega la flag exacta del laboratorio'
-        : 'Completa P1, P2 y P3 para habilitar este campo';
-      hint.classList.toggle('hint-ok', ok);
+  function leerRespuesta(card) {
+    if (card.dataset.tipo === 'test') {
+      const checked = card.querySelector('input[type="radio"]:checked');
+      return checked ? checked.value : '';
+    }
+    const input = card.querySelector('.quiz-corta');
+    return input ? (input.value || '').trim() : '';
+  }
+
+  function congelarCard(card, respuesta) {
+    card.classList.remove('is-error');
+    card.classList.add('is-success');
+    const check = card.querySelector('.quiz-check');
+    if (check) check.hidden = false;
+    const feedback = card.querySelector('.quiz-feedback');
+    if (feedback) {
+      feedback.hidden = false;
+      feedback.className = 'quiz-feedback ok';
+      feedback.textContent = 'Correcto';
+    }
+    const btn = card.querySelector('.btn-verificar-paso');
+    if (btn) btn.disabled = true;
+
+    if (card.dataset.tipo === 'test') {
+      card.querySelectorAll('input[type="radio"]').forEach(function (r) {
+        r.disabled = true;
+        if (respuesta && r.value === respuesta) r.checked = true;
+      });
+    } else {
+      const input = card.querySelector('.quiz-corta');
+      if (input) {
+        if (respuesta) input.value = respuesta;
+        input.disabled = true;
+      }
     }
   }
 
-  [p1, p2, p3].forEach(function (el) {
-    el.addEventListener('input', sincronizarFlag);
-    el.addEventListener('change', sincronizarFlag);
-  });
-  sincronizarFlag();
+  function marcarError(card, hint) {
+    card.classList.remove('is-success');
+    card.classList.add('is-error');
+    const feedback = card.querySelector('.quiz-feedback');
+    if (feedback) {
+      feedback.hidden = false;
+      feedback.className = 'quiz-feedback err';
+      feedback.textContent = hint || 'Incorrecto. Inténtalo de nuevo.';
+    }
+    window.setTimeout(function () {
+      card.classList.remove('is-error');
+    }, 700);
+  }
 
-  form.addEventListener('submit', async function (ev) {
-    ev.preventDefault();
-    if (!quizCompleto() || flag.disabled) return;
-    msg.hidden = false;
-    msg.className = 'entrega-msg';
-    msg.textContent = 'Validando…';
-    btn.disabled = true;
+  function actualizarBarra(hechas) {
+    const pct = Math.min(100, Math.round((hechas / 5) * 100));
+    if (fill) fill.style.width = pct + '%';
+    if (meta) {
+      meta.textContent = hechas >= 5
+        ? 'Cuestionario teórico completado (5 / 5)'
+        : 'Paso ' + Math.min(hechas + 1, 5) + ' / 5';
+    }
+  }
+
+  function mostrarFlag(unlock) {
+    if (flagZona) flagZona.hidden = !unlock;
+    if (candado) candado.hidden = unlock;
+    if (flagInput) flagInput.disabled = !unlock;
+  }
+
+  function revelarPaso(paso) {
+    cards.forEach(function (c) {
+      const p = Number(c.dataset.paso);
+      const hecha = (progreso.completadas || []).indexOf(c.dataset.preguntaId) >= 0;
+      if (hecha) {
+        c.hidden = false;
+        c.classList.add('is-revealed');
+        return;
+      }
+      if (p === paso) {
+        c.hidden = false;
+        // Forzar reflow para animación
+        void c.offsetWidth;
+        c.classList.add('is-revealed');
+      } else if (p > paso) {
+        c.hidden = true;
+        c.classList.remove('is-revealed');
+      }
+    });
+  }
+
+  /** Hidrata UI desde sesión Flask (recarga de página). */
+  function hidratarDesdeSesion() {
+    const completadas = progreso.completadas || [];
+    const respuestas = progreso.respuestas || {};
+    completadas.forEach(function (pid) {
+      const card = form.querySelector('.quiz-card[data-pregunta-id="' + pid + '"]');
+      if (card) {
+        card.hidden = false;
+        card.classList.add('is-revealed');
+        congelarCard(card, respuestas[pid] || '');
+      }
+    });
+    const hechas = completadas.length;
+    actualizarBarra(hechas);
+    if (hechas >= 5 || progreso.quiz_completo) {
+      mostrarFlag(true);
+      revelarPaso(5);
+    } else {
+      mostrarFlag(false);
+      revelarPaso(hechas + 1);
+    }
+  }
+
+  async function verificarPaso(card) {
+    const respuesta = leerRespuesta(card);
+    if (!respuesta) {
+      marcarError(card, 'Selecciona o escribe una respuesta antes de verificar.');
+      return;
+    }
+    const btn = card.querySelector('.btn-verificar-paso');
+    if (btn) btn.disabled = true;
+
     try {
-      const res = await fetch('/objetivos/sqli/verify/' + retoId, {
+      const res = await fetch('/api/ctf/verify-step', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
         body: JSON.stringify({
-          p1: p1.value,
-          p2: p2.value,
-          p3: p3.value,
-          flag: flag.value
+          reto_id: retoId,
+          pregunta_id: card.dataset.preguntaId,
+          respuesta: respuesta
         })
       });
       const data = await res.json();
-      if (data.exito) {
-        msg.className = 'entrega-msg ok';
-        msg.textContent = data.mensaje + (data.puntos != null ? ' (+' + data.puntos + ' pts)' : '');
-        setTimeout(function () { window.location.reload(); }, 1200);
+
+      if (data.status === 'correct') {
+        const pid = card.dataset.preguntaId;
+        if ((progreso.completadas || []).indexOf(pid) < 0) {
+          progreso.completadas = (progreso.completadas || []).concat([pid]);
+        }
+        progreso.respuestas = progreso.respuestas || {};
+        progreso.respuestas[pid] = respuesta;
+        congelarCard(card, respuesta);
+        actualizarBarra(progreso.completadas.length);
+
+        if (data.quiz_completo || progreso.completadas.length >= 5) {
+          mostrarFlag(true);
+        } else if (data.next_step) {
+          const next = cardPorPaso(Number(data.next_step));
+          if (next) {
+            next.hidden = false;
+            void next.offsetWidth;
+            next.classList.add('is-revealed');
+            next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
       } else {
-        msg.className = 'entrega-msg err';
-        msg.textContent = data.mensaje || 'Entrega rechazada';
-        btn.disabled = false;
+        marcarError(card, data.hint || 'Incorrecto.');
+        if (btn) btn.disabled = false;
       }
     } catch (err) {
-      msg.className = 'entrega-msg err';
-      msg.textContent = 'Error de red al validar la entrega';
-      btn.disabled = false;
+      marcarError(card, 'Error de red al verificar. Reintenta.');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  cards.forEach(function (card) {
+    const btn = card.querySelector('.btn-verificar-paso');
+    if (btn) {
+      btn.addEventListener('click', function () { verificarPaso(card); });
+    }
+    const corta = card.querySelector('.quiz-corta');
+    if (corta) {
+      corta.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          verificarPaso(card);
+        }
+      });
     }
   });
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    if (!(progreso.completadas || []).length || (progreso.completadas || []).length < 5) {
+      if (msg) {
+        msg.hidden = false;
+        msg.className = 'entrega-msg err';
+        msg.textContent = 'Completa las 5 preguntas teóricas primero.';
+      }
+      return;
+    }
+    if (!flagInput || !(flagInput.value || '').trim()) return;
+
+    if (msg) {
+      msg.hidden = false;
+      msg.className = 'entrega-msg';
+      msg.textContent = 'Validando flag…';
+    }
+    const btnEntregar = document.getElementById('btn-entregar');
+    if (btnEntregar) btnEntregar.disabled = true;
+
+    try {
+      const res = await fetch('/objetivos/sqli/verify/' + retoId, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ flag: flagInput.value })
+      });
+      const data = await res.json();
+      if (data.exito) {
+        if (msg) {
+          msg.className = 'entrega-msg ok';
+          msg.textContent = data.mensaje + (data.puntos != null ? ' (+' + data.puntos + ' pts)' : '');
+        }
+        setTimeout(function () { window.location.reload(); }, 1200);
+      } else {
+        if (msg) {
+          msg.className = 'entrega-msg err';
+          msg.textContent = data.mensaje || 'Entrega rechazada';
+        }
+        if (btnEntregar) btnEntregar.disabled = false;
+      }
+    } catch (err) {
+      if (msg) {
+        msg.className = 'entrega-msg err';
+        msg.textContent = 'Error de red al validar la entrega';
+      }
+      if (btnEntregar) btnEntregar.disabled = false;
+    }
+  });
+
+  hidratarDesdeSesion();
 })();
 </script>

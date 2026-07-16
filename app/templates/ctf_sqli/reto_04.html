@@ -1,0 +1,129 @@
+{% extends "ctf_sqli/reto_base.html" %}
+{% block laboratorio %}
+<p style="margin-top:8px">Objetivo: <em>{{ reto.objetivo }}</em></p>
+<p style="color:#f87171;font-size:13px;border-left:3px solid #f87171;padding-left:10px;margin-top:10px">
+  ⚠️ <strong>WAF real activo.</strong> Payloads genéricos (p. ej. <code>UNION SELECT</code> con espacios)
+  suman riesgo en Redis. Si superas el umbral → Jail Page. Extrae la flag en absoluto sigilo.
+</p>
+<p style="color:#64748b;font-size:13px">
+  Endpoint: <code>/objetivos/sqli/4/lab?id=</code> ·
+  Columnas visibles: <code>id, name, price</code> ·
+  Tabla oculta: <code>vault(flag_value)</code>.
+  Bypass típico: comentarios vacíos entre keywords (<code>UNION/**/SELECT</code>).
+</p>
+
+<form class="lab-form" id="form-lab-04" method="get" action="{{ url_for('ctf_sqli.lab_04_item') }}">
+  <label>ID del ítem
+    <input type="text" name="id" id="lab04-id" value="{{ id_param or '' }}" placeholder="1  ó  payload ofuscado…" autocomplete="off">
+  </label>
+  <button type="submit" id="lab04-submit">Consultar (bajo WAF)</button>
+</form>
+
+<div id="lab04-feedback">
+{% if error_sql %}
+<div class="alerta-error">SQL Error:
+{{ error_sql }}</div>
+{% endif %}
+
+{% if resultados %}
+<table class="lab-table">
+  <thead>
+    <tr>
+      {% for col in resultados[0].keys() %}
+      <th>{{ col }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for fila in resultados %}
+    <tr>
+      {% for valor in fila.values() %}
+      <td>{{ valor }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif id_param %}
+<p style="margin-top:14px;color:#64748b">Sin resultados para id «{{ id_param }}».</p>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_lab %}
+<script>
+(function () {
+  const form = document.getElementById('form-lab-04');
+  const feedback = document.getElementById('lab04-feedback');
+  if (!form || !feedback) return;
+
+  function esc(t) {
+    return String(t == null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function pintar(data) {
+    if (data.error_sql) {
+      feedback.innerHTML = '<div class="alerta-error">SQL Error:\n' + esc(data.error_sql) + '</div>';
+      return;
+    }
+    const rows = data.resultados || [];
+    if (!rows.length) {
+      feedback.innerHTML = '<p style="margin-top:14px;color:#64748b">Sin resultados para id «' +
+        esc(data.id || '') + '».</p>';
+      return;
+    }
+    const cols = Object.keys(rows[0]);
+    let html = '<table class="lab-table"><thead><tr>';
+    cols.forEach(function (c) { html += '<th>' + esc(c) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (fila) {
+      html += '<tr>';
+      cols.forEach(function (c) { html += '<td>' + esc(fila[c]) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    feedback.innerHTML = html;
+  }
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    const btn = document.getElementById('lab04-submit');
+    if (btn) btn.disabled = true;
+    try {
+      const fd = new FormData(form);
+      const res = await fetch(form.action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: fd
+      });
+      // Si el perímetro ya te mandó al calabozo, la respuesta puede ser HTML 403.
+      const ctype = (res.headers.get('Content-Type') || '');
+      if (res.status === 403 || ctype.indexOf('application/json') < 0) {
+        if (res.status === 403) {
+          window.location.href = '/';
+          return;
+        }
+      }
+      const data = await res.json();
+      pintar(data);
+      if (window.FlyPaperWafTelemetria) {
+        await window.FlyPaperWafTelemetria.refrescar();
+      }
+    } catch (err) {
+      feedback.innerHTML = '<div class="alerta-error">Error de red (¿Jail / WAF?). Revisa la consola de telemetría.</div>';
+      if (window.FlyPaperWafTelemetria) {
+        await window.FlyPaperWafTelemetria.refrescar();
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

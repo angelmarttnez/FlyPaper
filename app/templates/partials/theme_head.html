@@ -1,0 +1,795 @@
+{# Tematización global FlyPaper — FOUC-safe + CSS variables (6 temas) #}
+{# Incluir lo antes posible dentro de <head>. Clave localStorage: "theme" #}
+<script>
+(function () {
+  var CLAVE = 'theme';
+  var VALIDOS = { light: 1, dark: 1, hacker: 1, lcd: 1, anime: 1, 'apple-glass': 1 };
+  var tema = 'dark';
+  try {
+    var guardado = localStorage.getItem(CLAVE);
+    if (!guardado) {
+      var legado = localStorage.getItem('academia-theme');
+      if (legado && VALIDOS[legado]) {
+        guardado = legado;
+        localStorage.setItem(CLAVE, legado);
+      }
+    }
+    if (guardado && VALIDOS[guardado]) tema = guardado;
+  } catch (e) { /* modo privado */ }
+  document.documentElement.setAttribute('data-theme', tema);
+  document.documentElement.dataset.theme = tema;
+  ['theme-light', 'theme-dark', 'theme-hacker', 'theme-lcd', 'theme-anime', 'theme-apple-glass']
+    .forEach(function (c) { document.documentElement.classList.remove(c); });
+  document.documentElement.classList.add('theme-' + tema);
+})();
+</script>
+<style>
+  /* —— Identidades visuales (contraste WCAG AA >= 4.5:1) —— */
+  html[data-theme="light"] {
+    --bg-base: #F8FAFC;
+    --bg-card: #FFFFFF;
+    --bg-card-soft: #FFFFFF;
+    --bg-input: #F1F5F9;
+    --border-color: #CBD5E1;
+    --border-accent: rgba(37, 99, 235, 0.45);
+    --text-main: #0F172A;
+    --text-muted: #334155;
+    --text-soft: #1E293B;
+    --color-accent: #1D4ED8;
+    --color-accent-2: #2563EB;
+    --color-accent-fg: #FFFFFF;
+    --color-ok: #15803D;
+    --color-err: #B91C1C;
+    --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+    --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --text-glow: none;
+    --accent-glow: none;
+    --glass-blur: 0px;
+    --radius-card: 12px;
+    --border-width-ui: 1px;
+    --hover-transform: none;
+    --nav-chip-bg: #FFFFFF;
+    --bg-base-glow-a: transparent;
+    --bg-base-glow-b: transparent;
+    --terminal-bg: #0F172A;
+    --terminal-fg: #F1F5F9;
+    --alert-error-bg: #FEE2E2;
+    --alert-error-fg: #7F1D1D;
+    --alert-error-border: #FECACA;
+    --alert-ok-bg: #DCFCE7;
+    --alert-ok-fg: #14532D;
+    --alert-ok-border: #BBF7D0;
+    --alert-warn-bg: #FEF3C7;
+    --alert-warn-fg: #78350F;
+    --alert-warn-border: #FDE68A;
+    --alert-info-bg: #DBEAFE;
+    --alert-info-fg: #1E3A8A;
+    --alert-info-border: #BFDBFE;
+    --hero-title-from: #0F172A;
+    --hero-title-to: #334155;
+  }
+
+  html[data-theme="dark"] {
+    --bg-base: #0B0F19;
+    --bg-card: rgba(21, 29, 48, 0.85);
+    --bg-card-soft: rgba(21, 29, 48, 0.95);
+    --bg-input: rgba(11, 18, 32, 0.98);
+    --border-color: rgba(71, 85, 105, 0.7);
+    --border-accent: rgba(16, 185, 129, 0.45);
+    --text-main: #F8FAFC;
+    --text-muted: #CBD5E1;
+    --text-soft: #E2E8F0;
+    --color-accent: #34D399;
+    --color-accent-2: #22D3EE;
+    --color-accent-fg: #042F2E;
+    --color-ok: #4ADE80;
+    --color-err: #FCA5A5;
+    --shadow-card: 0 16px 40px rgba(0, 0, 0, 0.35);
+    --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --text-glow: none;
+    --accent-glow: none;
+    --glass-blur: 12px;
+    --radius-card: 12px;
+    --border-width-ui: 1px;
+    --hover-transform: none;
+    --nav-chip-bg: rgba(21, 29, 48, 0.9);
+    --bg-base-glow-a: rgba(16, 185, 129, 0.08);
+    --bg-base-glow-b: rgba(6, 182, 212, 0.07);
+    --terminal-bg: #020617;
+    --terminal-fg: #ECFDF5;
+    --alert-error-bg: #450A0A;
+    --alert-error-fg: #FECACA;
+    --alert-error-border: #991B1B;
+    --alert-ok-bg: #052E16;
+    --alert-ok-fg: #BBF7D0;
+    --alert-ok-border: #166534;
+    --alert-warn-bg: #422006;
+    --alert-warn-fg: #FDE68A;
+    --alert-warn-border: #A16207;
+    --alert-info-bg: #172554;
+    --alert-info-fg: #BFDBFE;
+    --alert-info-border: #1D4ED8;
+    --hero-title-from: #FFFFFF;
+    --hero-title-to: #CBD5E1;
+  }
+
+  html[data-theme="hacker"] {
+    --bg-base: #000000;
+    --bg-card: #020202;
+    --bg-card-soft: #050805;
+    --bg-input: #051405;
+    --border-color: rgba(57, 255, 20, 0.35);
+    --border-accent: rgba(57, 255, 20, 0.6);
+    --text-main: #E8F5E9;
+    --text-muted: #81C784;
+    --text-soft: #C8E6C9;
+    --color-accent: #39FF14;
+    --color-accent-2: #69FF6B;
+    --color-accent-fg: #000000;
+    --color-ok: #69FF6B;
+    --color-err: #FF8A80;
+    --shadow-card: 0 0 12px rgba(57, 255, 20, 0.08), inset 0 0 0 1px rgba(57, 255, 20, 0.08);
+    --font-ui: ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+    --text-glow: none;
+    --accent-glow: 0 0 6px rgba(57, 255, 20, 0.45);
+    --glass-blur: 0px;
+    --radius-card: 8px;
+    --border-width-ui: 1px;
+    --hover-transform: none;
+    --nav-chip-bg: #000000;
+    --bg-base-glow-a: rgba(57, 255, 20, 0.04);
+    --bg-base-glow-b: transparent;
+    --terminal-bg: #051405;
+    --terminal-fg: #E8F5E9;
+    --alert-error-bg: #1A0505;
+    --alert-error-fg: #FFCDD2;
+    --alert-error-border: #FF5252;
+    --alert-ok-bg: #051405;
+    --alert-ok-fg: #C8E6C9;
+    --alert-ok-border: #39FF14;
+    --alert-warn-bg: #1A1405;
+    --alert-warn-fg: #FFE082;
+    --alert-warn-border: #FFC107;
+    --alert-info-bg: #04140A;
+    --alert-info-fg: #B9F6CA;
+    --alert-info-border: #00E676;
+    --hero-title-from: #E8F5E9;
+    --hero-title-to: #A5D6A7;
+  }
+
+  html[data-theme="lcd"] {
+    --bg-base: #B1C2A5;
+    --bg-card: #A4B29E;
+    --bg-card-soft: #9AAB94;
+    --bg-input: #8F9F88;
+    --border-color: #5C6B56;
+    --border-accent: rgba(20, 31, 18, 0.55);
+    --text-main: #0C120B;
+    --text-muted: #1F2A1C;
+    --text-soft: #141F12;
+    --color-accent: #1A2418;
+    --color-accent-2: #0C120B;
+    --color-accent-fg: #D7E2D0;
+    --color-ok: #1A2418;
+    --color-err: #4A1515;
+    --shadow-card: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 1px 0 rgba(255, 255, 255, 0.12);
+    --font-ui: "VT323", "Share Tech Mono", "Courier New", ui-monospace, monospace;
+    --text-glow: none;
+    --accent-glow: none;
+    --glass-blur: 0px;
+    --radius-card: 4px;
+    --border-width-ui: 1px;
+    --hover-transform: none;
+    --nav-chip-bg: #A4B29E;
+    --bg-base-glow-a: transparent;
+    --bg-base-glow-b: transparent;
+    --terminal-bg: #8F9F88;
+    --terminal-fg: #0C120B;
+    --alert-error-bg: #C9A8A8;
+    --alert-error-fg: #3B0F0F;
+    --alert-error-border: #8B3A3A;
+    --alert-ok-bg: #9BB894;
+    --alert-ok-fg: #0F1F0C;
+    --alert-ok-border: #3D5A36;
+    --alert-warn-bg: #C5B892;
+    --alert-warn-fg: #3A2E0A;
+    --alert-warn-border: #8A7020;
+    --alert-info-bg: #9AADA8;
+    --alert-info-fg: #0F1A1C;
+    --alert-info-border: #3A5550;
+    --hero-title-from: #0C120B;
+    --hero-title-to: #1F2A1C;
+  }
+
+  /* —— Anime & Japón (manga / shonen / Tokyo neon) —— */
+  html[data-theme="anime"],
+  html.theme-anime {
+    --bg-base: #F7F4EF;
+    --bg-card: #FFFEFA;
+    --bg-card-soft: #FFF8F0;
+    --bg-input: #F0EBE3;
+    --border-color: #1A1A1A;
+    --border-accent: #E60012;
+    --text-main: #121212;
+    --text-muted: #3D3D3D;
+    --text-soft: #1F1F1F;
+    --color-accent: #E60012;
+    --color-accent-2: #5B2CFF;
+    --color-accent-fg: #FFFFFF;
+    --color-ok: #0B7A3E;
+    --color-err: #B0000C;
+    --shadow-card: 4px 4px 0 #1A1A1A;
+    --font-ui: "Segoe UI", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    --text-glow: none;
+    --accent-glow: none;
+    --glass-blur: 0px;
+    --radius-card: 3px;
+    --border-width-ui: 2px;
+    --hover-transform: translate(-2px, -2px);
+    --nav-chip-bg: #FFFEFA;
+    --bg-base-glow-a: rgba(230, 0, 18, 0.08);
+    --bg-base-glow-b: rgba(91, 44, 255, 0.07);
+    --terminal-bg: #1A1216;
+    --terminal-fg: #FFF5F5;
+    --alert-error-bg: #FFE0E3;
+    --alert-error-fg: #6B0008;
+    --alert-error-border: #E60012;
+    --alert-ok-bg: #D9F5E5;
+    --alert-ok-fg: #064E2A;
+    --alert-ok-border: #0B7A3E;
+    --alert-warn-bg: #FFF0C2;
+    --alert-warn-fg: #5C3B00;
+    --alert-warn-border: #C98900;
+    --alert-info-bg: #E4DEFF;
+    --alert-info-fg: #2A0F7A;
+    --alert-info-border: #5B2CFF;
+    --hero-title-from: #121212;
+    --hero-title-to: #E60012;
+  }
+
+  /* —— Apple Glassmorphism (cristal líquido) —— */
+  html[data-theme="apple-glass"],
+  html.theme-apple-glass {
+    --bg-base: #C5D4E8;
+    --bg-card: rgba(255, 255, 255, 0.4);
+    --bg-card-soft: rgba(255, 255, 255, 0.5);
+    --bg-input: rgba(255, 255, 255, 0.72);
+    --border-color: rgba(255, 255, 255, 0.3);
+    --border-accent: rgba(0, 113, 227, 0.45);
+    --text-main: #1D1D1F;
+    --text-muted: #424245;
+    --text-soft: #2C2C2E;
+    --color-accent: #0071E3;
+    --color-accent-2: #5856D6;
+    --color-accent-fg: #FFFFFF;
+    --color-ok: #1B7F3A;
+    --color-err: #C41E1E;
+    --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.08);
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --text-glow: none;
+    --accent-glow: none;
+    --glass-blur: 16px;
+    --glass-saturate: 180%;
+    --radius-card: 16px;
+    --border-width-ui: 1px;
+    --hover-transform: none;
+    --nav-chip-bg: rgba(255, 255, 255, 0.45);
+    --bg-base-glow-a: rgba(120, 180, 255, 0.55);
+    --bg-base-glow-b: rgba(220, 160, 220, 0.45);
+    --terminal-bg: rgba(28, 28, 30, 0.92);
+    --terminal-fg: #F5F5F7;
+    --alert-error-bg: rgba(255, 235, 235, 0.92);
+    --alert-error-fg: #7A1212;
+    --alert-error-border: rgba(196, 30, 30, 0.45);
+    --alert-ok-bg: rgba(230, 247, 236, 0.92);
+    --alert-ok-fg: #0F4D24;
+    --alert-ok-border: rgba(27, 127, 58, 0.4);
+    --alert-warn-bg: rgba(255, 246, 229, 0.92);
+    --alert-warn-fg: #6B4500;
+    --alert-warn-border: rgba(201, 137, 0, 0.45);
+    --alert-info-bg: rgba(229, 241, 255, 0.92);
+    --alert-info-fg: #003A7A;
+    --alert-info-border: rgba(0, 113, 227, 0.4);
+    /* Hero title gradient: graphite → near-black (WCAG) */
+    --hero-title-from: #1D1D1F;
+    --hero-title-to: #3A3A3C;
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    html[data-theme="apple-glass"],
+    html.theme-apple-glass {
+      --bg-card: rgba(255, 255, 255, 0.88);
+      --bg-card-soft: rgba(255, 255, 255, 0.92);
+      --glass-blur: 0px;
+    }
+  }
+
+  /* Superficie base global */
+  body.theme-aware,
+  body.academia-theme {
+    background:
+      radial-gradient(900px 420px at 0% 0%, var(--bg-base-glow-a), transparent 55%),
+      radial-gradient(800px 400px at 100% 10%, var(--bg-base-glow-b), transparent 50%),
+      var(--bg-base);
+    color: var(--text-main);
+    font-family: var(--font-ui);
+    text-shadow: var(--text-glow);
+    min-height: 100vh;
+    transition: background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1), color 0.35s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  body.theme-aware .theme-surface,
+  body.theme-aware .theme-panel,
+  body.theme-aware .card-challenge,
+  body.theme-aware .card,
+  body.theme-aware .glass-card,
+  body.academia-theme .theme-surface,
+  body.academia-theme .theme-panel,
+  body.academia-theme .card-challenge,
+  body.academia-theme .lab-panel,
+  body.academia-theme .entrega-panel {
+    background: var(--bg-card);
+    border: var(--border-width-ui, 1px) solid var(--border-color);
+    border-radius: var(--radius-card, 12px);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    color: var(--text-main);
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.25s ease, transform 0.15s ease;
+  }
+
+  html[data-theme="anime"] body.theme-aware .card:hover,
+  html[data-theme="anime"] body.theme-aware .theme-panel:hover,
+  html[data-theme="anime"] body.theme-aware .card-challenge:hover,
+  html[data-theme="anime"] body.theme-aware .glass-card:hover,
+  html[data-theme="anime"] body.theme-aware .feature:hover,
+  html.theme-anime body.theme-aware .card:hover,
+  html.theme-anime body.theme-aware .theme-panel:hover,
+  html.theme-anime body.theme-aware .card-challenge:hover,
+  html.theme-anime body.theme-aware .glass-card:hover,
+  html.theme-anime body.theme-aware .feature:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 0 var(--color-accent);
+    border-color: var(--color-accent);
+  }
+
+  html[data-theme="apple-glass"] body.theme-aware,
+  html.theme-apple-glass body.theme-aware {
+    letter-spacing: 0.01em;
+    /* Canvas macOS Monterey: blobs orgánicos para que el blur distorsione color */
+    background:
+      radial-gradient(ellipse 80% 60% at 15% 20%, #7EB8F7 0%, transparent 55%),
+      radial-gradient(ellipse 70% 55% at 85% 15%, #D4A5E8 0%, transparent 50%),
+      radial-gradient(ellipse 65% 50% at 70% 80%, #F5B8C8 0%, transparent 55%),
+      radial-gradient(ellipse 55% 45% at 20% 75%, #A8E0D0 0%, transparent 50%),
+      linear-gradient(160deg, #B8C9E0 0%, #D5D0E8 45%, #E8D5E0 100%);
+    background-attachment: fixed;
+  }
+
+  html[data-theme="apple-glass"] body.theme-aware .card,
+  html[data-theme="apple-glass"] body.theme-aware .theme-panel,
+  html[data-theme="apple-glass"] body.theme-aware .glass-card,
+  html[data-theme="apple-glass"] body.theme-aware .feature,
+  html.theme-apple-glass body.theme-aware .card,
+  html.theme-apple-glass body.theme-aware .theme-panel,
+  html.theme-apple-glass body.theme-aware .glass-card,
+  html.theme-apple-glass body.theme-aware .feature {
+    background: rgba(255, 255, 255, 0.4) !important;
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.08) !important;
+    border-radius: var(--radius-card, 16px);
+  }
+
+  body.theme-aware .theme-muted,
+  body.academia-theme .theme-muted,
+  body.academia-theme .text-steel {
+    color: var(--text-muted) !important;
+  }
+
+  body.theme-aware .theme-accent,
+  body.academia-theme .theme-accent,
+  body.academia-theme .text-neon,
+  body.academia-theme .lab-kicker,
+  body.academia-theme .entrega-kicker {
+    color: var(--color-accent) !important;
+    text-shadow: var(--accent-glow, none);
+  }
+
+  /* Navbar: capa alta para que el dropdown nunca quede bajo el contenido */
+  body.theme-aware .navbar,
+  body.academia-theme .navbar {
+    position: sticky;
+    top: 0;
+    z-index: 9990;
+    background: var(--bg-card-soft);
+    border-bottom: 1px solid var(--border-color);
+    backdrop-filter: blur(var(--glass-blur));
+    color: var(--text-main);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+    isolation: isolate;
+  }
+  body.theme-aware .navbar .logo,
+  body.academia-theme .navbar .logo {
+    color: var(--color-accent);
+    background: none;
+    -webkit-text-fill-color: unset;
+  }
+  body.theme-aware .nav-links a,
+  body.academia-theme .nav-links a {
+    color: var(--text-muted);
+  }
+  body.theme-aware .nav-links a:hover,
+  body.theme-aware .nav-links a.active,
+  body.academia-theme .nav-links a:hover,
+  body.academia-theme .nav-links a.active {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
+  }
+  body.theme-aware .nav-sesion,
+  body.academia-theme .nav-sesion {
+    border-left-color: var(--border-color);
+  }
+  body.theme-aware .nav-sesion-label,
+  body.academia-theme .nav-sesion-label { color: var(--text-muted); }
+  body.theme-aware .nav-sesion-label strong,
+  body.academia-theme .nav-sesion-label strong { color: var(--text-main); }
+  body.theme-aware .nav-sesion-login,
+  body.academia-theme .nav-sesion-login {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+    border: 1px solid var(--color-accent);
+  }
+  body.theme-aware .nav-sesion-logout,
+  body.academia-theme .nav-sesion-logout {
+    color: var(--text-muted);
+    border-color: var(--border-color);
+  }
+  body.theme-aware .nav-sesion-logout:hover,
+  body.academia-theme .nav-sesion-logout:hover {
+    color: var(--color-accent);
+    border-color: var(--border-accent);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  }
+
+  /* —— Selector de temas (dropdown) —— */
+  .theme-switcher {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    z-index: 9998;
+  }
+  .theme-switcher-toggle {
+    appearance: none;
+    border: 1px solid var(--border-color, #334155);
+    background: var(--nav-chip-bg, rgba(15, 23, 42, 0.85));
+    color: var(--text-main, #f8fafc);
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+    transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  .theme-switcher-toggle:hover,
+  .theme-switcher.is-open .theme-switcher-toggle {
+    border-color: var(--border-accent, var(--color-accent));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+  }
+  .theme-switcher-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 200px;
+    max-height: min(70vh, 420px);
+    overflow-y: auto;
+    padding: 6px;
+    border-radius: var(--radius-card, 12px);
+    border: var(--border-width-ui, 1px) solid var(--border-color);
+    background: var(--bg-card-soft);
+    box-shadow: var(--shadow-card), 0 12px 32px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(12px);
+    z-index: 9999;
+    display: none;
+  }
+  .theme-switcher.is-open .theme-switcher-menu { display: block; }
+  .theme-switcher-menu button {
+    appearance: none;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    text-align: left;
+    transition: background-color 0.2s ease;
+  }
+  .theme-switcher-menu button:hover {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .theme-switcher-menu button.is-active {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+  .theme-switcher-menu .theme-ico { font-size: 15px; width: 1.4em; text-align: center; }
+
+
+  /* —— Alertas / badges con contraste AA —— */
+  .alerta-error, .alerta-ok, .alerta-info, .alerta-warn,
+  .sql-error, .alert-acceso, .error, .soc-banner.error,
+  .filtro-error {
+    font-weight: 600;
+  }
+  .alerta-error, .sql-error, .alert-acceso, .error,
+  .soc-banner.error, .filtro-error {
+    background: var(--alert-error-bg) !important;
+    color: var(--alert-error-fg) !important;
+    border: 1px solid var(--alert-error-border) !important;
+  }
+  .alerta-ok, .alerta-resuelto {
+    background: var(--alert-ok-bg) !important;
+    color: var(--alert-ok-fg) !important;
+    border: 1px solid var(--alert-ok-border) !important;
+  }
+  .alerta-warn, .badge-firma {
+    background: var(--alert-warn-bg) !important;
+    color: var(--alert-warn-fg) !important;
+    border: 1px solid var(--alert-warn-border) !important;
+  }
+  .alerta-info {
+    background: var(--alert-info-bg) !important;
+    color: var(--alert-info-fg) !important;
+    border: 1px solid var(--alert-info-border) !important;
+  }
+  .sql-error strong { color: inherit !important; font-weight: 800; }
+  .waf-badge.critica, .waf-badge.alta,
+  .badge-critica, .badge-alta, .badge-dif.dificil, .badge-dif-dificil {
+    background: var(--alert-error-bg) !important;
+    color: var(--alert-error-fg) !important;
+    border: 1px solid var(--alert-error-border);
+  }
+  .waf-badge.media, .badge-media, .badge-dif.media, .badge-dif-media {
+    background: var(--alert-warn-bg) !important;
+    color: var(--alert-warn-fg) !important;
+    border: 1px solid var(--alert-warn-border);
+  }
+  .waf-badge.baja, .badge-baja, .badge-dif.facil, .badge-dif-facil {
+    background: var(--alert-ok-bg) !important;
+    color: var(--alert-ok-fg) !important;
+    border: 1px solid var(--alert-ok-border);
+  }
+  .waf-badge.normal {
+    background: var(--bg-input) !important;
+    color: var(--text-main) !important;
+    border: 1px solid var(--border-color);
+  }
+  .quiz-bloque.is-error {
+    background: var(--alert-error-bg) !important;
+    border-color: var(--alert-error-border) !important;
+  }
+  .quiz-bloque.is-success {
+    background: var(--alert-ok-bg) !important;
+    border-color: var(--alert-ok-border) !important;
+  }
+  .entrega-msg.err { color: var(--alert-error-fg) !important; }
+  .entrega-msg.ok { color: var(--alert-ok-fg) !important; }
+  .widget-row strong.err { color: var(--alert-error-fg) !important; }
+  .widget-row .ok { color: var(--alert-ok-fg) !important; }
+
+  html[data-theme="hacker"] body.theme-aware,
+  html[data-theme="hacker"] body.academia-theme {
+    letter-spacing: 0.01em;
+  }
+  html[data-theme="lcd"] body.theme-aware,
+  html[data-theme="lcd"] body.academia-theme {
+    letter-spacing: 0.02em;
+  }
+  html[data-theme="anime"] body.theme-aware .theme-accent,
+  html.theme-anime body.theme-aware .theme-accent {
+    color: var(--color-accent) !important;
+    font-weight: 800;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     Motion system — transiciones premium + micro-interacciones
+     ═══════════════════════════════════════════════════════════ */
+  :root {
+    --ease-theme: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-theme: 0.35s;
+    --dur-enter: 0.45s;
+    --dur-anime-pop: 0.15s;
+  }
+
+  /* 1) Suavizado global al cambiar de tema */
+  body,
+  body.theme-aware,
+  body.academia-theme,
+  header,
+  nav,
+  aside,
+  main,
+  .glass-card,
+  .card,
+  .feature,
+  .theme-panel,
+  .theme-surface,
+  table,
+  tr,
+  td,
+  th,
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    transition:
+      background-color var(--dur-theme) var(--ease-theme),
+      background var(--dur-theme) var(--ease-theme),
+      color var(--dur-theme) var(--ease-theme),
+      border-color var(--dur-theme) var(--ease-theme),
+      box-shadow var(--dur-theme) var(--ease-theme),
+      fill var(--dur-theme) var(--ease-theme),
+      stroke var(--dur-theme) var(--ease-theme),
+      opacity var(--dur-theme) var(--ease-theme),
+      transform var(--dur-theme) var(--ease-theme),
+      filter var(--dur-theme) var(--ease-theme),
+      backdrop-filter var(--dur-theme) var(--ease-theme);
+  }
+
+  /* 2) Entrada suave: fade + blur-in */
+  @keyframes fadeInBlur {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  .fade-in-blur {
+    animation: fadeInBlur var(--dur-enter) var(--ease-enter) both;
+  }
+
+  /* Escalonado sutil en grids de tarjetas */
+  .grid-features > .fade-in-blur:nth-child(1) { animation-delay: 0.02s; }
+  .grid-features > .fade-in-blur:nth-child(2) { animation-delay: 0.06s; }
+  .grid-features > .fade-in-blur:nth-child(3) { animation-delay: 0.10s; }
+  .grid-features > .fade-in-blur:nth-child(4) { animation-delay: 0.14s; }
+  .grid-features > .fade-in-blur:nth-child(5) { animation-delay: 0.18s; }
+  .grid-features > .fade-in-blur:nth-child(6) { animation-delay: 0.22s; }
+  .grid-features > .fade-in-blur:nth-child(7) { animation-delay: 0.26s; }
+  .grid-2 > .fade-in-blur:nth-child(1) { animation-delay: 0.04s; }
+  .grid-2 > .fade-in-blur:nth-child(2) { animation-delay: 0.10s; }
+
+  /* 3a) Apple Glass — hover cristalino */
+  html[data-theme="apple-glass"] body.theme-aware .glass-card,
+  html[data-theme="apple-glass"] body.theme-aware .card,
+  html[data-theme="apple-glass"] body.theme-aware .feature,
+  html[data-theme="apple-glass"] body.theme-aware .theme-panel,
+  html[data-theme="apple-glass"] body.theme-aware button,
+  html[data-theme="apple-glass"] body.theme-aware .btn,
+  html[data-theme="apple-glass"] body.theme-aware .btn-soc,
+  html.theme-apple-glass body.theme-aware .glass-card,
+  html.theme-apple-glass body.theme-aware .card,
+  html.theme-apple-glass body.theme-aware .feature,
+  html.theme-apple-glass body.theme-aware .theme-panel,
+  html.theme-apple-glass body.theme-aware button,
+  html.theme-apple-glass body.theme-aware .btn,
+  html.theme-apple-glass body.theme-aware .btn-soc {
+    will-change: transform, box-shadow, background-color;
+  }
+
+  html[data-theme="apple-glass"] body.theme-aware .glass-card:hover,
+  html[data-theme="apple-glass"] body.theme-aware .card:hover,
+  html[data-theme="apple-glass"] body.theme-aware .feature:hover,
+  html[data-theme="apple-glass"] body.theme-aware a.feature-link:hover,
+  html[data-theme="apple-glass"] body.theme-aware .theme-panel:hover,
+  html[data-theme="apple-glass"] body.theme-aware .stat-mapa:hover,
+  html.theme-apple-glass body.theme-aware .glass-card:hover,
+  html.theme-apple-glass body.theme-aware .card:hover,
+  html.theme-apple-glass body.theme-aware .feature:hover,
+  html.theme-apple-glass body.theme-aware a.feature-link:hover,
+  html.theme-apple-glass body.theme-aware .theme-panel:hover,
+  html.theme-apple-glass body.theme-aware .stat-mapa:hover {
+    transform: scale(1.01);
+    background: rgba(255, 255, 255, 0.5) !important;
+    box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.12) !important;
+  }
+
+  html[data-theme="apple-glass"] body.theme-aware button:hover,
+  html[data-theme="apple-glass"] body.theme-aware .btn:hover,
+  html[data-theme="apple-glass"] body.theme-aware .btn-soc:hover,
+  html.theme-apple-glass body.theme-aware button:hover,
+  html.theme-apple-glass body.theme-aware .btn:hover,
+  html.theme-apple-glass body.theme-aware .btn-soc:hover {
+    transform: scale(1.01);
+    box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.12);
+  }
+
+  /* 3b) Anime — hover pop manga / arcade */
+  html[data-theme="anime"] body.theme-aware .glass-card,
+  html[data-theme="anime"] body.theme-aware .card,
+  html[data-theme="anime"] body.theme-aware .feature,
+  html[data-theme="anime"] body.theme-aware .theme-panel,
+  html[data-theme="anime"] body.theme-aware .card-challenge,
+  html[data-theme="anime"] body.theme-aware button,
+  html[data-theme="anime"] body.theme-aware .btn,
+  html[data-theme="anime"] body.theme-aware .btn-soc,
+  html.theme-anime body.theme-aware .glass-card,
+  html.theme-anime body.theme-aware .card,
+  html.theme-anime body.theme-aware .feature,
+  html.theme-anime body.theme-aware .theme-panel,
+  html.theme-anime body.theme-aware .card-challenge,
+  html.theme-anime body.theme-aware button,
+  html.theme-anime body.theme-aware .btn,
+  html.theme-anime body.theme-aware .btn-soc {
+    transition:
+      transform var(--dur-anime-pop) ease-out,
+      box-shadow var(--dur-anime-pop) ease-out,
+      border-color var(--dur-anime-pop) ease-out,
+      background-color var(--dur-theme) var(--ease-theme),
+      color var(--dur-theme) var(--ease-theme) !important;
+  }
+
+  html[data-theme="anime"] body.theme-aware .glass-card:hover,
+  html[data-theme="anime"] body.theme-aware .card:hover,
+  html[data-theme="anime"] body.theme-aware .feature:hover,
+  html[data-theme="anime"] body.theme-aware a.feature-link:hover,
+  html[data-theme="anime"] body.theme-aware .theme-panel:hover,
+  html[data-theme="anime"] body.theme-aware .card-challenge:hover,
+  html[data-theme="anime"] body.theme-aware button:hover,
+  html[data-theme="anime"] body.theme-aware .btn:hover,
+  html[data-theme="anime"] body.theme-aware .btn-soc:hover,
+  html.theme-anime body.theme-aware .glass-card:hover,
+  html.theme-anime body.theme-aware .card:hover,
+  html.theme-anime body.theme-aware .feature:hover,
+  html.theme-anime body.theme-aware a.feature-link:hover,
+  html.theme-anime body.theme-aware .theme-panel:hover,
+  html.theme-anime body.theme-aware .card-challenge:hover,
+  html.theme-anime body.theme-aware button:hover,
+  html.theme-anime body.theme-aware .btn:hover,
+  html.theme-anime body.theme-aware .btn-soc:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 0 var(--color-accent) !important;
+    border-color: var(--color-accent);
+  }
+
+  /* 4) Accesibilidad: respetar reduced-motion del SO */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    .fade-in-blur {
+      animation: none !important;
+      opacity: 1 !important;
+      filter: none !important;
+      transform: none !important;
+    }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">

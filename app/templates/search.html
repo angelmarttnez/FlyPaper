@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FlyPaper · Búsqueda interna</title>
@@ -147,8 +148,9 @@
     border-top: 1px solid rgba(120, 160, 255, 0.08);
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
   {% include 'partials/navbar_publico.html' %}
 
   <main>

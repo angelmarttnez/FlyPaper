@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FlyPaper SOC — Panel Unificado</title>
@@ -9,31 +10,34 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #05080f;
-    color: #e6ecff;
+    font-family: var(--font-ui);
+    background: var(--bg-base);
+    color: var(--text-main);
     min-height: 100vh;
     display: flex;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
   aside {
     width: 240px;
-    background: linear-gradient(180deg, #0a1020 0%, #060a14 100%);
-    border-right: 1px solid rgba(0, 255, 140, 0.12);
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     padding: 20px 0;
     flex-shrink: 0;
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
   }
   .brand {
     padding: 0 20px 20px;
     font-size: 18px;
     font-weight: 700;
-    color: #00ff8c;
-    text-shadow: 0 0 20px rgba(0, 255, 140, 0.3);
-    border-bottom: 1px solid rgba(0, 255, 140, 0.1);
+    color: var(--color-accent);
+    text-shadow: var(--accent-glow, none);
+    border-bottom: 1px solid var(--border-color);
     margin-bottom: 12px;
   }
-  .brand small { display: block; font-size: 11px; color: #64748b; font-weight: 500; margin-top: 4px; }
+  .brand small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 4px; text-shadow: none; }
   nav { flex: 1; padding: 8px 10px; }
   nav button.tab-link {
     display: block;
@@ -43,33 +47,39 @@
     margin-bottom: 4px;
     border: none;
     background: transparent;
-    color: #8aa0c8;
+    color: var(--text-muted);
     font-size: 14px;
     border-radius: 8px;
     cursor: pointer;
     font-family: inherit;
   }
-  nav button.tab-link:hover { background: rgba(0, 255, 140, 0.08); color: #fff; }
-  nav button.tab-link.active {
-    background: rgba(0, 255, 140, 0.15);
-    color: #00ff8c;
-    border: 1px solid rgba(0, 255, 140, 0.25);
+  nav button.tab-link:hover {
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    color: var(--text-main);
   }
-  .nav-footer { padding: 12px 10px; border-top: 1px solid rgba(120, 160, 255, 0.1); }
-  .nav-footer a { color: #f85149; font-size: 13px; text-decoration: none; padding: 8px 14px; display: block; }
+  nav button.tab-link.active {
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+    color: var(--color-accent);
+    border: 1px solid var(--border-accent);
+  }
+  .nav-footer { padding: 12px 10px; border-top: 1px solid var(--border-color); }
+  .nav-footer a { color: var(--color-err); font-size: 13px; text-decoration: none; padding: 8px 14px; display: block; }
 
-  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-base); }
   header.top {
     padding: 20px 28px;
-    border-bottom: 1px solid #1e293b;
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(10, 14, 26, 0.95);
+    background: var(--bg-card-soft);
+    position: sticky;
+    top: 0;
+    z-index: 9990;
   }
-  header.top h1 { font-size: 20px; font-weight: 600; }
-  .user-badge { font-size: 13px; color: #94a3b8; }
-  .user-badge strong { color: #58a6ff; }
+  header.top h1 { font-size: 20px; font-weight: 600; color: var(--text-main); }
+  .user-badge { font-size: 13px; color: var(--text-muted); }
+  .user-badge strong { color: var(--color-accent); }
 
   .soc-banner {
     display: none;
@@ -77,9 +87,17 @@
     padding: 12px 16px;
     border-radius: 8px;
     font-size: 13px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
   }
   .soc-banner.visible { display: block; }
-  .soc-banner.error { background: rgba(248, 81, 73, 0.15); border: 1px solid rgba(248, 81, 73, 0.4); color: #ff7b72; }
+  .soc-banner.error {
+    background: var(--alert-error-bg);
+    border: 1px solid var(--alert-error-border);
+    color: var(--alert-error-fg);
+    font-weight: 600;
+  }
 
   .tab-panel { display: none; flex: 1; padding: 24px 28px; overflow: auto; }
   .tab-panel.active { display: block; }
@@ -88,17 +106,39 @@
   @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
 
   .card {
-    background: linear-gradient(135deg, rgba(15, 25, 45, 0.9), rgba(8, 12, 24, 0.95));
-    border: 1px solid rgba(88, 166, 255, 0.15);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 20px;
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
+    color: var(--text-main);
+    transition:
+      background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; color: #8b949e; margin-bottom: 14px; }
-  .widget-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 14px; }
+  .card h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .widget-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+    color: var(--text-main);
+  }
   .widget-row:last-child { border-bottom: none; }
-  .widget-row .ok { color: #3fb950; }
-  .widget-row strong.err { color: #f87171; }
-  .muted { color: #64748b; font-size: 13px; }
+  .widget-row .ok { color: #22c55e; }
+  .widget-row strong.err { color: #ef4444; }
+  .muted { color: var(--text-muted); font-size: 13px; }
   .firma-waf { margin: 8px 0; }
   .badge-firma {
     display: inline-block;
@@ -107,21 +147,33 @@
     font-size: 12px;
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
     font-weight: 600;
-    color: #fde68a;
+    color: #eab308;
     background: rgba(234, 179, 8, 0.15);
     border: 1px solid rgba(234, 179, 8, 0.35);
     letter-spacing: 0.02em;
   }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
-  th { text-align: left; color: #8b949e; font-size: 11px; text-transform: uppercase; padding: 10px 8px; border-bottom: 1px solid #21262d; }
-  td { padding: 10px 8px; border-bottom: 1px solid #21262d; vertical-align: middle; }
-  code { font-family: "JetBrains Mono", monospace; font-size: 12px; color: #58a6ff; }
+  th {
+    text-align: left;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+    color: var(--text-main);
+  }
+  code { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--color-accent); }
 
   .btn-whitelist, .btn-soc {
-    background: rgba(63, 185, 80, 0.15);
-    border: 1px solid rgba(63, 185, 80, 0.4);
-    color: #3fb950;
+    background: color-mix(in srgb, var(--color-ok) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-ok) 40%, transparent);
+    color: var(--color-ok);
     padding: 6px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -129,7 +181,11 @@
     font-weight: 600;
     font-family: inherit;
   }
-  .btn-soc.secondary { background: rgba(88, 166, 255, 0.1); border-color: rgba(88, 166, 255, 0.35); color: #58a6ff; }
+  .btn-soc.secondary {
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-color: var(--border-accent);
+    color: var(--color-accent);
+  }
   .btn-whitelist:hover, .btn-soc:hover { filter: brightness(1.15); }
   .btn-whitelist:disabled { opacity: 0.5; cursor: wait; }
 
@@ -137,9 +193,9 @@
     width: 100%;
     height: calc(100vh - 120px);
     min-height: 600px;
-    border: 1px solid #21262d;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    background: #0a0e1a;
+    background: var(--bg-base);
   }
   .tab-panel[data-panel="monitor"] { padding: 12px 16px; }
 
@@ -150,13 +206,20 @@
     align-items: flex-end;
     margin-bottom: 16px;
     padding-bottom: 16px;
-    border-bottom: 1px solid #21262d;
+    border-bottom: 1px solid var(--border-color);
   }
-  .toolbar-soc label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #8b949e; text-transform: uppercase; }
+  .toolbar-soc label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
   .toolbar-soc input {
-    background: #0d1117;
-    border: 1px solid #30363d;
-    color: #e6ecff;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
     padding: 8px 10px;
     border-radius: 6px;
     font-size: 13px;
@@ -166,15 +229,19 @@
   .sub-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
   .sub-tab {
     background: transparent;
-    border: 1px solid #30363d;
-    color: #8b949e;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
     padding: 8px 14px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
     font-family: inherit;
   }
-  .sub-tab.active { border-color: #00ff8c; color: #00ff8c; background: rgba(0, 255, 140, 0.08); }
+  .sub-tab.active {
+    border-color: var(--border-accent);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
   .sub-panel { display: none; }
   .sub-panel.active { display: block; }
 
@@ -184,57 +251,64 @@
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
-    border: 1px solid #30363d;
+    border: 1px solid var(--border-color);
   }
-  .badge-it { color: #58a6ff; border-color: rgba(88,166,255,0.4); background: rgba(88,166,255,0.1); }
-  .badge-rrhh { color: #3fb950; border-color: rgba(63,185,80,0.4); background: rgba(63,185,80,0.1); }
+  .badge-it { color: #3b82f6; border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.1); }
+  .badge-rrhh { color: #22c55e; border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.1); }
   .badge-ventas { color: #f0883e; border-color: rgba(240,136,62,0.4); background: rgba(240,136,62,0.1); }
-  .badge-admin { color: #f85149; border-color: rgba(248,81,73,0.4); background: rgba(248,81,73,0.1); }
-  .badge-default { color: #8b949e; }
+  .badge-admin { color: #ef4444; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.1); }
+  .badge-default { color: var(--text-muted); }
 
   .user-cell { display: flex; align-items: center; gap: 10px; }
   .mini-avatar {
     width: 32px; height: 32px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 12px; color: #fff;
-    background: linear-gradient(135deg, #58a6ff, #bc8cff);
+    font-weight: 700; font-size: 12px; color: var(--color-accent-fg);
+    background: var(--color-accent);
   }
 
-  .badge-nis2 { color: #f85149; font-size: 11px; font-weight: 700; }
+  .badge-nis2 { color: #ef4444; font-size: 11px; font-weight: 700; }
   pre.datos-reporte {
     max-height: 120px; overflow: auto; font-size: 11px;
-    background: #0d1117; padding: 8px; border-radius: 4px; color: #8b949e;
+    background: var(--bg-input); padding: 8px; border-radius: 4px;
+    color: var(--text-muted); border: 1px solid var(--border-color);
     white-space: pre-wrap; word-break: break-word;
   }
 
   .stats-mapa { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
   .stat-mapa {
-    background: rgba(15, 25, 45, 0.9);
-    border: 1px solid rgba(88, 166, 255, 0.15);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 12px 16px;
     min-width: 140px;
+    box-shadow: var(--shadow-card);
+    transition:
+      background-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .stat-mapa .label { font-size: 10px; text-transform: uppercase; color: #8b949e; letter-spacing: 0.05em; }
-  .stat-mapa .value { font-size: 20px; font-weight: 700; color: #f0f6fc; margin-top: 4px; }
+  .stat-mapa .label { font-size: 10px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
+  .stat-mapa .value { font-size: 20px; font-weight: 700; color: var(--text-main); margin-top: 4px; }
 
   .mapa-contenedor {
     position: relative;
     height: calc(100vh - 280px);
     min-height: 420px;
-    border: 1px solid #21262d;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
-    background: #111b27;
+    background: var(--bg-input);
   }
   #mapa-soc { width: 100%; height: 100%; }
   .mapa-estado {
     position: absolute; inset: 0; display: none;
     align-items: center; justify-content: center;
-    background: rgba(5, 8, 15, 0.75); color: #8b949e; z-index: 900;
+    background: color-mix(in srgb, var(--bg-base) 75%, transparent);
+    color: var(--text-muted); z-index: 900;
   }
   .mapa-estado.visible { display: flex; }
-  .mapa-estado.error { color: #f85149; }
+  .mapa-estado.error { color: var(--color-err); }
   .mapa-toolbar { position: absolute; top: 12px; right: 12px; z-index: 800; }
   .banner-demo-mapa {
     position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
@@ -244,8 +318,9 @@
   }
   .banner-demo-mapa.visible { display: block; }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body data-es-admin="{{ '1' if es_admin else '0' }}">
+<body data-es-admin="{{ '1' if es_admin else '0' }}" class="theme-aware">
   <aside>
     <div class="brand">
       FlyPaper SOC
@@ -269,8 +344,11 @@
   <main>
     <header class="top">
       <h1 id="soc-titulo">Centro de Operaciones de Seguridad</h1>
-      <div class="user-badge">
-        <strong>{{ rol_etiqueta }}</strong> · {{ usuario }}
+      <div style="display:flex;align-items:center;gap:14px">
+        {% include 'partials/theme_switcher.html' %}
+        <div class="user-badge">
+          <strong>{{ rol_etiqueta }}</strong> · {{ usuario }}
+        </div>
       </div>
     </header>
 
@@ -278,16 +356,16 @@
 
     <section class="tab-panel active" data-panel="general">
       <div class="grid-2">
-        <div class="card">
+        <div class="card glass-card fade-in-blur">
           <h2>Estado Honeypots</h2>
           <div id="widget-honeypot"><p class="muted">Cargando…</p></div>
         </div>
-        <div class="card">
+        <div class="card glass-card fade-in-blur">
           <h2>Último ataque crítico</h2>
           <div id="widget-critico"><p class="muted">Cargando…</p></div>
         </div>
       </div>
-      <div class="card">
+      <div class="card glass-card fade-in-blur">
         <h2>Últimas 3 IPs únicas</h2>
         <table>
           <thead><tr><th>IP</th><th>País</th><th>ISP</th><th>Última petición</th></tr></thead>
@@ -301,7 +379,7 @@
     </section>
 
     <section class="tab-panel" data-panel="perimetro">
-      <div class="card">
+      <div class="card glass-card fade-in-blur">
         <h2>IPs bloqueadas por perímetro NGWAF (Redis)</h2>
         <p class="muted" style="margin-bottom:12px">
           Bloqueos con TTL 24&nbsp;h · Rate-limit 60 req/min · Riesgo acumulativo ≥5/10&nbsp;min ·
@@ -321,7 +399,7 @@
 
     {% if es_admin %}
     <section class="tab-panel" data-panel="usuarios">
-      <div class="card">
+      <div class="card glass-card fade-in-blur">
         <h2>Directorio corporativo (señuelo · flypaper.db)</h2>
         <p class="muted" id="usuarios-total" style="margin-bottom:12px">Cargando…</p>
         <table>
@@ -334,7 +412,7 @@
     </section>
 
     <section class="tab-panel" data-panel="reportes">
-      <div class="card">
+      <div class="card glass-card fade-in-blur">
         <h2>Reportes de seguridad</h2>
         <nav class="sub-tabs" aria-label="Subsecciones reportes">
           <button type="button" class="sub-tab active" data-subtab="reportes-ip">Por IP</button>
@@ -365,10 +443,10 @@
     </section>
 
     <section class="tab-panel" data-panel="mapa">
-      <div class="stats-mapa">
-        <div class="stat-mapa"><div class="label">IPs atacantes</div><div class="value" id="stat-ips">—</div></div>
-        <div class="stat-mapa"><div class="label">Eventos totales</div><div class="value" id="stat-eventos">—</div></div>
-        <div class="stat-mapa"><div class="label">Marcadores</div><div class="value" id="stat-marcadores">—</div></div>
+      <div class="stats-mapa fade-in-blur">
+        <div class="stat-mapa glass-card"><div class="label">IPs atacantes</div><div class="value" id="stat-ips">—</div></div>
+        <div class="stat-mapa glass-card"><div class="label">Eventos totales</div><div class="value" id="stat-eventos">—</div></div>
+        <div class="stat-mapa glass-card"><div class="label">Marcadores</div><div class="value" id="stat-marcadores">—</div></div>
       </div>
       <div class="mapa-contenedor">
         <div id="mapa-soc"></div>

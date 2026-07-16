@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <title>FlyPaper Admin — Usuarios</title>
 <style>
@@ -55,8 +56,9 @@ tr:hover td{background:#1c2128}
 .pagination button:hover{background:#30363d}
 .pagination .current{background:#1f6feb;border-color:#1f6feb}
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
 <aside class="sidebar">
   <div class="logo">Fly<span>Paper</span></div>
   <nav class="nav">
