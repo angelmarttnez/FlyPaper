@@ -97,7 +97,21 @@
   .widget-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 14px; }
   .widget-row:last-child { border-bottom: none; }
   .widget-row .ok { color: #3fb950; }
+  .widget-row strong.err { color: #f87171; }
   .muted { color: #64748b; font-size: 13px; }
+  .firma-waf { margin: 8px 0; }
+  .badge-firma {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-weight: 600;
+    color: #fde68a;
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    letter-spacing: 0.02em;
+  }
 
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
   th { text-align: left; color: #8b949e; font-size: 11px; text-transform: uppercase; padding: 10px 8px; border-bottom: 1px solid #21262d; }
@@ -288,11 +302,19 @@
 
     <section class="tab-panel" data-panel="perimetro">
       <div class="card">
-        <h2>IPs bloqueadas por reputación (ip_cache.db)</h2>
-        <p class="muted" style="margin-bottom:12px">Score = (AbuseIPDB × 0.6) + (VT × 10). Whitelist inmediata vía botón.</p>
+        <h2>IPs bloqueadas por perímetro NGWAF (Redis)</h2>
+        <p class="muted" style="margin-bottom:12px">
+          Bloqueos con TTL 24&nbsp;h · Rate-limit 60 req/min · Riesgo acumulativo ≥5/10&nbsp;min ·
+          Whitelist persistente. Score reputación = (AbuseIPDB × 0.6) + (VT × 10).
+        </p>
         <table>
-          <thead><tr><th>IP</th><th>País</th><th>ISP</th><th>Score</th><th>Fecha bloqueo</th><th>Acción</th></tr></thead>
-          <tbody id="tabla-bots"><tr><td colspan="6">Cargando…</td></tr></tbody>
+          <thead>
+            <tr>
+              <th>IP</th><th>País</th><th>ISP</th><th>Score</th>
+              <th>TTL</th><th>Motivo</th><th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-bots"><tr><td colspan="7">Cargando…</td></tr></tbody>
         </table>
       </div>
     </section>

@@ -1054,6 +1054,9 @@
     font-weight: 600;
   }
   .badge-sqli, .badge-xss { background: #ef4444; color: #fff; }
+  .badge-rce, .badge-ssrf { background: #dc2626; color: #fff; }
+  .badge-path { background: #f97316; color: #fff; }
+  .badge-ruta-prohibida { background: #ea580c; color: #fff; }
   .badge-reconocimiento { background: #f97316; color: #fff; }
   .badge-scanner { background: #8b5cf6; color: #fff; }
   .badge-fuerza { background: #eab308; color: #111827; }
@@ -1070,6 +1073,24 @@
     font-weight: 700;
   }
   .badge-waf { background: #6d28d9; color: #f5f3ff; border: 1px solid #a855f7; }
+  .badge-firma {
+    display: inline-block;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-weight: 600;
+    vertical-align: middle;
+    color: #fde68a;
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+  }
+  .subtabla .badge-firma { max-width: 220px; }
+  .muted-celda { color: #64748b; }
   tr.grav-sospechoso { background: rgba(234, 179, 8, 0.1); border-left: 4px solid #eab308; }
   .alerta-item.grav-sospechoso { border-left-color: #eab308; }
   .mini-grav.sospechoso { background: rgba(234,179,8,0.25); color: #fde047; }
@@ -1423,6 +1444,10 @@
                 <button type="button" class="filter-btn active" data-filtro="Todos">Todos</button>
                 <button type="button" class="filter-btn" data-filtro="SQLi">SQLi</button>
                 <button type="button" class="filter-btn" data-filtro="XSS">XSS</button>
+                <button type="button" class="filter-btn" data-filtro="Path Traversal">Path Traversal</button>
+                <button type="button" class="filter-btn" data-filtro="RCE">RCE</button>
+                <button type="button" class="filter-btn" data-filtro="SSRF/RFI">SSRF/RFI</button>
+                <button type="button" class="filter-btn" data-filtro="Ruta Prohibida">Ruta Prohibida</button>
                 <button type="button" class="filter-btn" data-filtro="Reconocimiento">Reconocimiento</button>
                 <button type="button" class="filter-btn" data-filtro="Scanner">Scanner</button>
                 <button type="button" class="filter-btn" data-filtro="Fuerza Bruta">Fuerza Bruta</button>
@@ -1740,8 +1765,11 @@
               <button type="button" class="filter-btn" data-filtro-ab="SQLi">SQLi</button>
               <button type="button" class="filter-btn" data-filtro-ab="XSS">XSS</button>
               <button type="button" class="filter-btn" data-filtro-ab="Path Traversal">Path Traversal</button>
+              <button type="button" class="filter-btn" data-filtro-ab="RCE">RCE</button>
+              <button type="button" class="filter-btn" data-filtro-ab="SSRF/RFI">SSRF/RFI</button>
               <button type="button" class="filter-btn" data-filtro-ab="Scanner Automatizado">Scanner</button>
               <button type="button" class="filter-btn" data-filtro-ab="Fuerza Bruta">Fuerza Bruta</button>
+              <button type="button" class="filter-btn" data-filtro-ab="Ruta Prohibida">Ruta Prohibida</button>
               <button type="button" class="filter-btn" data-filtro-ab="Reconocimiento">Reconocimiento</button>
             </div>
             <p class="filters-label">Gravedad</p>
@@ -2928,11 +2956,15 @@
 
   function badgeClass(tipo) {
     const t = (tipo || '').toLowerCase();
-    if (t.includes('automática') || t.includes('waf')) return 'badge-waf';
+    if (t.includes('automática') || t.includes('waf') || t.includes('bot')) return 'badge-waf';
     if (t === 'sqli') return 'badge-sqli';
     if (t === 'xss') return 'badge-xss';
+    if (t === 'rce') return 'badge-rce';
+    if (t.includes('ssrf') || t.includes('rfi')) return 'badge-ssrf';
+    if (t.includes('path') || t.includes('traversal') || t.includes('lfi')) return 'badge-path';
+    if (t.includes('ruta prohibida')) return 'badge-ruta-prohibida';
     if (t === 'reconocimiento') return 'badge-reconocimiento';
-    if (t === 'scanner') return 'badge-scanner';
+    if (t.includes('scanner')) return 'badge-scanner';
     if (t === 'fuerza bruta') return 'badge-fuerza';
     return 'badge-otro';
   }
@@ -2942,6 +2974,12 @@
     return tipos
       .map((t) => `<span class="badge ${badgeClass(t)}">${escapeHtml(t)}</span>`)
       .join(' ');
+  }
+
+  function htmlCeldaFirma(ev) {
+    const firma = String((ev && ev.firma_coincidente) || '').trim();
+    if (!firma) return '<span class="muted-celda">—</span>';
+    return `<span class="badge badge-firma" title="${escapeHtml(firma)}">${escapeHtml(firma)}</span>`;
   }
 
   function htmlSubtabla(eventos) {
@@ -2957,6 +2995,7 @@
           <td>${escapeHtml(ev.ruta || '')}</td>
           <td>${escapeHtml(ev.metodo || '')}</td>
           <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
+          <td>${htmlCeldaFirma(ev)}</td>
           <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
           <td>${escapeHtml(ev.timestamp || '')}</td>
           <td class="celda-accion-sub">
@@ -2968,7 +3007,7 @@
     return `<div class="subtabla-wrap">
       <table class="subtabla">
         <thead>
-          <tr><th>Ruta</th><th>Método</th><th>Tipo</th><th>Gravedad</th><th>Timestamp</th><th>Análisis</th></tr>
+          <tr><th>Ruta</th><th>Método</th><th>Tipo</th><th>Firma WAF</th><th>Gravedad</th><th>Timestamp</th><th>Análisis</th></tr>
         </thead>
         <tbody>${filas}</tbody>
       </table>
@@ -3055,9 +3094,11 @@
     const badgeGrav = gravedad
       ? `<span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>`
       : '';
+    const badgeFirma = htmlCeldaFirma(ev);
     document.getElementById('modal-ev-badges').innerHTML = `
       <span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span>
       ${badgeGrav}
+      ${badgeFirma !== '<span class="muted-celda">—</span>' ? badgeFirma : ''}
     `;
     document.getElementById('modal-ev-headers').innerHTML = htmlCabecerasEvento(ev.headers);
 
@@ -3127,9 +3168,11 @@
       tipo !== 'Tráfico Normal' && gravedad
         ? `<span class="badge ${claseGravedadBadge(gravedad)}">${escapeHtml(gravedad)}</span>`
         : '';
+    const badgeFirma = htmlCeldaFirma(pet);
     document.getElementById('modal-pet-badges').innerHTML = `
       <span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span>
       ${badgeGrav}
+      ${badgeFirma !== '<span class="muted-celda">—</span>' ? badgeFirma : ''}
     `;
     document.getElementById('modal-pet-headers').innerHTML = htmlCabecerasEvento(pet.headers);
 
@@ -3465,6 +3508,11 @@
     return `<span class="badge ${badgeClass(p.tipo_ataque)}">${escapeHtml(p.tipo_ataque)}</span>`;
   }
 
+  function htmlCeldaFirmaPeticion(p) {
+    if (!esPeticionConAlerta(p)) return '—';
+    return htmlCeldaFirma(p);
+  }
+
   function htmlCeldaSeveridadPeticion(p) {
     const g = normalizarGravedad(p.gravedad);
     if (!esPeticionConAlerta(p) || !g) return '—';
@@ -3481,6 +3529,7 @@
         const peticionId = p.id != null ? p.id : '';
         const claseFila = esPeticionConAlerta(p) ? ` ${claseFilaGravedad(p.gravedad)}` : '';
         const colsAlerta = `<td>${htmlCeldaEventoDetectadoPeticion(p)}</td>
+             <td>${htmlCeldaFirmaPeticion(p)}</td>
              <td>${htmlCeldaSeveridadPeticion(p)}</td>`;
         return `<tr class="fila-peticion${claseFila}" data-peticion-id="${peticionId}" title="Clic para ver detalle">
           <td>${escapeHtml(p.ruta || '')}</td>
@@ -3491,7 +3540,7 @@
         </tr>`;
       })
       .join('');
-    const cabecerasAlerta = '<th>Evento detectado</th><th>Severidad</th>';
+    const cabecerasAlerta = '<th>Evento detectado</th><th>Firma WAF</th><th>Severidad</th>';
     return `<div class="subtabla-wrap">
       <table class="subtabla">
         <thead>

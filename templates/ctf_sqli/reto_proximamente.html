@@ -1,0 +1,9 @@
+{% extends "ctf_sqli/reto_base.html" %}
+{% block laboratorio %}
+<div class="alerta-ok" style="margin-top:20px">
+  Este laboratorio está marcado como <strong>Próximamente</strong>.
+  La base de datos aislada ya está reservada (<code>sqli_{{ '%02d'|format(reto.id) }}.db</code>),
+  pero el escenario jugable se publicará en una próxima iteración del Cyber Range.
+</div>
+<p style="margin-top:16px;color:#94a3b8">Mientras tanto, completa los retos 01 y 02 para avanzar en la ruta SQLi.</p>
+{% endblock %}

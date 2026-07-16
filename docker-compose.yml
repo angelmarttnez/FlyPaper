@@ -1,11 +1,44 @@
-# FlyPaper: honeypot Flask + SQLite (sin servicio de base de datos separado).
+# FlyPaper — despliegue en Hetzner (Docker Compose)
 #
-# Arranque: docker compose up --build
-# URL: http://localhost:5000
+# Arranque:  docker compose up --build -d
+# URL:       http://localhost:5000
 #
-# Variables opcionales (IA / Claude): define ANTHROPIC_API_KEY en .env o en el entorno.
+# Persistencia:
+#   - ./data → SQLite del honeypot (/app/data)
+#   - volumen redis_data → perímetro NGWAF (bloqueos, rate-limit, riesgo)
+#
+# Redis NO se publica al exterior: solo red interna Docker.
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: flypaper-redis
+    # Solo red interna; sin ports: → no expuesto al host ni a Internet.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "1000"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --protected-mode
+      - "yes"
+    volumes:
+      - redis_data:/data
+    networks:
+      - flypaper-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   flypaper:
     build:
       context: .
@@ -13,10 +46,43 @@ services:
     image: flypaper:latest
     container_name: flypaper
     ports:
-      - "5000:5000"
-    environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      - "${PORT:-5000}:5000"
     env_file:
       - .env
+    environment:
+      FLYPAPER_DATA_DIR: /app/data
+      REDIS_URL: redis://redis:6379/0
+      RATE_LIMIT_MAX_REQ: ${RATE_LIMIT_MAX_REQ:-60}
+      RATE_LIMIT_WINDOW_SEC: ${RATE_LIMIT_WINDOW_SEC:-60}
+      RISK_SCORE_AUTOBAN: ${RISK_SCORE_AUTOBAN:-5}
+      REDIS_BLOCK_TTL: ${REDIS_BLOCK_TTL:-86400}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - flypaper-net
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+networks:
+  flypaper-net:
+    driver: bridge
+    internal: false
+    name: flypaper-net
+
+volumes:
+  redis_data:
+    name: flypaper-redis-data

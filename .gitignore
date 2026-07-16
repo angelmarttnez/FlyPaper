@@ -33,6 +33,9 @@ flypaper_autoban.db
 flypaper_users.db
 ip_cache.db
 
+# Directorio de persistencia local / bind mount Docker (SQLite runtime)
+data/
+
 # -----------------------------------------------------------------------------
 # 3. Ecosistema Python y caché
 # -----------------------------------------------------------------------------
