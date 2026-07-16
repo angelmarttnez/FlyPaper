@@ -13,13 +13,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Optional
 
-from database import (
+from app.core.timezone_fp import marca_ahora
+from app.ctf_sqli.catalogo import CATALOGO_RETOS, RETO_NOMBRE
+from app.database import (
     RUTA_DATOS,
     generar_flag_ctf_aleatoria,
     obtener_conexion,
 )
-from timezone_fp import marca_ahora
-from ctf_sqli.catalogo import CATALOGO_RETOS, RETO_NOMBRE
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +265,7 @@ def estado_retos_para_usuario(usuario_id: str) -> list[dict[str, Any]]:
     """
     Catálogo enriquecido con ``resuelto`` según ``objetivos_completados``.
     """
-    from database import obtener_conexion as _oc
+    from app.database import obtener_conexion as _oc
 
     resueltos: set[str] = set()
     usuario = (usuario_id or "").strip()

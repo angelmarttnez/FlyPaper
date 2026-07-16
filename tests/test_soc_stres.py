@@ -11,9 +11,9 @@ Estresa y valida en directo el perímetro NGWAF:
   [5] Batería completa
 
 Uso:
-  python test_soc_stres.py
-  python test_soc_stres.py --base http://127.0.0.1:5000
-  python test_soc_stres.py --all
+  python tests/test_soc_stres.py
+  python tests/test_soc_stres.py --base http://127.0.0.1:5000
+  python tests/test_soc_stres.py --all
 
 Requisito: servidor FlyPaper en marcha (+ Redis en el modo Docker/NGWAF).
 """

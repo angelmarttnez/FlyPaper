@@ -703,12 +703,13 @@ def _analizar_campos_core(
     metodo: Optional[str] = None,
     *,
     usar_alias_normal: bool = False,
+    modo_educativo: bool = False,
 ) -> dict[str, Any]:
     """
     Núcleo de análisis WAF (ruta + payload + UA + cabeceras).
 
     Orden de prioridad (mayor a menor impacto operativo):
-    1) Tráfico legítimo conocido
+    1) Tráfico legítimo conocido (omitido si ``modo_educativo``)
     2) Scanner Automatizado → Crítica
     3) SQLi → Crítica
     4) RCE → Crítica
@@ -717,55 +718,72 @@ def _analizar_campos_core(
     7) XSS → Alta
     8) Ruta Prohibida → Sospechoso
     9) CSRF → Alta
-    """
-    if _es_trafico_legitimo_prioritario(ruta, payload, metodo):
-        return _resultado_sin_ataque(usar_alias_normal=usar_alias_normal)
 
+    ``modo_educativo``: fuerza el matching de firmas aunque la ruta esté
+    en whitelist (p. ej. labs CTF). No bloquea tráfico; solo informa.
+    """
     payload_bruto = _a_texto(payload)
     payload_norm = normalizar_input_evasion(payload_bruto)
+
+    if not modo_educativo and _es_trafico_legitimo_prioritario(ruta, payload, metodo):
+        resultado = _resultado_sin_ataque(usar_alias_normal=usar_alias_normal)
+        resultado["payload_normalizado"] = payload_norm
+        return resultado
+
     ruta_norm = normalizar_input_evasion(ruta or "")
     texto_analisis = f"{ruta_norm} {payload_norm}".strip()
     texto_comentarios = _normalizar_sin_strip_comentarios_linea(
         f"{ruta or ''} {payload_bruto}"
     )
 
+    def _con_norm(resultado: dict[str, Any]) -> dict[str, Any]:
+        resultado["payload_normalizado"] = payload_norm
+        return resultado
+
     firma_scanner = _detectar_scanner(user_agent or "", headers)
     if firma_scanner:
-        return _resultado_con_ataque(TIPO_SCANNER, firma_scanner, GRAVEDAD_CRITICA)
+        return _con_norm(
+            _resultado_con_ataque(TIPO_SCANNER, firma_scanner, GRAVEDAD_CRITICA)
+        )
 
     firma = _buscar_primera_regla(texto_analisis, _REGLAS_SQLI)
     if firma:
-        return _resultado_con_ataque(TIPO_SQLI, firma)
+        return _con_norm(_resultado_con_ataque(TIPO_SQLI, firma))
     firma = _buscar_primera_regla(texto_comentarios, _REGLAS_SQLI_COMENTARIO)
     if firma:
-        return _resultado_con_ataque(TIPO_SQLI, firma)
+        return _con_norm(_resultado_con_ataque(TIPO_SQLI, firma))
 
     firma = _buscar_primera_regla(texto_analisis, _REGLAS_RCE)
     if firma:
-        return _resultado_con_ataque(TIPO_RCE, firma)
+        return _con_norm(_resultado_con_ataque(TIPO_RCE, firma))
 
     firma = _buscar_primera_regla(texto_analisis, _REGLAS_SSRF_RFI)
     if firma:
-        return _resultado_con_ataque(TIPO_SSRF_RFI, firma)
+        return _con_norm(_resultado_con_ataque(TIPO_SSRF_RFI, firma))
 
     firma = _detectar_path_traversal(texto_analisis, ruta)
     if firma:
-        return _resultado_con_ataque(TIPO_PATH_TRAVERSAL, firma)
+        return _con_norm(_resultado_con_ataque(TIPO_PATH_TRAVERSAL, firma))
 
     firma = _buscar_primera_regla(texto_analisis, _REGLAS_XSS)
     if firma:
-        return _resultado_con_ataque(TIPO_XSS, firma)
+        return _con_norm(_resultado_con_ataque(TIPO_XSS, firma))
 
-    firma = _detectar_ruta_prohibida(ruta)
-    if firma:
-        return _resultado_con_ataque(TIPO_RUTA_PROHIBIDA, firma)
+    # En modo educativo no clasificamos CSRF ni rutas prohibidas del lab:
+    # el alumno prueba payloads, no sondeo de recon.
+    if not modo_educativo:
+        firma = _detectar_ruta_prohibida(ruta)
+        if firma:
+            return _con_norm(_resultado_con_ataque(TIPO_RUTA_PROHIBIDA, firma))
 
-    if _detectar_csrf(headers, metodo):
-        return _resultado_con_ataque(
-            TIPO_CSRF, "Detectado POST sin Referer coherente (CSRF)"
-        )
+        if _detectar_csrf(headers, metodo):
+            return _con_norm(
+                _resultado_con_ataque(
+                    TIPO_CSRF, "Detectado POST sin Referer coherente (CSRF)"
+                )
+            )
 
-    return _resultado_sin_ataque(usar_alias_normal=usar_alias_normal)
+    return _con_norm(_resultado_sin_ataque(usar_alias_normal=usar_alias_normal))
 
 
 # ===========================================================================
@@ -779,12 +797,19 @@ def analizar_peticion(
     user_agent: Optional[str],
     headers: Any = None,
     metodo: Optional[str] = None,
+    *,
+    modo_educativo: bool = False,
 ) -> dict[str, Any]:
     """
-    Análisis WAF con parámetros explícitos (integración `app.py` / BD).
+    Análisis WAF con parámetros explícitos (integración `app.py` / BD / CTF).
+
+    Args:
+        modo_educativo: Si True, ignora whitelist de rutas CTF y aplica firmas
+            sobre el payload (telemetría académica; no bloquea).
 
     Returns:
-        dict: ataque_detectado, tipo_ataque, gravedad, firma_coincidente.
+        dict: ataque_detectado, tipo_ataque, gravedad, firma_coincidente,
+        payload_normalizado.
         ``tipo_ataque`` usa «Tráfico Normal» cuando no hay amenaza (compat BD).
     """
     return _analizar_campos_core(
@@ -794,6 +819,7 @@ def analizar_peticion(
         headers=headers,
         metodo=metodo,
         usar_alias_normal=False,
+        modo_educativo=modo_educativo,
     )
 
 

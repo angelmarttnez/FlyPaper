@@ -11,7 +11,7 @@ from pathlib import Path
 
 from groq import Groq
 
-from database import obtener_eventos
+from app.database import obtener_eventos
 
 # Modelo Groq usado en todas las llamadas al analizador.
 MODELO_GROQ = "llama-3.1-8b-instant"
@@ -262,7 +262,7 @@ def generar_resumen_diario(fecha=None):
     Returns:
         str: Resumen en español o mensaje si falla la API.
     """
-    from database import obtener_eventos, obtener_eventos_por_fecha
+    from app.database import obtener_eventos, obtener_eventos_por_fecha
 
     if fecha:
         eventos_dia = obtener_eventos_por_fecha(fecha, limite=500)

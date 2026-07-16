@@ -254,7 +254,7 @@ def test_telegram():
     Envía un mensaje de prueba a cada topic configurado.
 
     Uso desde terminal:
-        python -c "from telegram_notifier import test_telegram; test_telegram()"
+        python -c "from app.core.telegram_notifier import test_telegram; test_telegram()"
     """
     pruebas = [
         ("Logins", TELEGRAM_TOPIC_LOGINS, "Test - Topic Logins configurado correctamente"),

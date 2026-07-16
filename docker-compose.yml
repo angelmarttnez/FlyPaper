@@ -4,8 +4,10 @@
 # URL:       http://localhost:5000
 #
 # Persistencia:
-#   - ./data → SQLite del honeypot (/app/data)
+#   - ./data → /app/data (SQLite unificadas: flypaper*.db, ctf/, etc.)
 #   - volumen redis_data → perímetro NGWAF (bloqueos, rate-limit, riesgo)
+#
+# Código en imagen: /app/app.py + paquete /app/app/{core,ctf_sqli,templates,static}
 #
 # Redis NO se publica al exterior: solo red interna Docker.
 
@@ -57,6 +59,7 @@ services:
       RISK_SCORE_AUTOBAN: ${RISK_SCORE_AUTOBAN:-5}
       REDIS_BLOCK_TTL: ${REDIS_BLOCK_TTL:-86400}
     volumes:
+      # Persistencia unificada de todas las SQLite (honeypot + CTF)
       - ./data:/app/data
     depends_on:
       redis:

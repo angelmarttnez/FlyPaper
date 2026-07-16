@@ -19,18 +19,23 @@ from flask import (
     url_for,
 )
 
-from ctf_sqli.catalogo import (
+from app.ctf_sqli.catalogo import (
     SOLUCIONES_QUIZ,
     obtener_reto,
     validar_quiz,
 )
-from ctf_sqli.lab_db import (
+from app.ctf_sqli.lab_db import (
     conexion_lab,
     estado_retos_para_usuario,
     obtener_flag_lab,
     progreso_sqli_usuario,
 )
-from database import enviar_flag_por_usuario
+from app.ctf_sqli.telemetria import (
+    identidad_alumno_sesion,
+    obtener_logs_telemetria_sesion,
+    registrar_intento_waf_lab,
+)
+from app.database import enviar_flag_por_usuario
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +44,15 @@ ctf_sqli = Blueprint(
     __name__,
     url_prefix="/objetivos/sqli",
 )
+
+# API de telemetría (prefijo /api/ctf) — aislada del path de labs.
+ctf_api = Blueprint(
+    "ctf_api",
+    __name__,
+    url_prefix="/api/ctf",
+)
+
+CATEGORIA_SQLI = "sqli"
 
 
 def _usuario_sesion() -> str:
@@ -51,6 +65,13 @@ def _exige_login_json():
     return None
 
 
+def _pide_json() -> bool:
+    """True si el cliente solicita respuesta JSON (AJAX del laboratorio)."""
+    accept = (request.headers.get("Accept") or "").lower()
+    xrw = (request.headers.get("X-Requested-With") or "").lower()
+    return "application/json" in accept or xrw == "xmlhttprequest"
+
+
 def _contexto_entrega(reto: dict[str, Any], resuelto: bool) -> dict[str, Any]:
     quiz = SOLUCIONES_QUIZ.get(reto["id"], {})
     return {
@@ -58,6 +79,7 @@ def _contexto_entrega(reto: dict[str, Any], resuelto: bool) -> dict[str, Any]:
         "resuelto": resuelto,
         "p3_opciones": quiz.get("p3_opciones", []),
         "progreso": progreso_sqli_usuario(_usuario_sesion()),
+        "categoria_ctf": CATEGORIA_SQLI,
     }
 
 
@@ -71,7 +93,7 @@ def _login_vulnerable_reto_01(username: str, password: str) -> tuple[Optional[di
     Returns:
         (fila_usuario|None, error_sql|None)
     """
-    # VULNERABLE A SÍ A PROPÓSITO — academia CTF (WAF exento en esta ruta).
+    # VULNERABLE A PROPÓSITO — academia CTF (WAF perimetral exento; telemetría educativa sí).
     sql = (
         f"SELECT id, username, password, role, note FROM users "
         f"WHERE username = '{username}' AND password = '{password}'"
@@ -118,7 +140,7 @@ def _buscar_productos_vulnerable(query: str) -> tuple[list[dict], Optional[str],
 
 @ctf_sqli.get("/<int:reto_id>")
 def ver_reto(reto_id: int):
-    """Vista dual: laboratorio real + panel de entrega SOC."""
+    """Vista dual: laboratorio real + panel de entrega SOC + consola WAF."""
     reto = obtener_reto(reto_id)
     if reto is None:
         flash("Reto no encontrado.", "error")
@@ -152,13 +174,23 @@ def ver_reto(reto_id: int):
 
 @ctf_sqli.post("/1/lab/login")
 def lab_01_login():
-    """POST del formulario de login vulnerable (reto 01)."""
+    """POST del formulario de login vulnerable (reto 01) + telemetría WAF."""
     reto = obtener_reto(1)
     if not reto:
         return redirect(url_for("pagina_objetivos"))
 
     username = request.form.get("username", "")
     password = request.form.get("password", "")
+
+    # Telemetría educativa: no satura el SOC; solo Redis efímero del alumno.
+    registrar_intento_waf_lab(
+        categoria=CATEGORIA_SQLI,
+        reto_id=1,
+        payload={"username": username, "password": password},
+        ruta="/objetivos/sqli/1/lab/login",
+        metodo="POST",
+    )
+
     usuario_fila, error_sql = _login_vulnerable_reto_01(username, password)
 
     estados = {e["id"]: e for e in estado_retos_para_usuario(_usuario_sesion())}
@@ -174,6 +206,17 @@ def lab_01_login():
             "del perfil: contiene material sensible del laboratorio."
         )
 
+    if _pide_json():
+        return jsonify(
+            {
+                "exito": True,
+                "login_resultado": usuario_fila,
+                "error_sql": error_sql,
+                "mensaje_exito": mensaje_exito,
+                "form_username": username,
+            }
+        )
+
     return render_template(
         "ctf_sqli/reto_01.html",
         login_resultado=usuario_fila,
@@ -186,16 +229,35 @@ def lab_01_login():
 
 @ctf_sqli.post("/2/lab/search")
 def lab_02_search():
-    """POST del buscador UNION vulnerable (reto 02)."""
+    """POST del buscador UNION vulnerable (reto 02) + telemetría WAF."""
     reto = obtener_reto(2)
     if not reto:
         return redirect(url_for("pagina_objetivos"))
 
     query = request.form.get("query", "")
+
+    registrar_intento_waf_lab(
+        categoria=CATEGORIA_SQLI,
+        reto_id=2,
+        payload={"query": query},
+        ruta="/objetivos/sqli/2/lab/search",
+        metodo="POST",
+    )
+
     resultados, error_sql, _sql = _buscar_productos_vulnerable(query)
 
     estados = {e["id"]: e for e in estado_retos_para_usuario(_usuario_sesion())}
     ctx = _contexto_entrega(reto, bool(estados.get(2, {}).get("resuelto")))
+
+    if _pide_json():
+        return jsonify(
+            {
+                "exito": True,
+                "resultados": resultados,
+                "error_sql": error_sql,
+                "query": query,
+            }
+        )
 
     return render_template(
         "ctf_sqli/reto_02.html",
@@ -272,5 +334,46 @@ def verificar_entrega(reto_id: int):
             "reto_nombre": resultado.get("reto_nombre"),
             "ya_resuelta": bool(resultado.get("ya_resuelta")),
             "progreso": progreso,
+        }
+    )
+
+
+@ctf_api.get("/telemetria/<categoria>/<int:reto_id>")
+def api_telemetria_waf(categoria: str, reto_id: int):
+    """
+    Consola de telemetría WAF del alumno autenticado.
+
+    Seguridad anti-IDOR:
+    - Requiere sesión autenticada.
+    - El user_id se toma SOLO de la sesión Flask (nunca de query/body).
+    - No existe parámetro ``user_id`` aceptado en esta ruta.
+    """
+    # Rechazar explícitamente cualquier intento de suplantar identidad vía query.
+    if "user_id" in request.args or "usuario" in request.args:
+        return jsonify(
+            {
+                "exito": False,
+                "mensaje": "Parámetro de identidad no permitido (anti-IDOR).",
+            }
+        ), 400
+
+    if identidad_alumno_sesion() is None:
+        return jsonify({"exito": False, "mensaje": "Unauthorized"}), 401
+
+    cat = (categoria or "").strip().lower()
+    if cat not in ("sqli", "xss", "lfi", "rce"):
+        return jsonify({"exito": False, "mensaje": "Categoría no válida"}), 400
+
+    if reto_id < 1 or reto_id > 99:
+        return jsonify({"exito": False, "mensaje": "Reto no válido"}), 400
+
+    logs = obtener_logs_telemetria_sesion(cat, reto_id)
+    return jsonify(
+        {
+            "exito": True,
+            "categoria": cat,
+            "reto_id": reto_id,
+            "intentos": logs,
+            "total": len(logs),
         }
     )

@@ -1,6 +1,7 @@
 .git
 .gitignore
-__pycache__
+__pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyc
 *.pyo
@@ -26,3 +27,5 @@ database_old.py
 .ruff_cache
 htmlcov
 docker_data
+tests/
+informe/
