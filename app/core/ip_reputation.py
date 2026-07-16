@@ -24,7 +24,7 @@ import urllib.request
 import uuid
 from typing import Any, Optional
 
-from timezone_fp import marca_ahora
+from app.core.timezone_fp import marca_ahora
 
 logger = logging.getLogger(__name__)
 
@@ -687,6 +687,9 @@ def ruta_exenta_rate_limit(ruta: str) -> bool:
     if (ruta or "").startswith("/admin"):
         return True
     if (ruta or "").startswith("/objetivos"):
+        return True
+    # Polling de la consola WAF del alumno (sin saturar el rate-limit).
+    if (ruta or "").startswith("/api/ctf"):
         return True
     return False
 

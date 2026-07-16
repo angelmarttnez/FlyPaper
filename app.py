@@ -1,5 +1,11 @@
 """
-Aplicación principal de FlyPaper.
+Aplicación principal de FlyPaper (entrypoint local: ``python app.py``).
+
+Layout del proyecto:
+  - ``app/``          paquete (database, core/, ctf_sqli/, templates/, static/)
+  - ``data/``         SQLite unificadas (flypaper*.db, ctf/)
+  - ``wsgi.py``       entrypoint Gunicorn (evita colisión de nombre ``app``)
+  - ``tests/``        herramientas ofensivas / stress
 
 Este archivo define un honeypot web con Flask que:
 - Simula endpoints atractivos para atacantes.
@@ -45,7 +51,7 @@ from flask_limiter import Limiter
 from flask_limiter.errors import RateLimitExceeded
 from flask_limiter.util import get_remote_address
 
-from database import (
+from app.database import (
     contar_flags_resueltas_por_usuario,
     enviar_flag_por_usuario,
     guardar_evento,
@@ -121,7 +127,7 @@ from database import (
     obtener_ips_distintas_eventos,
 )
 from ai_analyzer import analizar_payload, generar_resumen_diario, detectar_anomalias
-from telegram_notifier import (
+from app.core.telegram_notifier import (
     notificar_ataque_critico,
     notificar_login_admin,
     notificar_login_monitor,
@@ -131,7 +137,7 @@ from telegram_notifier import (
     notificar_flag_resuelta,
     notificar_resumen_diario,
 )
-from detector import (
+from app.core.detector import (
     GRAVEDAD_CRITICA,
     TIPO_TRAFICO_NORMAL,
     analizar_peticion,
@@ -142,7 +148,7 @@ from detector import (
     prioridad_gravedad,
     registrar_intento_login,
 )
-from timezone_fp import (
+from app.core.timezone_fp import (
     ZONA_NOMBRE,
     ahora_naive,
     fecha_hoy,
@@ -151,7 +157,7 @@ from timezone_fp import (
     marca_ahora,
     minutos_desde_marca,
 )
-from ip_reputation import (
+from app.core.ip_reputation import (
     TIPO_ABUSO_TASA,
     TIPO_RIESGO_ACUMULATIVO,
     acumular_riesgo_comportamiento,
@@ -950,8 +956,13 @@ def construir_comentarios_para_vista(post_id):
     return vista
 
 
-# Creamos la instancia principal de Flask.
-aplicacion = Flask(__name__)
+# Creamos la instancia principal de Flask (plantillas y estáticos viven en app/).
+_DIR_PAQUETE_APP = Path(__file__).resolve().parent / "app"
+aplicacion = Flask(
+    __name__,
+    template_folder=str(_DIR_PAQUETE_APP / "templates"),
+    static_folder=str(_DIR_PAQUETE_APP / "static"),
+)
 # Clave para firmar cookies de sesión (login honeypot y otras sesiones).
 aplicacion.secret_key = 'flypaper_secreto_2026'
 
@@ -1000,10 +1011,11 @@ inicializar_db()
 inicializar_ip_cache()
 
 # Academia SQLi: labs aislados en data/ctf/ + sync de flags.
-from ctf_sqli import ctf_sqli, inicializar_labs_sqli  # noqa: E402
+from app.ctf_sqli import ctf_api, ctf_sqli, inicializar_labs_sqli  # noqa: E402
 
 inicializar_labs_sqli()
 aplicacion.register_blueprint(ctf_sqli)
+aplicacion.register_blueprint(ctf_api)
 
 
 def cargar_cache_ips_bloqueadas():
@@ -1030,6 +1042,9 @@ def _es_ruta_sesion_publica(path):
     if path == "/documentacion" or path.startswith("/documentacion/"):
         return True
     if path == "/diversion/carta" or path.startswith("/diversion/carta/"):
+        return True
+    # Telemetría WAF del CTF: misma sesión del alumno (anti-IDOR en el endpoint).
+    if path == "/api/ctf" or path.startswith("/api/ctf/"):
         return True
     return False
 
@@ -1328,6 +1343,9 @@ def control_acceso_y_inactividad_portal_publico():
         ruta = request.path or ""
         if ruta.startswith("/objetivos/") and request.method == "POST":
             return jsonify({"exito": False, "mensaje": "Unauthorized"}), 401
+        # API telemetría CTF: siempre JSON 401 (no redirect HTML).
+        if ruta.startswith("/api/ctf"):
+            return jsonify({"exito": False, "mensaje": "Unauthorized"}), 401
         return _redirect_login_sin_cache(next=request.full_path)
 
     if _sesion_publica_expirada_por_inactividad():
@@ -1502,6 +1520,7 @@ def debe_excluirse_del_registro(ruta_solicitada):
         or ruta_solicitada.startswith("/static")
         or ruta_solicitada.startswith("/assets")
         or ruta_solicitada.startswith("/objetivos/sqli")
+        or ruta_solicitada.startswith("/api/ctf")
     )
 
 
@@ -3262,7 +3281,7 @@ def pagina_objetivos():
     """
     Dashboard Academia CTF: ruta SQLi con progreso y challenge cards.
     """
-    from ctf_sqli.lab_db import estado_retos_para_usuario, progreso_sqli_usuario
+    from app.ctf_sqli.lab_db import estado_retos_para_usuario, progreso_sqli_usuario
 
     usuario_id = session.get("usuario") or ""
     flags = obtener_flags_con_estado_por_usuario(usuario_id)

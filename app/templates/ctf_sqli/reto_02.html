@@ -1,0 +1,108 @@
+{% extends "ctf_sqli/reto_base.html" %}
+{% block laboratorio %}
+<p style="margin-top:8px">Objetivo: <em>{{ reto.objetivo }}</em></p>
+<p style="color:#64748b;font-size:13px">La consulta proyecta <code>id, name, price</code> (3 columnas). Tabla oculta: <code>secret_flags(flag_value)</code>.</p>
+
+<form class="lab-form" id="form-lab-02" method="post" action="{{ url_for('ctf_sqli.lab_02_search') }}">
+  <label>Buscar producto
+    <input type="text" name="query" id="lab02-query" value="{{ query or '' }}" placeholder="Laptop ó payload UNION…" autocomplete="off">
+  </label>
+  <button type="submit" id="lab02-submit">Buscar (vulnerable)</button>
+</form>
+
+<div id="lab02-feedback">
+{% if error_sql %}
+<div class="alerta-error">SQL Error:
+{{ error_sql }}</div>
+{% endif %}
+
+{% if resultados %}
+<table class="lab-table">
+  <thead>
+    <tr>
+      {% for col in resultados[0].keys() %}
+      <th>{{ col }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for fila in resultados %}
+    <tr>
+      {% for valor in fila.values() %}
+      <td>{{ valor }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% elif query %}
+<p style="margin-top:14px;color:#64748b">Sin resultados para «{{ query }}».</p>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts_lab %}
+<script>
+(function () {
+  const form = document.getElementById('form-lab-02');
+  const feedback = document.getElementById('lab02-feedback');
+  if (!form || !feedback) return;
+
+  function esc(t) {
+    return String(t == null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function pintar(data) {
+    if (data.error_sql) {
+      feedback.innerHTML = '<div class="alerta-error">SQL Error:\n' + esc(data.error_sql) + '</div>';
+      return;
+    }
+    const rows = data.resultados || [];
+    if (!rows.length) {
+      feedback.innerHTML = '<p style="margin-top:14px;color:#64748b">Sin resultados para «' +
+        esc(data.query || '') + '».</p>';
+      return;
+    }
+    const cols = Object.keys(rows[0]);
+    let html = '<table class="lab-table"><thead><tr>';
+    cols.forEach(function (c) { html += '<th>' + esc(c) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (fila) {
+      html += '<tr>';
+      cols.forEach(function (c) { html += '<td>' + esc(fila[c]) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    feedback.innerHTML = html;
+  }
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    const btn = document.getElementById('lab02-submit');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(form.action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: new FormData(form)
+      });
+      const data = await res.json();
+      pintar(data);
+      if (window.FlyPaperWafTelemetria) {
+        await window.FlyPaperWafTelemetria.refrescar();
+      }
+    } catch (err) {
+      feedback.innerHTML = '<div class="alerta-error">Error de red al enviar el laboratorio.</div>';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

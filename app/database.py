@@ -17,7 +17,7 @@ import string
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from detector import (
+from app.core.detector import (
     GRAVEDAD_ALTA,
     GRAVEDAD_CRITICA,
     GRAVEDAD_SOSPECHOSO,
@@ -25,7 +25,7 @@ from detector import (
     normalizar_gravedad_filtro_api,
     prioridad_gravedad,
 )
-from timezone_fp import (
+from app.core.timezone_fp import (
     ZONA_NOMBRE,
     ahora_naive,
     fecha_hoy,
@@ -63,15 +63,16 @@ _SUPER_ADMIN_BOOTSTRAP_ENV = (
 PATRON_FLAG_CTF = re.compile(r"^flag\{([a-zA-Z0-9]{10})\}$")
 
 
-RUTA_RAIZ_PROYECTO = Path(__file__).resolve().parent
+# Este módulo vive en ``app/database.py`` → la raíz del repo es el padre de ``app/``.
+RUTA_RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
 
 
 def _resolver_directorio_datos() -> Path:
     """
     Directorio persistido para todas las bases SQLite.
 
-    Local: ``./data`` bajo la raíz del proyecto.
-    Docker: ``/app/data`` vía ``FLYPAPER_DATA_DIR`` (volumen bind/named).
+    Local: ``./data`` bajo la raíz del proyecto (hermano de ``app/``).
+    Docker: ``/app/data`` vía ``FLYPAPER_DATA_DIR`` (volumen ``./data:/app/data``).
     """
     ruta_env = os.getenv("FLYPAPER_DATA_DIR", "").strip()
     directorio = Path(ruta_env) if ruta_env else RUTA_RAIZ_PROYECTO / "data"

@@ -4,7 +4,7 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# 1. Archivos de entorno y secretos (CRÍTICO)
+# 1. Archivos de entorno local con credenciales (CRÍTICO)
 # -----------------------------------------------------------------------------
 .env
 .env.*
@@ -17,34 +17,45 @@ credentials.json
 credentials.*.json
 
 # -----------------------------------------------------------------------------
-# 2. Bases de datos SQLite (honeypot, inteligencia, runtime)
+# 2. Bases de datos SQLite — NUNCA versionar persistencia
 # -----------------------------------------------------------------------------
+# Ignorar directorio de datos unificado (Bases de datos de producción y CTF)
+data/
+data/**/*.db
+
+# Por seguridad, ignorar cualquier base de datos residual en la raíz
 *.db
+
+# Variantes y artefactos SQLite
 *.sqlite
 *.sqlite3
 *.db-journal
 *.db-wal
 *.db-shm
 
-# Bases de datos del sistema (defensa en profundidad por nombre)
+# Nombres canónicos (defensa en profundidad en cualquier ruta)
 flypaper.db
 flypaper_priv.db
 flypaper_autoban.db
 flypaper_users.db
 ip_cache.db
-
-# Directorio de persistencia local / bind mount Docker (SQLite runtime)
-data/
+**/flypaper.db
+**/flypaper_priv.db
+**/flypaper_autoban.db
+**/flypaper_users.db
+**/ip_cache.db
+**/sqli_*.db
 
 # -----------------------------------------------------------------------------
-# 3. Ecosistema Python y caché
+# 3. Cachés de Python y carpetas del sistema
 # -----------------------------------------------------------------------------
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.pyc
 *.pyo
 *.pyd
-*.pyo
+.pytest_cache/
 
 # Entornos virtuales
 .venv/
@@ -52,7 +63,6 @@ venv/
 env/
 
 # Herramientas de desarrollo y calidad
-.pytest_cache/
 .coverage
 htmlcov/
 .ruff_cache/
