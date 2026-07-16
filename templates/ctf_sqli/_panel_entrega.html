@@ -1,0 +1,117 @@
+{# Panel de entrega SOC: cuestionario 3 preguntas + flag (bloqueada hasta responder) #}
+<aside class="entrega-panel" id="panel-entrega">
+  <div class="entrega-header">
+    <span class="entrega-kicker">Panel de entrega · SOC</span>
+    <h2>Validación del reto</h2>
+    <p>Responde las 3 preguntas conceptuales. La flag se desbloqueará al completarlas.</p>
+  </div>
+
+  {% if resuelto %}
+  <div class="alerta-resuelto">
+    <span>✓</span> Reto <strong>RESUELTO</strong> · +{{ reto.puntos }} pts
+  </div>
+  {% endif %}
+
+  <form id="form-entrega-sqli" class="form-entrega" data-reto-id="{{ reto.id }}" novalidate>
+    <label class="campo">
+      <span>P1 · Carácter que rompe la sintaxis SQL</span>
+      <input type="text" name="p1" id="quiz-p1" maxlength="8" placeholder="ej. '" autocomplete="off" required>
+    </label>
+
+    <label class="campo">
+      <span>P2 · Caracteres para comentar el resto de la query</span>
+      <input type="text" name="p2" id="quiz-p2" maxlength="8" placeholder="ej. --" autocomplete="off" required>
+    </label>
+
+    <label class="campo">
+      <span>P3 · Tipo de inyección SQL explotada</span>
+      <select name="p3" id="quiz-p3" required>
+        <option value="">— Selecciona —</option>
+        {% for op in p3_opciones %}
+        <option value="{{ op.valor }}">{{ op.texto }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="campo">
+      <span>Flag del laboratorio</span>
+      <input type="text" name="flag" id="quiz-flag" placeholder="flag{..........}" autocomplete="off" disabled required>
+      <small id="flag-hint" class="hint-bloqueada">Completa P1, P2 y P3 para habilitar este campo</small>
+    </label>
+
+    <button type="submit" class="btn-entregar" id="btn-entregar" disabled>Entregar y puntuar</button>
+    <p id="entrega-msg" class="entrega-msg" role="status" hidden></p>
+  </form>
+</aside>
+
+<script>
+(function () {
+  const form = document.getElementById('form-entrega-sqli');
+  if (!form) return;
+  const p1 = document.getElementById('quiz-p1');
+  const p2 = document.getElementById('quiz-p2');
+  const p3 = document.getElementById('quiz-p3');
+  const flag = document.getElementById('quiz-flag');
+  const hint = document.getElementById('flag-hint');
+  const btn = document.getElementById('btn-entregar');
+  const msg = document.getElementById('entrega-msg');
+  const retoId = form.dataset.retoId;
+
+  function quizCompleto() {
+    return Boolean((p1.value || '').trim() && (p2.value || '').trim() && (p3.value || '').trim());
+  }
+
+  function sincronizarFlag() {
+    const ok = quizCompleto();
+    flag.disabled = !ok;
+    btn.disabled = !ok;
+    if (hint) {
+      hint.textContent = ok
+        ? 'Campo desbloqueado — pega la flag exacta del laboratorio'
+        : 'Completa P1, P2 y P3 para habilitar este campo';
+      hint.classList.toggle('hint-ok', ok);
+    }
+  }
+
+  [p1, p2, p3].forEach(function (el) {
+    el.addEventListener('input', sincronizarFlag);
+    el.addEventListener('change', sincronizarFlag);
+  });
+  sincronizarFlag();
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    if (!quizCompleto() || flag.disabled) return;
+    msg.hidden = false;
+    msg.className = 'entrega-msg';
+    msg.textContent = 'Validando…';
+    btn.disabled = true;
+    try {
+      const res = await fetch('/objetivos/sqli/verify/' + retoId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          p1: p1.value,
+          p2: p2.value,
+          p3: p3.value,
+          flag: flag.value
+        })
+      });
+      const data = await res.json();
+      if (data.exito) {
+        msg.className = 'entrega-msg ok';
+        msg.textContent = data.mensaje + (data.puntos != null ? ' (+' + data.puntos + ' pts)' : '');
+        setTimeout(function () { window.location.reload(); }, 1200);
+      } else {
+        msg.className = 'entrega-msg err';
+        msg.textContent = data.mensaje || 'Entrega rechazada';
+        btn.disabled = false;
+      }
+    } catch (err) {
+      msg.className = 'entrega-msg err';
+      msg.textContent = 'Error de red al validar la entrega';
+      btn.disabled = false;
+    }
+  });
+})();
+</script>

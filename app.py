@@ -93,6 +93,7 @@ from database import (
     obtener_completados_por_reto,
     verificar_credencial_usuario_bd,
     obtener_usuarios_para_panel_admin,
+    RUTA_DATOS,
     ROL_PRIV_ADMIN_PANEL,
     ROL_PRIV_MONITOR,
     ROL_USUARIO_ADMIN_BD,
@@ -133,10 +134,11 @@ from telegram_notifier import (
 from detector import (
     GRAVEDAD_CRITICA,
     TIPO_TRAFICO_NORMAL,
+    analizar_peticion,
     calcular_gravedad,
-    clasificar_ataque,
     normalizar_gravedad_almacenada,
     normalizar_gravedad_filtro_api,
+    normalizar_tipo_ataque_almacenado,
     prioridad_gravedad,
     registrar_intento_login,
 )
@@ -150,12 +152,19 @@ from timezone_fp import (
     minutos_desde_marca,
 )
 from ip_reputation import (
+    TIPO_ABUSO_TASA,
+    TIPO_RIESGO_ACUMULATIVO,
+    acumular_riesgo_comportamiento,
+    bloquear_ip_perimetro,
+    comprobar_rate_limit,
     es_ip_loopback,
+    estado_perimetro_redis,
     evaluar_ip_en_cache,
     inicializar_ip_cache,
     ip_debe_mostrar_jail,
     marcar_ip_verificada_humana,
     obtener_estado_ip,
+    ruta_exenta_rate_limit,
     ruta_exenta_reputacion_ip,
     listar_ips_bloqueadas_perimetro,
     whitelist_ip_perimetro,
@@ -252,7 +261,7 @@ def _relabel_evento_bot(evento, meta_bot):
 
 
 def _relabel_grupos_eventos_bot(grupos):
-    """Marca grupos/eventos del monitor cuando la IP está bloqueada en ip_cache.db."""
+    """Marca grupos/eventos del monitor cuando la IP está bloqueada en el perímetro Redis."""
     if not grupos:
         return grupos
     mapa_bots = obtener_mapa_bots_perimetro([g.get("ip") for g in grupos])
@@ -986,10 +995,15 @@ def manejar_limite_peticiones(_exc):
 # Etiqueta legacy para logs y visitas sin sesión (p. ej. landing /).
 ROL_INVITADO = "invitado"
 
-# Inicializamos la base de datos al arrancar la aplicación para asegurar
-# que la tabla `eventos` exista antes de intentar guardar información.
+# Inicializa SQLite en RUTA_DATOS (./data local, /app/data en Docker con volumen).
 inicializar_db()
 inicializar_ip_cache()
+
+# Academia SQLi: labs aislados en data/ctf/ + sync de flags.
+from ctf_sqli import ctf_sqli, inicializar_labs_sqli  # noqa: E402
+
+inicializar_labs_sqli()
+aplicacion.register_blueprint(ctf_sqli)
 
 
 def cargar_cache_ips_bloqueadas():
@@ -1207,11 +1221,76 @@ def _marcar_inicio_telemetria_peticion():
 
 
 @aplicacion.before_request
+def middleware_rate_limit_global_ngwaf():
+    """
+    Rate limiting global por IP (ventana deslizante Redis).
+
+    Si una IP supera 60 peticiones/minuto en cualquier ruta pública,
+    responde 429, registra el evento y muestra Jail Page por abuso de tasa.
+    Panel SOC (/admin) y estáticos quedan exentos.
+    """
+    ruta = request.path or ""
+    if ruta_exenta_rate_limit(ruta):
+        return None
+
+    ip = obtener_ip_cliente()
+    if es_ip_loopback(ip):
+        return None
+
+    try:
+        veredicto = comprobar_rate_limit(ip)
+    except Exception as exc:
+        logging.error("Rate-limit NGWAF: error para %s — %s", ip, exc)
+        return None
+
+    if not veredicto.get("excedido"):
+        return None
+
+    motivo = veredicto.get("motivo") or TIPO_ABUSO_TASA
+    try:
+        guardar_evento(
+            ip=ip,
+            ruta=ruta,
+            metodo=request.method,
+            payload={"rate_limit": veredicto},
+            user_agent=request.headers.get("User-Agent", ""),
+            tipo_ataque=TIPO_ABUSO_TASA,
+            headers=dict(request.headers),
+            gravedad=GRAVEDAD_CRITICA,
+            ambito=_ambito_desde_ruta(ruta),
+            firma_coincidente=motivo,
+        )
+        g.autoban_evento_ya_registrado = True
+    except Exception as exc:
+        logging.error("Rate-limit: no se pudo registrar evento — %s", exc)
+
+    try:
+        _encolar_notificacion_ataque_critico(
+            ip, TIPO_ABUSO_TASA, ruta, motivo, marca_ahora()
+        )
+    except Exception:
+        pass
+
+    estado = {
+        "ip": ip,
+        "is_blocked": True,
+        "is_whitelisted": False,
+        "risk_score": 0,
+        "country": "—",
+        "isp": "—",
+        "block_motivo": motivo,
+        "abuse_score": 0,
+        "vt_positives": 0,
+    }
+    return render_template("jail.html", ip=ip, estado=estado), 429
+
+
+@aplicacion.before_request
 def middleware_reputacion_ip_perimetral():
     """
-    Filtro perimetral de reputación (AbuseIPDB + VirusTotal + ip-api).
+    Filtro perimetral de reputación (AbuseIPDB + VirusTotal + ip-api vía Redis).
 
-    Si la IP supera SCORE_THRESHOLD y no está en whitelist, devuelve Jail Page (403).
+    Si la IP supera SCORE_THRESHOLD y no está en whitelist, Jail Page (403).
     """
     ruta = request.path or ""
     if ruta_exenta_reputacion_ip(ruta):
@@ -1324,7 +1403,7 @@ def construir_payload_url_404():
     """
     Payload estructurado con la URL intentada en respuestas 404 sin cuerpo.
 
-    Permite que clasificar_ataque() detecte path traversal aunque request.form esté vacío.
+    Permite que analizar_peticion() detecte path traversal aunque request.form esté vacío.
     """
     path = request.path or ""
     qs = request.query_string.decode("utf-8", errors="ignore")
@@ -1333,6 +1412,40 @@ def construir_payload_url_404():
         "url_intentada": path,
         "query_string": qs,
         "url_completa": url_completa,
+    }
+
+
+def _veredicto_waf(ruta, payload, user_agent=None, headers=None, metodo=None):
+    """
+    Ejecuta el motor WAF (`analizar_peticion`) y normaliza el veredicto para persistencia.
+
+    Returns:
+        dict: tipo_ataque, gravedad (None si tráfico normal), firma_coincidente.
+    """
+    resultado = analizar_peticion(
+        ruta=ruta,
+        payload=payload,
+        user_agent=user_agent if user_agent is not None else request.headers.get("User-Agent", ""),
+        headers=headers if headers is not None else dict(request.headers),
+        metodo=metodo if metodo is not None else request.method,
+    )
+    tipo = normalizar_tipo_ataque_almacenado(
+        resultado.get("tipo_ataque") or TIPO_TRAFICO_NORMAL
+    )
+    firma = (resultado.get("firma_coincidente") or "").strip()
+    if tipo == TIPO_TRAFICO_NORMAL or not resultado.get("ataque_detectado"):
+        return {
+            "tipo_ataque": TIPO_TRAFICO_NORMAL,
+            "gravedad": None,
+            "firma_coincidente": "",
+        }
+    gravedad = resultado.get("gravedad")
+    if not gravedad or gravedad == "Normal":
+        gravedad = calcular_gravedad(tipo)
+    return {
+        "tipo_ataque": tipo,
+        "gravedad": gravedad,
+        "firma_coincidente": firma,
     }
 
 
@@ -1388,6 +1501,7 @@ def debe_excluirse_del_registro(ruta_solicitada):
         ruta_solicitada.startswith("/dashboard")
         or ruta_solicitada.startswith("/static")
         or ruta_solicitada.startswith("/assets")
+        or ruta_solicitada.startswith("/objetivos/sqli")
     )
 
 
@@ -1411,6 +1525,8 @@ TIPOS_ATAQUE_AUTOBAN_BLOQUEO = frozenset({
     "SQLi",
     "XSS",
     "Path Traversal",
+    "RCE",
+    "SSRF/RFI",
     "Fuerza Bruta",
     "Scanner Automatizado",
 })
@@ -1471,7 +1587,7 @@ def _inspeccionar_ruta_secure_autoban(ip, ruta):
     """
     Inspección temprana de peticiones /secure/* en before_request.
 
-    Construye url_completa (ruta + query), la pasa a clasificar_ataque() y, si el tipo
+    Construye url_completa (ruta + query), la pasa a analizar_peticion() y, si el tipo
     es bloqueable (Path Traversal, SQLi, XSS, Scanner, Fuerza Bruta), registra un único
     evento autoban con gravedad Crítica, bloquea la IP y devuelve expulsado (403) antes
     de que Flask resuelva la vista o dispare el manejador 404.
@@ -1482,13 +1598,14 @@ def _inspeccionar_ruta_secure_autoban(ip, ruta):
     url_completa = _url_completa_peticion()
     user_agent = request.headers.get("User-Agent", "")
     cabeceras = dict(request.headers)
-    tipo_ataque = clasificar_ataque(
+    veredicto = _veredicto_waf(
         ruta=ruta,
         payload=url_completa,
         user_agent=user_agent,
         headers=cabeceras,
         metodo=request.method,
     )
+    tipo_ataque = veredicto["tipo_ataque"]
 
     if not _tipo_dispara_autoban(tipo_ataque):
         return None
@@ -1508,6 +1625,7 @@ def _inspeccionar_ruta_secure_autoban(ip, ruta):
         headers=cabeceras,
         gravedad=GRAVEDAD_CRITICA,
         ambito="autoban",
+        firma_coincidente=veredicto["firma_coincidente"],
     )
     g.autoban_evento_ya_registrado = True
 
@@ -1642,7 +1760,7 @@ def listar_ips_con_actividad_reciente():
 
 def bloquear_ip_visitante(ip, motivo="Bloqueo desde monitor de seguridad"):
     """
-    Bloqueo persistente (SQLite) + caché en memoria e invalidación de tokens de sesión.
+    Bloqueo persistente (SQLite) + perímetro Redis (TTL 24 h) + invalidación de sesión.
     """
     if not ip:
         return False
@@ -1650,6 +1768,10 @@ def bloquear_ip_visitante(ip, motivo="Bloqueo desde monitor de seguridad"):
     ips_bloqueadas.add(ip)
     for token in list(tokens_por_ip.get(ip, set())):
         sesiones_invalidadas.add(token)
+    try:
+        bloquear_ip_perimetro(ip, motivo=motivo)
+    except Exception as exc:
+        logging.warning("Perímetro Redis: no se pudo bloquear %s — %s", ip, exc)
     return True
 
 
@@ -1885,13 +2007,16 @@ def registrar_evento_honeypot(respuesta):
     if respuesta.status_code == 404 and _payload_registro_vacio(payload_peticion):
         payload_peticion = construir_payload_url_404()
 
-    tipo_ataque_detectado = clasificar_ataque(
+    veredicto = _veredicto_waf(
         ruta=ruta_visitada,
         payload=str(payload_peticion),
         user_agent=user_agent_visitante,
         headers=cabeceras_peticion,
         metodo=metodo_peticion,
     )
+    tipo_ataque_detectado = veredicto["tipo_ataque"]
+    firma_coincidente = veredicto["firma_coincidente"]
+    gravedad_evento = veredicto["gravedad"]
 
     # Fuerza bruta: POST /login con más de 5 intentos/minuto por la misma IP.
     if (
@@ -1900,9 +2025,52 @@ def registrar_evento_honeypot(respuesta):
         and session.pop("_fuerza_bruta_detectada", False)
     ):
         tipo_ataque_detectado = "Fuerza Bruta"
+        gravedad_evento = calcular_gravedad("Fuerza Bruta")
+        firma_coincidente = "Fuerza Bruta: >5 intentos/minuto"
 
-    gravedad_evento = calcular_gravedad(tipo_ataque_detectado)
     ambito_evento = _ambito_desde_ruta(ruta_visitada)
+
+    # Riesgo acumulativo NGWAF (Redis): Sospechoso +1, Alta +3, Crítica +5.
+    # Umbral ≥5 en 10 min → autoban emergencia 24 h.
+    if (
+        gravedad_evento
+        and tipo_ataque_detectado != TIPO_TRAFICO_NORMAL
+        and not es_ip_loopback(ip_visitante)
+        and not getattr(g, "autoban_evento_ya_registrado", False)
+    ):
+        try:
+            risco = acumular_riesgo_comportamiento(ip_visitante, gravedad_evento)
+            if risco.get("autoban"):
+                g.autoban_evento_ya_registrado = True
+                guardar_evento(
+                    ip=ip_visitante,
+                    ruta=ruta_visitada,
+                    metodo=metodo_peticion,
+                    payload={
+                        "risk_score": risco.get("score"),
+                        "trigger": tipo_ataque_detectado,
+                        "firma": firma_coincidente,
+                    },
+                    user_agent=user_agent_visitante,
+                    tipo_ataque=TIPO_RIESGO_ACUMULATIVO,
+                    headers=cabeceras_peticion,
+                    gravedad=GRAVEDAD_CRITICA,
+                    ambito=ambito_evento,
+                    firma_coincidente=risco.get("motivo") or TIPO_RIESGO_ACUMULATIVO,
+                )
+                _encolar_notificacion_ataque_critico(
+                    ip_visitante,
+                    TIPO_RIESGO_ACUMULATIVO,
+                    ruta_visitada,
+                    risco.get("motivo") or "",
+                    marca_ahora(),
+                )
+        except Exception as exc:
+            logging.error(
+                "Riesgo acumulativo NGWAF falló para %s — %s",
+                ip_visitante,
+                exc,
+            )
 
     peticion_id = guardar_registro_peticion(
         ip=ip_visitante,
@@ -1914,6 +2082,7 @@ def registrar_evento_honeypot(respuesta):
         headers=cabeceras_peticion,
         tipo_ataque=tipo_ataque_detectado,
         gravedad=gravedad_evento,
+        firma_coincidente=firma_coincidente,
         usuario_activo=_usuario_activo_para_log(),
         sesion_id_corto=_sesion_id_corto_para_log(),
         tiempo_ms=_tiempo_procesamiento_ms(),
@@ -1945,6 +2114,7 @@ def registrar_evento_honeypot(respuesta):
         headers=cabeceras_peticion,
         gravedad=gravedad_evento,
         ambito=ambito_evento,
+        firma_coincidente=firma_coincidente,
     )
 
     if peticion_id and evento_id:
@@ -2824,14 +2994,13 @@ def procesar_busqueda():
     resultados, error_sql = _ejecutar_busqueda_vulnerable(query)
 
     payload_registro = {"query": query}
-    tipo_ataque = clasificar_ataque(
+    veredicto = _veredicto_waf(
         ruta="/search",
         payload=str(payload_registro),
-        user_agent=request.headers.get("User-Agent", ""),
-        headers=dict(request.headers),
         metodo="POST",
     )
-    gravedad = calcular_gravedad(tipo_ataque)
+    tipo_ataque = veredicto["tipo_ataque"]
+    gravedad = veredicto["gravedad"]
     guardar_evento(
         ip=obtener_ip_cliente(),
         ruta="/search",
@@ -2842,6 +3011,7 @@ def procesar_busqueda():
         headers=dict(request.headers),
         gravedad=gravedad,
         ambito="publico",
+        firma_coincidente=veredicto["firma_coincidente"],
     )
 
     # POST /search omite after_request; notificar aquí si es ataque crítico.
@@ -2893,14 +3063,19 @@ def autoban_procesar_busqueda():
     user_agent = request.headers.get("User-Agent", "")
     cabeceras = dict(request.headers)
 
-    tipo_ataque = clasificar_ataque(
+    veredicto = _veredicto_waf(
         ruta="/secure/search",
         payload=str(payload_registro),
         user_agent=user_agent,
         headers=cabeceras,
         metodo="POST",
     )
-    gravedad = GRAVEDAD_CRITICA if _tipo_dispara_autoban(tipo_ataque) else calcular_gravedad(tipo_ataque)
+    tipo_ataque = veredicto["tipo_ataque"]
+    gravedad = (
+        GRAVEDAD_CRITICA
+        if _tipo_dispara_autoban(tipo_ataque)
+        else veredicto["gravedad"]
+    )
     guardar_evento(
         ip=ip,
         ruta="/secure/search",
@@ -2911,6 +3086,7 @@ def autoban_procesar_busqueda():
         headers=cabeceras,
         gravedad=gravedad,
         ambito="autoban",
+        firma_coincidente=veredicto["firma_coincidente"],
     )
     if _tipo_dispara_autoban(tipo_ataque):
         g.autoban_evento_ya_registrado = True
@@ -2974,14 +3150,19 @@ def autoban_blog_comentar(post_id):
     payload_registro = {"nombre": nombre, "comentario": contenido}
     ruta = f"/secure/blog/{post_id}/comentar"
 
-    tipo_ataque = clasificar_ataque(
+    veredicto = _veredicto_waf(
         ruta=ruta,
         payload=str(payload_registro),
         user_agent=user_agent,
         headers=cabeceras,
         metodo="POST",
     )
-    gravedad = GRAVEDAD_CRITICA if _tipo_dispara_autoban(tipo_ataque) else calcular_gravedad(tipo_ataque)
+    tipo_ataque = veredicto["tipo_ataque"]
+    gravedad = (
+        GRAVEDAD_CRITICA
+        if _tipo_dispara_autoban(tipo_ataque)
+        else veredicto["gravedad"]
+    )
     guardar_evento(
         ip=ip,
         ruta=ruta,
@@ -2992,6 +3173,7 @@ def autoban_blog_comentar(post_id):
         headers=cabeceras,
         gravedad=gravedad,
         ambito="autoban",
+        firma_coincidente=veredicto["firma_coincidente"],
     )
     if _tipo_dispara_autoban(tipo_ataque):
         g.autoban_evento_ya_registrado = True
@@ -3026,14 +3208,15 @@ def pagina_no_encontrada(e):
     ua = request.headers.get("User-Agent", "")
     hdrs = dict(request.headers)
 
-    tipo = clasificar_ataque(
+    veredicto = _veredicto_waf(
         ruta=ruta,
         payload=url_completa,
         user_agent=ua,
         headers=hdrs,
         metodo=request.method,
     )
-    gravedad = calcular_gravedad(tipo)
+    tipo = veredicto["tipo_ataque"]
+    gravedad = veredicto["gravedad"]
 
     guardar_evento(
         ip=ip,
@@ -3045,6 +3228,7 @@ def pagina_no_encontrada(e):
         headers=hdrs,
         gravedad=gravedad,
         ambito="publico",
+        firma_coincidente=veredicto["firma_coincidente"],
     )
     g.evento_404_publico_registrado = True
 
@@ -3076,8 +3260,10 @@ def _invalidar_cache_ranking():
 @limiter.limit("30 per minute")
 def pagina_objetivos():
     """
-    Página de retos CTF: lista flags (sin el secreto) y progreso individual por usuario.
+    Dashboard Academia CTF: ruta SQLi con progreso y challenge cards.
     """
+    from ctf_sqli.lab_db import estado_retos_para_usuario, progreso_sqli_usuario
+
     usuario_id = session.get("usuario") or ""
     flags = obtener_flags_con_estado_por_usuario(usuario_id)
     resueltas = contar_flags_resueltas_por_usuario(usuario_id)
@@ -3085,17 +3271,21 @@ def pagina_objetivos():
     ranking = obtener_ranking_ctf(limite=20)
     completados_por_reto = obtener_completados_por_reto()
     puntos_usuario_actual = obtener_puntos_usuario(usuario_id)
+    retos_sqli = estado_retos_para_usuario(usuario_id)
+    progreso_sqli = progreso_sqli_usuario(usuario_id)
 
     return _plantilla_publica(
         "objetivos.html",
         nav_activo="objetivos",
         flags=flags,
         resueltas=resueltas,
-        total=total if total else 2,
+        total=total if total else 4,
         ranking=ranking,
         completados_por_reto=completados_por_reto,
         puntos_usuario_actual=puntos_usuario_actual,
         reto_sqli_titulo=RETO_CTF_SQLI,
+        retos_sqli=retos_sqli,
+        progreso_sqli=progreso_sqli,
     )
 
 
@@ -3390,7 +3580,7 @@ def admin_embed_monitor():
 
 
 def _enriquecer_conexiones_con_cache(conexiones):
-    """Añade país/ISP desde ip_cache.db si existen."""
+    """Añade país/ISP desde la caché Redis del perímetro NGWAF."""
     resultado = []
     for fila in conexiones or []:
         ip = fila.get("ip") or ""
@@ -3415,7 +3605,7 @@ def _enriquecer_conexiones_con_cache(conexiones):
 @aplicacion.get("/admin/api/ultimas-conexiones")
 @api_soc_segura
 def admin_api_ultimas_conexiones():
-    """Últimas 3 IPs únicas del honeypot (flypaper.db) con metadatos de ip_cache."""
+    """Últimas 3 IPs únicas del honeypot con metadatos del perímetro Redis."""
     filas = obtener_ultimas_ips_conexion(limite=3) or []
     conexiones = _enriquecer_conexiones_con_cache(filas)
     return jsonify({"status": "ok", "data": conexiones, "conexiones": conexiones})
@@ -3434,6 +3624,8 @@ def admin_api_ultimo_critico():
         "tipo": evento.get("tipo_ataque"),
         "ruta": evento.get("ruta"),
         "timestamp": evento.get("timestamp"),
+        "firma_coincidente": evento.get("firma_coincidente") or "",
+        "gravedad": evento.get("gravedad") or "",
     }
     return jsonify({"status": "ok", "data": payload, "evento": payload})
 
@@ -3441,7 +3633,7 @@ def admin_api_ultimo_critico():
 @aplicacion.get("/admin/api/bots-bloqueados")
 @api_soc_segura
 def admin_api_bots_bloqueados():
-    """IPs bloqueadas por el perímetro WAF (ip_cache.db)."""
+    """IPs bloqueadas por el perímetro NGWAF (Redis, TTL 24 h)."""
     bots = listar_ips_bloqueadas_perimetro() or []
     return jsonify({"status": "ok", "data": bots, "bots": bots})
 
@@ -3449,15 +3641,26 @@ def admin_api_bots_bloqueados():
 @aplicacion.get("/admin/api/honeypot-status")
 @api_soc_segura
 def admin_api_honeypot_status():
-    """Estado agregado de honeypots para el widget del dashboard general."""
+    """Estado agregado de honeypots + salud del perímetro Redis."""
     stats = obtener_estadisticas(periodo="hoy", ambito="publico") or {}
     bloqueadas = listar_ips_bloqueadas_perimetro() or []
+    perimetro = {}
+    try:
+        perimetro = estado_perimetro_redis()
+    except Exception as exc:
+        logging.warning("estado_perimetro_redis: %s", exc)
+        perimetro = {"redis_ok": False, "backend": "degradado"}
     payload = {
         "activo": True,
         "eventos_hoy": stats.get("total_eventos", 0) or 0,
         "ips_unicas_hoy": stats.get("ips_unicas", 0) or 0,
         "bloqueadas_perimetro": len(bloqueadas),
         "bloqueadas_honeypot": contar_ips_bloqueadas() or 0,
+        "ngwaf": perimetro,
+        "redis_ok": bool(perimetro.get("redis_ok")),
+        "rate_limit_max": perimetro.get("rate_limit_max"),
+        "risk_autoban_umbral": perimetro.get("risk_autoban_umbral"),
+        "circuitos_abiertos": perimetro.get("circuitos_abiertos") or {},
     }
     return jsonify({"status": "ok", "data": payload, **payload})
 
@@ -3466,7 +3669,7 @@ def admin_api_honeypot_status():
 @api_soc_segura
 def admin_api_whitelist_ip():
     """
-    Whitelist administrativa en ip_cache.db.
+    Whitelist administrativa en Redis (persistente, sin TTL).
 
     JSON: {"ip": "x.x.x.x"}
     """

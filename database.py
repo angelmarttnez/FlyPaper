@@ -64,13 +64,29 @@ PATRON_FLAG_CTF = re.compile(r"^flag\{([a-zA-Z0-9]{10})\}$")
 
 
 RUTA_RAIZ_PROYECTO = Path(__file__).resolve().parent
-RUTA_BD = RUTA_RAIZ_PROYECTO / "flypaper.db"
+
+
+def _resolver_directorio_datos() -> Path:
+    """
+    Directorio persistido para todas las bases SQLite.
+
+    Local: ``./data`` bajo la raíz del proyecto.
+    Docker: ``/app/data`` vía ``FLYPAPER_DATA_DIR`` (volumen bind/named).
+    """
+    ruta_env = os.getenv("FLYPAPER_DATA_DIR", "").strip()
+    directorio = Path(ruta_env) if ruta_env else RUTA_RAIZ_PROYECTO / "data"
+    directorio.mkdir(parents=True, exist_ok=True)
+    return directorio
+
+
+RUTA_DATOS = _resolver_directorio_datos()
+RUTA_BD = RUTA_DATOS / "flypaper.db"
 # Credenciales /admin y /monitor: BD separada, no alcanzable por SQLi en el buscador.
-RUTA_BD_PRIVADA = RUTA_RAIZ_PROYECTO / "flypaper_priv.db"
+RUTA_BD_PRIVADA = RUTA_DATOS / "flypaper_priv.db"
 # Contenido señuelo de /secure/*: sin usuarios, flags ni datos del laboratorio CTF.
-RUTA_BD_AUTOBAN = RUTA_RAIZ_PROYECTO / "flypaper_autoban.db"
+RUTA_BD_AUTOBAN = RUTA_DATOS / "flypaper_autoban.db"
 # Cuentas reales del portal público (registro /register con bcrypt).
-RUTA_BD_USERS = RUTA_RAIZ_PROYECTO / "flypaper_users.db"
+RUTA_BD_USERS = RUTA_DATOS / "flypaper_users.db"
 
 # Validación de nombre de usuario en el registro abierto.
 _PATRON_USERNAME_REGISTRO = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
@@ -365,6 +381,22 @@ def _asegurar_columna_gravedad(cursor):
         )
 
 
+def _asegurar_columna_firma_coincidente(cursor):
+    """
+    Añade `firma_coincidente` a `eventos` y `registro_peticiones` si no existe.
+
+    Guarda la regla WAF concreta que disparó la detección
+    (p. ej. «SQLi: SLEEP() time-based»).
+    """
+    for tabla in ("eventos", "registro_peticiones"):
+        cursor.execute(f"PRAGMA table_info({tabla});")
+        columnas = {fila[1] for fila in cursor.fetchall()}
+        if "firma_coincidente" not in columnas:
+            cursor.execute(
+                f"ALTER TABLE {tabla} ADD COLUMN firma_coincidente TEXT DEFAULT '';"
+            )
+
+
 def _asegurar_columnas_registro_peticiones(cursor):
     """Añade metadatos HTTP a `registro_peticiones` en bases de datos antiguas."""
     cursor.execute("PRAGMA table_info(registro_peticiones);")
@@ -375,6 +407,7 @@ def _asegurar_columnas_registro_peticiones(cursor):
         ("headers", "TEXT"),
         ("tipo_ataque", "TEXT"),
         ("gravedad", "TEXT"),
+        ("firma_coincidente", "TEXT"),
         ("evento_id", "INTEGER"),
         ("usuario_activo", "TEXT"),
         ("sesion_id_corto", "TEXT"),
@@ -438,6 +471,7 @@ def inicializar_db():
         payload TEXT,
         tipo_ataque TEXT,
         gravedad TEXT,
+        firma_coincidente TEXT DEFAULT '',
         user_agent TEXT,
         timestamp DATETIME,
         pais TEXT DEFAULT '',
@@ -545,6 +579,7 @@ def inicializar_db():
         headers TEXT,
         tipo_ataque TEXT,
         gravedad TEXT,
+        firma_coincidente TEXT DEFAULT '',
         evento_id INTEGER,
         usuario_activo TEXT,
         sesion_id_corto TEXT,
@@ -559,6 +594,7 @@ def inicializar_db():
         cursor = conexion.cursor()
         cursor.executescript(ddl_tablas)
         _asegurar_columna_gravedad(cursor)
+        _asegurar_columna_firma_coincidente(cursor)
         _asegurar_columna_rol_usuarios(cursor)
         _asegurar_columnas_registro_peticiones(cursor)
         _asegurar_columna_ambito(cursor)
@@ -1780,6 +1816,7 @@ def guardar_evento(
     headers,
     gravedad=None,
     ambito="publico",
+    firma_coincidente=None,
 ):
     """
     Inserta un evento capturado por el honeypot en la tabla `eventos`.
@@ -1794,19 +1831,21 @@ def guardar_evento(
         headers: Cabeceras HTTP (dict o texto).
         gravedad (str|None): Crítica, Alta, Sospechoso; None para tráfico normal.
         ambito (str): publico | autoban | admin.
+        firma_coincidente (str|None): Regla WAF que coincidió (p. ej. «SQLi: OR 1=1»).
     """
     gravedad_guardar = normalizar_gravedad_almacenada(gravedad)
     payload_texto = _serializar_campo_json(payload)
     headers_texto = _serializar_campo_json(headers) if headers is not None else "{}"
     marca_tiempo = marca_ahora()
     ambito_guardar = (ambito or "publico").strip() or "publico"
+    firma_guardar = (firma_coincidente or "").strip()
 
     consulta = """
     INSERT INTO eventos (
-        ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        ip, ruta, metodo, payload, tipo_ataque, gravedad, firma_coincidente,
         user_agent, timestamp, pais, headers, ambito
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """
 
     valores = (
@@ -1816,6 +1855,7 @@ def guardar_evento(
         payload_texto,
         tipo_ataque,
         gravedad_guardar,
+        firma_guardar,
         user_agent,
         marca_tiempo,
         "",
@@ -1902,8 +1942,8 @@ def _sql_filtro_ambito_peticiones(ambito, prefijo=""):
 
 _CAMPOS_REGISTRO_PETICIONES = """
     id, ip, ruta, metodo, codigo_http, user_agent, payload, headers,
-    tipo_ataque, gravedad, evento_id, usuario_activo, sesion_id_corto, tiempo_ms,
-    tamano_respuesta_bytes, puerto_origen, timestamp
+    tipo_ataque, gravedad, firma_coincidente, evento_id, usuario_activo,
+    sesion_id_corto, tiempo_ms, tamano_respuesta_bytes, puerto_origen, timestamp
 """
 
 _FROM_REGISTRO_PETICIONES_CON_ALERTA = """
@@ -1942,6 +1982,11 @@ _SELECT_REGISTRO_PETICIONES_CORRELADO = f"""
         ELSE COALESCE(NULLIF(TRIM(rp.tipo_ataque), ''), 'Tráfico Normal')
     END AS tipo_ataque,
     COALESCE(NULLIF(TRIM(rp.gravedad), ''), NULLIF(TRIM(e.gravedad), '')) AS gravedad,
+    COALESCE(
+        NULLIF(TRIM(rp.firma_coincidente), ''),
+        NULLIF(TRIM(e.firma_coincidente), ''),
+        ''
+    ) AS firma_coincidente,
     COALESCE(rp.evento_id, e.id) AS evento_id,
     rp.usuario_activo,
     rp.sesion_id_corto,
@@ -1969,6 +2014,7 @@ def guardar_registro_peticion(
     gravedad=None,
     evento_id=None,
     ambito="publico",
+    firma_coincidente=None,
 ):
     """Registra cada petición HTTP para el panel de actividad por IP del monitor."""
     payload_texto = _serializar_campo_json(payload) if payload is not None else ""
@@ -1977,14 +2023,18 @@ def guardar_registro_peticion(
     gravedad_guardar = ""
     if tipo_norm not in ("Otro", "Tráfico Normal"):
         gravedad_guardar = normalizar_gravedad_almacenada(gravedad) or ""
+    firma_guardar = ""
+    if tipo_norm not in ("Otro", "Tráfico Normal"):
+        firma_guardar = (firma_coincidente or "").strip()
     ambito_guardar = (ambito or "publico").strip() or "publico"
     consulta = """
     INSERT INTO registro_peticiones (
         ip, ruta, metodo, codigo_http, user_agent, payload, headers,
-        tipo_ataque, gravedad, evento_id, usuario_activo, sesion_id_corto, tiempo_ms,
-        tamano_respuesta_bytes, puerto_origen, timestamp, ambito
+        tipo_ataque, gravedad, firma_coincidente, evento_id, usuario_activo,
+        sesion_id_corto, tiempo_ms, tamano_respuesta_bytes, puerto_origen,
+        timestamp, ambito
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """
     with obtener_conexion() as conexion:
         cursor = conexion.cursor()
@@ -2000,6 +2050,7 @@ def guardar_registro_peticion(
                 headers_texto,
                 tipo_norm,
                 gravedad_guardar,
+                firma_guardar,
                 int(evento_id) if evento_id else None,
                 usuario_activo or "Invitado",
                 sesion_id_corto or "",
@@ -2417,7 +2468,7 @@ def obtener_evento_por_id(evento_id):
 
     consulta = """
     SELECT
-        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad, firma_coincidente,
         user_agent, timestamp, pais, headers
     FROM eventos
     WHERE id = ?;
@@ -2443,7 +2494,7 @@ def obtener_eventos_ultima_hora(limite=500):
     desde = formatear_marca(hace_tiempo(hours=1))
     consulta = f"""
     SELECT
-        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad, firma_coincidente,
         user_agent, timestamp, pais, headers
     FROM eventos
     WHERE timestamp >= ?
@@ -2476,7 +2527,7 @@ def obtener_eventos(limite=100, periodo=None, gravedad=None, ambito="publico"):
 
     consulta = """
     SELECT
-        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad, firma_coincidente,
         user_agent, timestamp, pais, headers, ambito
     FROM eventos
     """
@@ -2999,7 +3050,8 @@ def obtener_ultimo_evento_critico():
         cursor = conexion.cursor()
         cursor.execute(
             """
-            SELECT id, ip, tipo_ataque, ruta, gravedad, timestamp, payload
+            SELECT id, ip, tipo_ataque, ruta, gravedad, firma_coincidente,
+                   timestamp, payload
             FROM eventos
             WHERE gravedad = ?
             ORDER BY timestamp DESC
@@ -3638,7 +3690,7 @@ def obtener_eventos_por_fecha(fecha, limite=500):
     limite_norm = max(int(limite), 1)
     consulta = """
     SELECT
-        id, ip, ruta, metodo, payload, tipo_ataque, gravedad,
+        id, ip, ruta, metodo, payload, tipo_ataque, gravedad, firma_coincidente,
         user_agent, timestamp, pais, headers
     FROM eventos
     WHERE strftime('%Y-%m-%d', timestamp) = ?

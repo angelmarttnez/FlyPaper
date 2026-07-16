@@ -1,25 +1,30 @@
-# Imagen de la aplicación FlyPaper (Flask).
-# SQLite se crea en /app al arrancar (flypaper.db, flypaper_priv.db).
-# Para persistir datos entre recreaciones del contenedor, monta un volumen
-# en /app solo si aceptas mezclar código y BD; lo habitual en lab es
-# copiar las .db fuera con `docker cp` o añadir una variable de ruta en código.
+# FlyPaper — imagen de producción (Flask + Gunicorn, usuario non-root).
+# Bases SQLite persistidas en /app/data (montar volumen en despliegue).
 
 FROM python:3.11-slim
 
-WORKDIR /app
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    FLYPAPER_DATA_DIR=/app/data
+
+RUN groupadd -r flypaper \
+    && useradd -r -g flypaper -d /app -s /usr/sbin/nologin flypaper
+
+WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --upgrade pip \
-    && pip install -r requirements.txt \
-    && pip install "gunicorn>=22.0.0"
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir "gunicorn>=22.0.0"
 
 COPY . .
 
+RUN mkdir -p /app/data \
+    && chown -R flypaper:flypaper /app
+
+USER flypaper
+
 EXPOSE 5000
 
-# Un worker evita duplicar el hilo de fondo del módulo; threads sirven concurrencia I/O.
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "app:aplicacion"]

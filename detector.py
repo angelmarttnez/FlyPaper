@@ -1,135 +1,208 @@
 """
-Módulo de detección y clasificación de ataques para FlyPaper.
+Módulo de detección WAF/IDS para FlyPaper (Blue Team).
 
-Analiza rutas, payloads, user-agents y cabeceras HTTP con reglas por patrones.
-Incluye contador en memoria para fuerza bruta en POST /login y niveles de gravedad.
+Motor de detección orientado al OWASP Top 10:
+- Capa anti-evasión (URL decode recursivo, comentarios SQL, case-folding).
+- Firmas modulares: SQLi, XSS, Path Traversal/LFI, RCE, SSRF/RFI,
+  rutas prohibidas / web shells y fingerprinting de scanners.
+- Salida estructurada para persistencia SOC y dashboard.
 """
+
+from __future__ import annotations
 
 import json
 import re
 from datetime import datetime, timedelta
+from typing import Any, Optional
 from urllib.parse import unquote_plus
 
+# ---------------------------------------------------------------------------
+# Constantes de clasificación (integración SOC / BD)
+# ---------------------------------------------------------------------------
+
 # Timestamps de intentos POST /login por IP: {"203.0.113.1": [datetime, ...]}
-intentos_login = {}
+intentos_login: dict[str, list[datetime]] = {}
 
-# Categoría por defecto: tráfico legítimo o sin patrón de ataque identificable.
+# Compatibilidad histórica con BD y dashboard («Tráfico Normal»).
 TIPO_TRAFICO_NORMAL = "Tráfico Normal"
+TIPO_NORMAL_ALIAS = "Normal"
 
-# GET /blog/<id> — detalle de publicación.
+TIPO_SQLI = "SQLi"
+TIPO_XSS = "XSS"
+TIPO_PATH_TRAVERSAL = "Path Traversal"
+TIPO_RCE = "RCE"
+TIPO_SSRF_RFI = "SSRF/RFI"
+TIPO_SCANNER = "Scanner Automatizado"
+TIPO_RUTA_PROHIBIDA = "Ruta Prohibida"
+TIPO_FUERZA_BRUTA = "Fuerza Bruta"
+TIPO_CSRF = "CSRF"
+# Alias legacy (filas antiguas en BD / filtros UI).
+TIPO_RECONOCIMIENTO = "Reconocimiento"
+
+GRAVEDAD_CRITICA = "Crítica"
+GRAVEDAD_ALTA = "Alta"
+GRAVEDAD_SOSPECHOSO = "Sospechoso"
+GRAVEDAD_NORMAL = "Normal"
+GRAVEDADES_MONITOR = (GRAVEDAD_CRITICA, GRAVEDAD_ALTA, GRAVEDAD_SOSPECHOSO)
+
+# Decodificación URL: mínimo 2 pasadas (requisito), tope anti-bucle.
+_MIN_DECODIFICACIONES_URL = 2
+_MAX_DECODIFICACIONES_URL = 6
+_MAX_LONGITUD_ANALISIS = 65536
+
 _PATRON_RUTA_BLOG_POST = re.compile(r"^/blog/\d+$")
-# Query de búsqueda sin caracteres de inyección (letras, números, espacios, puntuación básica).
 _PATRON_QUERY_SEARCH_LIMPIA = re.compile(
     r"^[a-zA-Z0-9\s\-_.áéíóúñüÁÉÍÓÚÑÜ]*$"
 )
-# Indicios de inyección en credenciales de POST /login.
-_INDICIOS_LOGIN_MALICIOSO = (
-    "'",
-    '"',
-    "<script",
-    "union",
-    "../",
-    "..\\",
-    "%2e%2e",
-    "--",
-    "/*",
-    "<img",
-    "javascript:",
-    "onerror=",
-)
+_PATRON_RUTA_SECURE_BLOG_POST = re.compile(r"^/secure/blog/\d+$")
+_PATRON_RUTA_SECURE_BLOG_COMENTAR = re.compile(r"^/secure/blog/\d+/comentar$")
 
+# Comentarios SQL usados para evadir WAF.
+_PATRON_COMENTARIO_SQL_BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
+_PATRON_COMENTARIO_SQL_LINEA = re.compile(r"(--|#)[^\n]*")
+_PATRON_COMENTARIO_SQL_VACIO = re.compile(r"/\*+\*/")
 
 # ---------------------------------------------------------------------------
-# Patrones SQLi — inyección en formularios o parámetros
-# Ejemplo: username=admin' OR 1=1--  |  id=1 UNION SELECT password FROM users
+# Firmas SQLi
 # ---------------------------------------------------------------------------
-PATRONES_SQLI = [
-    "select",
-    "union",
-    "drop",
-    "insert",
-    "update",
-    "delete",
-    "or 1=1",
-    "--",
-    "/*",
-    "sleep",
-    "exec",
-    "xp_",
-    "cast",
-    "convert",
-    "char",
-    "concat",
-    "group by",
-    "having",
-    "order by",
-    "benchmark",
-    "load_file",
-    "into outfile",
-    "information_schema",
+_REGLAS_SQLI: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\bunion\b.{0,120}?\bselect\b"),
+        "Detectado UNION SELECT (SQLi estructurada)",
+    ),
+    (
+        re.compile(r"\bselect\b.{0,80}?\bfrom\b"),
+        "Detectado SELECT ... FROM (SQLi)",
+    ),
+    (
+        re.compile(r"\b(or|and)\b\s+[\d'\"]+\s*=\s*[\d'\"]+"),
+        "Detectado operador booleano OR/AND N=N (SQLi)",
+    ),
+    (
+        re.compile(r"'\s*(or|and)\b"),
+        "Detectado cierre de comillas con OR/AND (SQLi)",
+    ),
+    (
+        re.compile(r"\bor\s+1\s*=\s*1\b"),
+        "Detectado OR 1=1 (SQLi booleana)",
+    ),
+    (
+        re.compile(r"\band\s+2\s*=\s*2\b"),
+        "Detectado AND 2=2 (SQLi booleana)",
+    ),
+    (
+        re.compile(r"\band\s+1\s*=\s*1\b"),
+        "Detectado AND 1=1 (SQLi booleana)",
+    ),
+    (
+        re.compile(r"\bsleep\s*\("),
+        "Detectado uso de función temporal SLEEP en SQLi",
+    ),
+    (
+        re.compile(r"\bbenchmark\s*\("),
+        "Detectado BENCHMARK() time-based (SQLi)",
+    ),
+    (
+        re.compile(r"\bwaitfor\s+delay\b"),
+        "Detectado WAITFOR DELAY (SQLi MSSQL)",
+    ),
+    (
+        re.compile(r"\bpg_sleep\s*\("),
+        "Detectado pg_sleep() time-based (SQLi)",
+    ),
+    (
+        re.compile(r"\binformation_schema\b"),
+        "Detectado acceso a information_schema (SQLi)",
+    ),
+    (
+        re.compile(r"\bload_file\s*\("),
+        "Detectado LOAD_FILE() (SQLi)",
+    ),
+    (
+        re.compile(r"\binto\s+(out|dump)file\b"),
+        "Detectado INTO OUTFILE/DUMPFILE (SQLi)",
+    ),
+    (
+        re.compile(r"\binsert\s+into\b"),
+        "Detectado INSERT INTO (SQLi)",
+    ),
+    (
+        re.compile(r"\bdrop\s+(table|database)\b"),
+        "Detectado DROP TABLE/DATABASE (SQLi)",
+    ),
+    (
+        re.compile(r"\bupdate\s+\w+\s+set\b"),
+        "Detectado UPDATE SET (SQLi)",
+    ),
+    (
+        re.compile(r"\bdelete\s+from\b"),
+        "Detectado DELETE FROM (SQLi)",
+    ),
+    (
+        re.compile(r";\s*(drop|delete|update|insert)\b"),
+        "Detectado stacked query SQL",
+    ),
+    (
+        re.compile(r"\bxp_cmdshell\b"),
+        "Detectado xp_cmdshell (SQLi RCE)",
+    ),
+]
+
+# Firmas de corte por comentario (aplican sobre texto SIN eliminar `--`/`#`).
+_REGLAS_SQLI_COMENTARIO: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"'\s*;\s*--"), "Detectado terminador SQL con comentario --"),
+    (re.compile(r"'\s*--"), "Detectado comilla + comentario SQL --"),
+    (re.compile(r"'\s*/\*"), "Detectado comilla + comentario SQL /*"),
+    (re.compile(r"'\s*#"), "Detectado comilla + comentario SQL #"),
 ]
 
 # ---------------------------------------------------------------------------
-# Patrones XSS — ejecución de script en el navegador de la víctima
-# Ejemplo: <script>alert(1)</script>  |  <img src=x onerror=alert(1)>
+# Firmas XSS
 # ---------------------------------------------------------------------------
-PATRONES_XSS = [
-    "<script",
-    "javascript:",
-    "onerror=",
-    "onload=",
-    "alert(",
-    "document.cookie",
-    "eval(",
-    "<img src=",
-    "<svg",
-    "<iframe",
-    "onfocus",
-    "onmouseover",
-    "expression(",
-    "vbscript:",
-    "data:text/html",
+_REGLAS_XSS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"<\s*script\b"), "Detectado tag <script> (XSS)"),
+    (re.compile(r"<\s*iframe\b"), "Detectado tag <iframe> (XSS)"),
+    (re.compile(r"<\s*svg\b"), "Detectado vector SVG (XSS)"),
+    (re.compile(r"<\s*embed\b"), "Detectado tag <embed> (XSS)"),
+    (re.compile(r"<\s*object\b"), "Detectado tag <object> (XSS)"),
+    (re.compile(r"<\s*math\b"), "Detectado vector MathML (XSS)"),
+    (re.compile(r"javascript\s*:"), "Detectado esquema javascript: (XSS)"),
+    (re.compile(r"vbscript\s*:"), "Detectado esquema vbscript: (XSS)"),
+    (re.compile(r"data\s*:\s*text/html"), "Detectado data:text/html (XSS)"),
+    (
+        re.compile(r"\bon(load|error|mouseover|click|focus|toggle|submit|input)\s*="),
+        "Detectado manejador de evento HTML (XSS)",
+    ),
+    (
+        re.compile(r"<\s*img\b[^>]{0,200}?\bon\w+\s*="),
+        "Detectado <img> con event handler (XSS)",
+    ),
+    (re.compile(r"\bdocument\s*\.\s*cookie\b"), "Detectado document.cookie (XSS)"),
+    (re.compile(r"\beval\s*\("), "Detectado eval() (XSS)"),
 ]
 
 # ---------------------------------------------------------------------------
-# Path Traversal — rutas públicas (fuera de /secure/*)
-# Se analizan en ruta + payload; típico en URLs 404 sin cuerpo GET.
+# Path Traversal / LFI
 # ---------------------------------------------------------------------------
-PATRONES_PATH_TRAVERSAL = [
-    "/../",
-    "/..",
-    "%2e%2e",
-    "%252e",
-    "/etc/",
-    "/windows/",
-    "/proc/",
-    "\x00",
-    "%00",
-    ".php",
-    ".asp",
-    ".jsp",
-    ".bak",
-    ".sql",
-    "/.git",
-    "/.env",
-    "/wp-login",
-    "/.htaccess",
-    "/web.config",
+_REGLAS_PATH_TRAVERSAL: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\.\./"), "Detectado traversal ../ (LFI)"),
+    (re.compile(r"\.\.\\"), "Detectado traversal ..\\ (LFI Windows)"),
+    (re.compile(r"\.\.%2f"), "Detectado traversal ..%2f codificado"),
+    (re.compile(r"\.\.%5c"), "Detectado traversal ..%5c codificado"),
+    (re.compile(r"\.{2,}/+"), "Detectado evasión ....// (LFI)"),
+    (re.compile(r"\.{2,}\\+"), "Detectado evasión ....\\\\ (LFI)"),
+    (re.compile(r"%2e%2e(%2f|/)"), "Detectado double-encoding %2e%2e (LFI)"),
+    (re.compile(r"%252e%252e"), "Detectado triple-encoding de .. (LFI)"),
+    (re.compile(r"/etc/passwd\b"), "Detectado acceso a /etc/passwd"),
+    (re.compile(r"/etc/shadow\b"), "Detectado acceso a /etc/shadow"),
+    (re.compile(r"/etc/hosts\b"), "Detectado acceso a /etc/hosts"),
+    (re.compile(r"(?:^|[\\/])boot\.ini\b"), "Detectado acceso a boot.ini"),
+    (re.compile(r"(?:^|[\\/])win\.ini\b"), "Detectado acceso a win.ini"),
+    (re.compile(r"/proc/self/"), "Detectado acceso a /proc/self"),
+    (re.compile(r"/windows/system32"), "Detectado acceso a system32"),
+    (re.compile(r"(%00|\\x00|\x00)"), "Detectado null byte en path (LFI)"),
 ]
 
-# ---------------------------------------------------------------------------
-# Path Traversal — regex estrictas (zona /secure/* y secuencias codificadas)
-# Ejemplo: /../../etc/passwd  |  ruta=%2e%2e%2fetc%2fpasswd
-# ---------------------------------------------------------------------------
-_PATRONES_PATH_TRAVERSAL_REGEX = (
-    re.compile(r"\.\./", re.IGNORECASE),
-    re.compile(r"\.\.\\", re.IGNORECASE),
-    re.compile(r"%2e%2e%2f", re.IGNORECASE),
-    re.compile(r"%2e%2e%252f", re.IGNORECASE),
-    re.compile(r"%252e%252e%252f", re.IGNORECASE),
-)
-
-# Extensiones y null bytes en rutas bajo /secure/ (sondeo automatizado)
 _PATRONES_SECURE_EXTENSION_REGEX = (
     re.compile(r"\.php$", re.IGNORECASE),
     re.compile(r"\.sql$", re.IGNORECASE),
@@ -139,293 +212,668 @@ _PATRONES_SECURE_EXTENSION_REGEX = (
     re.compile(r"\\x00", re.IGNORECASE),
 )
 
-# GET /secure/blog/<id> — detalle de publicación señuelo.
-_PATRON_RUTA_SECURE_BLOG_POST = re.compile(r"^/secure/blog/\d+$")
-# POST /secure/blog/<id>/comentar — envío de comentario señuelo.
-_PATRON_RUTA_SECURE_BLOG_COMENTAR = re.compile(r"^/secure/blog/\d+/comentar$")
-
 # ---------------------------------------------------------------------------
-# Rutas típicas de reconocimiento y enumeración
-# Ejemplo: GET /.env  |  GET /wp-admin
+# RCE / Command Injection
 # ---------------------------------------------------------------------------
-RUTAS_RECONOCIMIENTO = [
-    "/admin",
-    "/backup",
-    "/.env",
-    "/config",
-    "/phpinfo",
-    "/wp-admin",
-    "/phpmyadmin",
-    "/robots.txt",
-    "/.git",
-    "/.htaccess",
-    "/web.config",
-    "/api/v1",
-    "/swagger",
-    "/actuator",
-    "/console",
-    "/.ssh",
+_BINARIOS_RCE = (
+    r"whoami|id|uname|cat|wget|curl|powershell|cmd\.exe|"
+    r"/bin/sh|/bin/bash|bash|sh|nc\b|netcat|python\s+-c|perl\s+-e|php\s+-r"
+)
+_REGLAS_RCE: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(rf"(;|\|\||&&)\s*({_BINARIOS_RCE})\b"),
+        "Detectado encadenamiento de comandos + binario (RCE)",
+    ),
+    (
+        re.compile(rf"`\s*({_BINARIOS_RCE})\b"),
+        "Detectado ejecución con backticks (RCE)",
+    ),
+    (
+        re.compile(rf"\$\(\s*({_BINARIOS_RCE})\b"),
+        "Detectado command substitution $() (RCE)",
+    ),
+    (
+        re.compile(r"\bpowershell\s+(-|/)"),
+        "Detectado invocación PowerShell (RCE)",
+    ),
+    (
+        re.compile(r"\bcmd\.exe\s+/c\b"),
+        "Detectado cmd.exe /c (RCE)",
+    ),
+    (
+        re.compile(r"\|\s*(sh|bash)\b"),
+        "Detectado pipe hacia shell (RCE)",
+    ),
 ]
 
 # ---------------------------------------------------------------------------
-# User-Agents de herramientas automatizadas de escaneo
-# Ejemplo: sqlmap/1.7  |  Nikto/2.1.5
+# SSRF / RFI
 # ---------------------------------------------------------------------------
-SCANNERS_CONOCIDOS = [
-    "sqlmap",
-    "nikto",
-    "nmap",
-    "masscan",
-    "zgrab",
-    "python-requests",
-    "curl/",
-    "wget/",
-    "dirbuster",
-    "gobuster",
-    "wfuzz",
-    "burpsuite",
-    "hydra",
-    "metasploit",
+_REGLAS_SSRF_RFI: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\b(gopher|file|dict|ldap|tftp|jar)://"),
+        "Detectado esquema SSRF inusual (gopher/file/dict/...)",
+    ),
+    (
+        re.compile(r"(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)(:\d+)?(/|\s|$|\")"),
+        "Detectado apuntado a localhost/loopback (SSRF)",
+    ),
+    (
+        re.compile(r"169\.254\.169\.254"),
+        "Detectado metadata cloud 169.254.169.254 (SSRF)",
+    ),
+    (
+        re.compile(r"https?://10\.\d{1,3}\.\d{1,3}\.\d{1,3}"),
+        "Detectado URL a red 10.0.0.0/8 (SSRF)",
+    ),
+    (
+        re.compile(r"https?://192\.168\.\d{1,3}\.\d{1,3}"),
+        "Detectado URL a red 192.168.0.0/16 (SSRF)",
+    ),
+    (
+        re.compile(r"https?://172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"),
+        "Detectado URL a red 172.16.0.0/12 (SSRF)",
+    ),
+    (
+        re.compile(
+            r"(^|[?&\"'=])(url|uri|path|src|dest|redirect|next|data|host|portal|"
+            r"file|page|include|doc|folder|root|pg|style|pdf|template|php_path|"
+            r"feed|fetch|proxy|continue|return|callback)\s*[:=]\s*https?://"
+        ),
+        "Detectado parámetro con URL externa (RFI/SSRF)",
+    ),
+    (
+        re.compile(r"(include|require)(_once)?\s*\(\s*['\"]https?://"),
+        "Detectado include/require remoto (RFI)",
+    ),
 ]
 
+# ---------------------------------------------------------------------------
+# Scanners (UA + cabeceras) → Crítica
+# ---------------------------------------------------------------------------
+_SCANNER_PATRONES: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bsqlmap\b"), "Fingerprinting scanner: sqlmap"),
+    (re.compile(r"\bnikto\b"), "Fingerprinting scanner: nikto"),
+    (re.compile(r"\bnmap\b"), "Fingerprinting scanner: nmap"),
+    (re.compile(r"\bnuclei\b"), "Fingerprinting scanner: nuclei"),
+    (re.compile(r"\bgobuster\b"), "Fingerprinting scanner: gobuster"),
+    (re.compile(r"\bdirbuster\b"), "Fingerprinting scanner: dirbuster"),
+    (re.compile(r"\bdirb\b"), "Fingerprinting scanner: dirb"),
+    (re.compile(r"\bwfuzz\b"), "Fingerprinting scanner: wfuzz"),
+    (re.compile(r"\bacunetix\b"), "Fingerprinting scanner: acunetix"),
+    (re.compile(r"\bhydra\b"), "Fingerprinting scanner: hydra"),
+    (re.compile(r"\bnessus\b"), "Fingerprinting scanner: nessus"),
+    (re.compile(r"\bopenvas\b"), "Fingerprinting scanner: openvas"),
+    (re.compile(r"\bmetasploit\b"), "Fingerprinting scanner: metasploit"),
+    (re.compile(r"\bburpsuite\b"), "Fingerprinting scanner: burpsuite"),
+    (re.compile(r"\bferoxbuster\b"), "Fingerprinting scanner: feroxbuster"),
+    (re.compile(r"\bmasscan\b"), "Fingerprinting scanner: masscan"),
+    (re.compile(r"\bzgrab\b"), "Fingerprinting scanner: zgrab"),
+    (re.compile(r"python-requests/"), "Fingerprinting scanner: python-requests"),
+    (re.compile(r"\bx-sqlmap"), "Fingerprinting cabecera X-Sqlmap"),
+]
 
-def _normalizar_headers(headers):
+# ---------------------------------------------------------------------------
+# Rutas prohibidas / web shells / recon probing
+# ---------------------------------------------------------------------------
+RUTAS_PROHIBIDAS: list[tuple[str, str]] = [
+    ("/shell.php", "Sondeo web shell: /shell.php"),
+    ("/cmd.php", "Sondeo web shell: /cmd.php"),
+    ("/c99.php", "Sondeo web shell: /c99.php"),
+    ("/r57.php", "Sondeo web shell: /r57.php"),
+    ("/wp-admin", "Sondeo recon: /wp-admin"),
+    ("/wp-login.php", "Sondeo recon: /wp-login.php"),
+    ("/.git/head", "Sondeo exposición: /.git/HEAD"),
+    ("/.git", "Sondeo exposición: /.git"),
+    ("/.env", "Sondeo exposición: /.env"),
+    ("/config.bak", "Sondeo backup: /config.bak"),
+    ("/phpinfo", "Sondeo recon: /phpinfo"),
+    ("/phpmyadmin", "Sondeo recon: /phpmyadmin"),
+    ("/backup", "Sondeo recon: /backup"),
+    ("/.htaccess", "Sondeo exposición: /.htaccess"),
+    ("/.ssh", "Sondeo exposición: /.ssh"),
+    ("/web.config", "Sondeo exposición: /web.config"),
+    ("/actuator", "Sondeo recon: /actuator"),
+    ("/swagger", "Sondeo recon: /swagger"),
+    ("/console", "Sondeo recon: /console"),
+    ("/robots.txt", "Sondeo recon: /robots.txt"),
+]
+
+# Alias público legacy (usado por código/docs antiguos).
+RUTAS_RECONOCIMIENTO = [ruta for ruta, _ in RUTAS_PROHIBIDAS]
+
+_MAPA_GRAVEDAD_LEGACY = {
+    "CRÍTICO": GRAVEDAD_CRITICA,
+    "CRITICO": GRAVEDAD_CRITICA,
+    "ALTO": GRAVEDAD_ALTA,
+    "MEDIO": GRAVEDAD_SOSPECHOSO,
+    "BAJO": GRAVEDAD_SOSPECHOSO,
+}
+
+
+# ===========================================================================
+# Normalización anti-evasión
+# ===========================================================================
+
+
+def _truncar_texto(texto: str) -> str:
+    """Limita longitud para evitar DoS por regex/memoria."""
+    if len(texto) <= _MAX_LONGITUD_ANALISIS:
+        return texto
+    return texto[:_MAX_LONGITUD_ANALISIS]
+
+
+def _a_texto(valor: Any) -> str:
+    """Serializa dict/list a JSON; el resto a str."""
+    if valor is None:
+        return ""
+    if isinstance(valor, dict):
+        try:
+            return json.dumps(valor, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(valor)
+    if isinstance(valor, (list, tuple)):
+        try:
+            return json.dumps(list(valor), ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(valor)
+    return str(valor)
+
+
+def _decodificar_url_recursivo(
+    cadena: str, max_decodificaciones: int = _MAX_DECODIFICACIONES_URL
+) -> str:
     """
-    Convierte cabeceras Flask/Werkzeug o dict a un dict con claves en minúsculas.
+    Decodifica URL Encoding de forma recursiva (mínimo 2 pasadas).
 
-    Args:
-        headers: Cabeceras de la petición o None.
-
-    Returns:
-        dict: Mapa nombre → valor en minúsculas.
+    Ejemplo: ``%2527`` → ``%27`` → ``'``.
     """
+    tope = max(_MIN_DECODIFICACIONES_URL, max_decodificaciones)
+    anterior = cadena.replace("+", " ")
+    for _ in range(tope):
+        try:
+            actual = unquote_plus(anterior, errors="replace")
+        except (TypeError, ValueError):
+            break
+        if actual == anterior:
+            # Garantiza al menos 2 intentos aunque no cambie (idempotente).
+            if _ == 0:
+                continue
+            break
+        anterior = actual
+    return anterior
+
+
+def normalizar_input_evasion(
+    texto: Any, max_decodificaciones: int = _MAX_DECODIFICACIONES_URL
+) -> str:
+    """
+    Pre-procesamiento anti-evasión antes de aplicar firmas WAF.
+
+    1. Decodificación URL recursiva (≥2 pasadas).
+    2. Sustitución de comentarios SQL (``/**/``, ``--``, ``#``) por espacios.
+    3. Colapso de espacios en blanco.
+    4. Conversión a minúsculas.
+    """
+    cadena = _decodificar_url_recursivo(_a_texto(texto), max_decodificaciones)
+    resultado = cadena.lower()
+    resultado = _PATRON_COMENTARIO_SQL_BLOCK.sub(" ", resultado)
+    resultado = _PATRON_COMENTARIO_SQL_LINEA.sub(" ", resultado)
+    resultado = _PATRON_COMENTARIO_SQL_VACIO.sub(" ", resultado)
+    resultado = re.sub(r"\s+", " ", resultado).strip()
+    return _truncar_texto(resultado)
+
+
+def _normalizar_sin_strip_comentarios_linea(texto: Any) -> str:
+    """
+    Variante para firmas de corte ``--`` / ``#``.
+
+    Solo decodifica, lower y colapsa espacios; conserva ``--`` y ``#``.
+    Sí neutraliza ``/**/`` para unir keywords (UNION/**/SELECT).
+    """
+    cadena = _decodificar_url_recursivo(_a_texto(texto)).lower()
+    cadena = _PATRON_COMENTARIO_SQL_BLOCK.sub(" ", cadena)
+    cadena = _PATRON_COMENTARIO_SQL_VACIO.sub(" ", cadena)
+    cadena = re.sub(r"\s+", " ", cadena).strip()
+    return _truncar_texto(cadena)
+
+
+# ===========================================================================
+# Utilidades de matching
+# ===========================================================================
+
+
+def _normalizar_headers(headers: Any) -> dict[str, str]:
+    """Convierte cabeceras HTTP a dict con claves en minúsculas."""
     if not headers:
         return {}
     if hasattr(headers, "items"):
         return {str(k).lower(): str(v) for k, v in headers.items()}
-    return {str(k).lower(): str(v) for k, v in headers}
+    try:
+        return {str(k).lower(): str(v) for k, v in dict(headers).items()}
+    except (TypeError, ValueError):
+        return {}
 
 
-def _contiene_patron(texto, patrones):
-    """True si algún patrón aparece como subcadena en `texto` (ya en minúsculas)."""
-    if not texto:
-        return False
-    return any(patron in texto for patron in patrones)
+def _texto_cabeceras_para_analisis(headers: Any) -> str:
+    """Concatena cabeceras para fingerprinting de scanners."""
+    cabeceras = _normalizar_headers(headers)
+    partes = [f"{clave}: {valor}" for clave, valor in cabeceras.items()]
+    return normalizar_input_evasion(" ".join(partes))
 
 
-def _texto_payload_normalizado(payload):
-    """Convierte payload a texto en minúsculas para reglas de clasificación."""
-    if payload is None:
-        return ""
-    if isinstance(payload, dict):
-        try:
-            return json.dumps(payload, ensure_ascii=False).lower()
-        except (TypeError, ValueError):
-            return str(payload).lower()
-    return str(payload).lower()
-
-
-def _detectar_path_traversal(texto, ruta=None):
-    """
-    Detecta path traversal combinando ruta y payload.
-
-    - Fuera de /secure/*: lista PATRONES_PATH_TRAVERSAL (URLs 404, sondeo de ficheros).
-    - En /secure/*: regex estrictas + extensiones al final de ruta (auto-ban).
-    """
-    ruta_norm = _normalizar_ruta_clasificacion(ruta or "")
-    ruta_lower = (ruta or "").lower()
-    payload_lower = _texto_payload_normalizado(texto)
-    texto_completo = (ruta_lower + " " + payload_lower).strip()
-
-    if texto_completo:
-        for patron in _PATRONES_PATH_TRAVERSAL_REGEX:
-            if patron.search(texto_completo):
-                return True
-
-    # Rutas públicas: patrones amplios en ruta + payload (p. ej. /archivo.php, /.git/config).
-    if not ruta_norm.startswith("/secure/"):
-        return _contiene_patron(texto_completo, PATRONES_PATH_TRAVERSAL)
-
-    candidatos = [ruta_norm]
-    if texto_completo:
-        candidatos.append(texto_completo.split("?")[0])
-        candidatos.append(texto_completo)
-
-    for candidato in candidatos:
-        for patron in _PATRONES_SECURE_EXTENSION_REGEX:
-            if patron.search(candidato):
-                return True
-    return False
-
-
-def _contiene_patrones_ataque(texto, ruta=None):
-    """True si el texto incluye indicios de SQLi, XSS o path traversal."""
-    texto_norm = (texto or "").lower()
-    if not texto_norm.strip():
-        return False
-    return (
-        _contiene_patron(texto_norm, PATRONES_SQLI)
-        or _contiene_patron(texto_norm, PATRONES_XSS)
-        or _detectar_path_traversal(texto_norm, ruta=ruta)
-    )
-
-
-def _payload_es_sospechoso(payload_norm):
-    """True si el payload contiene indicios de SQLi, XSS o path traversal."""
-    return _contiene_patrones_ataque(payload_norm)
-
-
-def _normalizar_ruta_clasificacion(ruta):
-    """Ruta sin query string, minúsculas, sin barra final redundante."""
+def _normalizar_ruta_clasificacion(ruta: Optional[str]) -> str:
+    """Ruta en minúsculas, sin query string, sin slash final (salvo `/`)."""
     return (ruta or "").lower().split("?")[0].rstrip("/") or "/"
 
 
-def _post_login_credenciales_simples(payload):
-    """True si POST /login no lleva comillas, UNION, scripts ni path traversal."""
-    payload_norm = _texto_payload_normalizado(payload)
-    return not any(indicio in payload_norm for indicio in _INDICIOS_LOGIN_MALICIOSO)
+def _buscar_primera_regla(
+    texto: str, reglas: list[tuple[re.Pattern[str], str]]
+) -> Optional[str]:
+    """Devuelve la descripción de la primera firma que coincide."""
+    if not texto:
+        return None
+    for patron, descripcion in reglas:
+        if patron.search(texto):
+            return descripcion
+    return None
 
 
-def _extraer_query_search(ruta, payload):
-    """Obtiene el parámetro query de GET /search (URL o cuerpo)."""
+def _detectar_scanner(user_agent: str, headers: Any) -> Optional[str]:
+    """Fingerprinting de herramientas automatizadas en UA y cabeceras."""
+    ua_norm = normalizar_input_evasion(user_agent or "")
+    firma = _buscar_primera_regla(ua_norm, _SCANNER_PATRONES)
+    if firma:
+        return firma
+    return _buscar_primera_regla(
+        _texto_cabeceras_para_analisis(headers), _SCANNER_PATRONES
+    )
+
+
+def _detectar_path_traversal(texto_norm: str, ruta: Optional[str]) -> Optional[str]:
+    """Path traversal / LFI en payload y ruta (refuerzo en /secure/*)."""
+    ruta_cls = _normalizar_ruta_clasificacion(ruta)
+    # Texto bruto también: patrones %2e pueden vivir pre-decode residuales.
+    texto_completo = f"{normalizar_input_evasion(ruta or '')} {texto_norm}".strip()
+    bruto = f"{(ruta or '').lower()} {_a_texto(ruta)} {texto_norm}".lower()
+
+    firma = _buscar_primera_regla(texto_completo, _REGLAS_PATH_TRAVERSAL)
+    if firma:
+        return firma
+    firma = _buscar_primera_regla(bruto, _REGLAS_PATH_TRAVERSAL)
+    if firma:
+        return firma
+
+    if ruta_cls.startswith("/secure/"):
+        for candidato in (ruta_cls, texto_completo):
+            for patron in _PATRONES_SECURE_EXTENSION_REGEX:
+                if patron.search(candidato):
+                    return "Detectada extensión sensible en zona /secure/ (LFI)"
+    return None
+
+
+def _detectar_ruta_prohibida(ruta: Optional[str]) -> Optional[str]:
+    """Web shells y sondeo de recon sobre rutas trampa."""
+    ruta_cls = _normalizar_ruta_clasificacion(ruta)
+    for ruta_senal, firma in RUTAS_PROHIBIDAS:
+        senal = ruta_senal.lower().rstrip("/") or "/"
+        if ruta_cls == senal or ruta_cls.startswith(senal + "/"):
+            return firma
+    return None
+
+
+def _detectar_csrf(headers: Any, metodo: Optional[str]) -> bool:
+    """Heurística básica CSRF: POST sin Referer coherente con Host."""
+    if (metodo or "").upper() != "POST":
+        return False
+    cabeceras = _normalizar_headers(headers)
+    referer = cabeceras.get("referer", "").strip()
+    host = cabeceras.get("host", "").strip()
+    if not referer:
+        return True
+    if host:
+        host_lower = host.lower().split(":")[0]
+        if host_lower not in referer.lower():
+            return True
+    return False
+
+
+def _contiene_patrones_ataque(texto_norm: str, ruta: Optional[str]) -> bool:
+    """True si el texto normalizado activa alguna firma de payload."""
+    if not texto_norm.strip():
+        return False
+    if _buscar_primera_regla(texto_norm, _REGLAS_SQLI):
+        return True
+    if _buscar_primera_regla(
+        _normalizar_sin_strip_comentarios_linea(texto_norm), _REGLAS_SQLI_COMENTARIO
+    ):
+        return True
+    if _buscar_primera_regla(texto_norm, _REGLAS_XSS):
+        return True
+    if _buscar_primera_regla(texto_norm, _REGLAS_RCE):
+        return True
+    if _buscar_primera_regla(texto_norm, _REGLAS_SSRF_RFI):
+        return True
+    if _detectar_path_traversal(texto_norm, ruta):
+        return True
+    return False
+
+
+def _post_login_credenciales_simples(payload_norm: str) -> bool:
+    """Login POST sin indicios de inyección en credenciales."""
+    indicadores = (
+        "'",
+        '"',
+        "union",
+        "select",
+        "../",
+        "..\\",
+        "%2e%2e",
+        "--",
+        "/*",
+        "<script",
+        "<img",
+        "javascript:",
+        "onerror=",
+        "sleep(",
+        "or 1=1",
+        "gopher://",
+        "file://",
+    )
+    return not any(x in payload_norm for x in indicadores)
+
+
+def _extraer_query_search(ruta: Optional[str], payload_norm: str) -> str:
     if "?" in (ruta or ""):
         for parte in (ruta or "").split("?", 1)[1].split("&"):
             if parte.lower().startswith("query="):
-                return unquote_plus(parte.split("=", 1)[1])
-    payload_norm = _texto_payload_normalizado(payload)
+                return unquote_plus(parte.split("=", 1)[1], errors="replace")
     coincidencia = re.search(
         r'["\']?query["\']?\s*[:=]\s*["\']?([^&"\'}\]]+)',
         payload_norm,
         re.IGNORECASE,
     )
     if coincidencia:
-        return unquote_plus(coincidencia.group(1).strip())
+        return unquote_plus(coincidencia.group(1).strip(), errors="replace")
     return ""
 
 
-def _search_get_query_es_limpia(ruta, payload):
-    """True si GET /search no tiene query o solo usa caracteres no maliciosos."""
-    query = _extraer_query_search(ruta, payload).strip()
+def _search_get_query_es_limpia(ruta: Optional[str], payload_norm: str) -> bool:
+    query = _extraer_query_search(ruta, payload_norm).strip()
     if not query:
         return True
     return bool(_PATRON_QUERY_SEARCH_LIMPIA.match(query))
 
 
-def _es_trafico_legitimo_prioritario(ruta, payload, metodo):
+def _es_trafico_legitimo_prioritario(
+    ruta: Optional[str], payload: Any, metodo: Optional[str]
+) -> bool:
     """
-    Primera pasada en clasificar_ataque: rutas legítimas sin patrones de ataque.
+    Primera pasada: interacción esperada del honeypot sin firmas maliciosas.
 
-    Devuelve True si la petición encaja en interacción esperada del sitio y
-    ruta/payload no contienen SQLi, XSS ni path traversal.
+    Evita falsos positivos en rutas públicas normales (login, blog, static).
     """
-    texto_completo = f"{ruta or ''} {_texto_payload_normalizado(payload)}"
-    if _contiene_patrones_ataque(texto_completo, ruta=ruta):
-        return False
-
+    payload_norm = normalizar_input_evasion(_a_texto(payload))
     ruta_norm = _normalizar_ruta_clasificacion(ruta)
+    texto_completo = normalizar_input_evasion(f"{ruta or ''} {_a_texto(payload)}")
+
+    # Academia CTF SQLi: labs deliberadamente vulnerables — WAF no interfiere.
+    if ruta_norm.startswith("/objetivos/sqli"):
+        return True
+
+    if _contiene_patrones_ataque(texto_completo, ruta):
+        return False
+    if _detectar_ruta_prohibida(ruta):
+        # /admin del SOC se trata más abajo como legítimo GET.
+        if not (
+            ruta_norm.startswith("/admin")
+            and (metodo or "GET").upper() == "GET"
+        ):
+            return False
+
     metodo_up = (metodo or "GET").upper()
 
     if metodo_up in ("OPTIONS", "HEAD"):
         return True
-
     if ruta_norm.startswith("/static/") or ruta_norm.startswith("/assets/"):
         return True
-
     if ruta_norm == "/login" and metodo_up == "GET":
         return True
-
     if ruta_norm == "/login" and metodo_up == "POST":
-        return _post_login_credenciales_simples(payload)
-
+        return _post_login_credenciales_simples(payload_norm)
     if ruta_norm == "/logout" and metodo_up == "GET":
         return True
-
     if ruta_norm == "/" and metodo_up == "GET":
         return True
-
     if ruta_norm == "/blog" and metodo_up == "GET":
         return True
-
     if metodo_up == "GET" and _PATRON_RUTA_BLOG_POST.match(ruta_norm):
         return True
-
     if ruta_norm == "/search" and metodo_up == "GET":
-        return _search_get_query_es_limpia(ruta, payload)
-
+        return _search_get_query_es_limpia(ruta, payload_norm)
+    # Panel SOC real: no marcar como ruta prohibida en GET autenticado.
     if ruta_norm.startswith("/admin") and metodo_up == "GET":
         return True
-
-    # Rutas señuelo /secure/* sin patrones maliciosos en URL ni cuerpo.
     if ruta_norm == "/secure/search" and metodo_up == "GET":
         return True
-
     if ruta_norm == "/secure/blog" and metodo_up == "GET":
         return True
-
     if metodo_up == "GET" and _PATRON_RUTA_SECURE_BLOG_POST.match(ruta_norm):
         return True
-
     if ruta_norm == "/secure/search" and metodo_up == "POST":
-        return not _payload_es_sospechoso(_texto_payload_normalizado(payload))
-
+        return not _contiene_patrones_ataque(payload_norm, ruta)
     if metodo_up == "POST" and _PATRON_RUTA_SECURE_BLOG_COMENTAR.match(ruta_norm):
-        return not _payload_es_sospechoso(_texto_payload_normalizado(payload))
-
+        return not _contiene_patrones_ataque(payload_norm, ruta)
     return False
 
 
-def _detectar_csrf(headers, metodo):
+# ===========================================================================
+# Construcción de resultados
+# ===========================================================================
+
+
+def _resultado_sin_ataque(usar_alias_normal: bool = False) -> dict[str, Any]:
+    """Veredicto limpio (sin amenaza)."""
+    return {
+        "ataque_detectado": False,
+        "tipo_ataque": TIPO_NORMAL_ALIAS if usar_alias_normal else TIPO_TRAFICO_NORMAL,
+        "gravedad": GRAVEDAD_NORMAL,
+        "firma_coincidente": "",
+    }
+
+
+def _resultado_con_ataque(
+    tipo: str, firma: str, gravedad: Optional[str] = None
+) -> dict[str, Any]:
+    """Veredicto positivo con tipo, severidad y firma WAF."""
+    gravedad_final = gravedad or calcular_gravedad(tipo)
+    return {
+        "ataque_detectado": True,
+        "tipo_ataque": tipo,
+        "gravedad": gravedad_final or GRAVEDAD_SOSPECHOSO,
+        "firma_coincidente": firma,
+    }
+
+
+def _analizar_campos_core(
+    ruta: Optional[str],
+    payload: Any,
+    user_agent: Optional[str],
+    headers: Any = None,
+    metodo: Optional[str] = None,
+    *,
+    usar_alias_normal: bool = False,
+) -> dict[str, Any]:
     """
-    Detecta posible CSRF en peticiones POST sin Referer válido.
+    Núcleo de análisis WAF (ruta + payload + UA + cabeceras).
 
-    Reglas:
-    - Solo aplica a método POST.
-    - Sin cabecera Referer → sospechoso.
-    - Referer presente pero sin coincidir con Host → sospechoso.
+    Orden de prioridad (mayor a menor impacto operativo):
+    1) Tráfico legítimo conocido
+    2) Scanner Automatizado → Crítica
+    3) SQLi → Crítica
+    4) RCE → Crítica
+    5) SSRF/RFI → Crítica
+    6) Path Traversal → Crítica
+    7) XSS → Alta
+    8) Ruta Prohibida → Sospechoso
+    9) CSRF → Alta
+    """
+    if _es_trafico_legitimo_prioritario(ruta, payload, metodo):
+        return _resultado_sin_ataque(usar_alias_normal=usar_alias_normal)
 
-    Ejemplo: POST /transfer sin Referer desde un formulario externo.
+    payload_bruto = _a_texto(payload)
+    payload_norm = normalizar_input_evasion(payload_bruto)
+    ruta_norm = normalizar_input_evasion(ruta or "")
+    texto_analisis = f"{ruta_norm} {payload_norm}".strip()
+    texto_comentarios = _normalizar_sin_strip_comentarios_linea(
+        f"{ruta or ''} {payload_bruto}"
+    )
 
-    Args:
-        headers: Cabeceras HTTP de la petición.
-        metodo (str): GET, POST, etc.
+    firma_scanner = _detectar_scanner(user_agent or "", headers)
+    if firma_scanner:
+        return _resultado_con_ataque(TIPO_SCANNER, firma_scanner, GRAVEDAD_CRITICA)
+
+    firma = _buscar_primera_regla(texto_analisis, _REGLAS_SQLI)
+    if firma:
+        return _resultado_con_ataque(TIPO_SQLI, firma)
+    firma = _buscar_primera_regla(texto_comentarios, _REGLAS_SQLI_COMENTARIO)
+    if firma:
+        return _resultado_con_ataque(TIPO_SQLI, firma)
+
+    firma = _buscar_primera_regla(texto_analisis, _REGLAS_RCE)
+    if firma:
+        return _resultado_con_ataque(TIPO_RCE, firma)
+
+    firma = _buscar_primera_regla(texto_analisis, _REGLAS_SSRF_RFI)
+    if firma:
+        return _resultado_con_ataque(TIPO_SSRF_RFI, firma)
+
+    firma = _detectar_path_traversal(texto_analisis, ruta)
+    if firma:
+        return _resultado_con_ataque(TIPO_PATH_TRAVERSAL, firma)
+
+    firma = _buscar_primera_regla(texto_analisis, _REGLAS_XSS)
+    if firma:
+        return _resultado_con_ataque(TIPO_XSS, firma)
+
+    firma = _detectar_ruta_prohibida(ruta)
+    if firma:
+        return _resultado_con_ataque(TIPO_RUTA_PROHIBIDA, firma)
+
+    if _detectar_csrf(headers, metodo):
+        return _resultado_con_ataque(
+            TIPO_CSRF, "Detectado POST sin Referer coherente (CSRF)"
+        )
+
+    return _resultado_sin_ataque(usar_alias_normal=usar_alias_normal)
+
+
+# ===========================================================================
+# API pública
+# ===========================================================================
+
+
+def analizar_peticion(
+    ruta: Optional[str],
+    payload: Any,
+    user_agent: Optional[str],
+    headers: Any = None,
+    metodo: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Análisis WAF con parámetros explícitos (integración `app.py` / BD).
 
     Returns:
-        bool: True si parece CSRF.
+        dict: ataque_detectado, tipo_ataque, gravedad, firma_coincidente.
+        ``tipo_ataque`` usa «Tráfico Normal» cuando no hay amenaza (compat BD).
     """
-    if (metodo or "").upper() != "POST":
-        return False
-
-    cabeceras = _normalizar_headers(headers)
-    referer = cabeceras.get("referer", "").strip()
-    host = cabeceras.get("host", "").strip()
-
-    if not referer:
-        return True
-
-    if host:
-        referer_lower = referer.lower()
-        host_lower = host.lower().split(":")[0]
-        if host_lower not in referer_lower:
-            return True
-
-    return False
+    return _analizar_campos_core(
+        ruta=ruta,
+        payload=payload,
+        user_agent=user_agent,
+        headers=headers,
+        metodo=metodo,
+        usar_alias_normal=False,
+    )
 
 
-def registrar_intento_login(ip):
+def evaluar_peticion(request: Any) -> dict[str, Any]:
     """
-    Registra un intento de login (POST /login) y detecta fuerza bruta.
+    Interfaz centralizada sobre un objeto request estilo Flask.
 
-    - Añade el timestamp actual a la lista de la IP.
-    - Elimina intentos con más de 1 minuto de antigüedad.
-    - Devuelve True si hay más de 5 intentos en el último minuto.
-
-    Ejemplo: la IP 10.0.0.5 envía 6 POST /login en 30 segundos → True.
-
-    Args:
-        ip (str): Dirección IP del cliente.
+    Inspecciona: ``request.args``, ``request.form``, ``request.path``
+    y ``request.headers`` (incluye User-Agent).
 
     Returns:
-        bool: True si se supera el umbral de fuerza bruta.
+        dict con claves exactas:
+        - ataque_detectado (bool)
+        - tipo_ataque (SQLi | XSS | Path Traversal | RCE | SSRF/RFI |
+          Scanner Automatizado | Ruta Prohibida | Normal)
+        - gravedad (Crítica | Alta | Sospechoso | Normal)
+        - firma_coincidente (str)
+    """
+    try:
+        args = dict(getattr(request, "args", {}) or {})
+    except (TypeError, ValueError):
+        args = {}
+    try:
+        form = dict(getattr(request, "form", {}) or {})
+    except (TypeError, ValueError):
+        form = {}
+
+    payload = {"args": args, "form": form}
+    if not args and not form:
+        # Fallback: query string cruda / cuerpo si está expuesto.
+        qs = getattr(request, "query_string", b"") or b""
+        if isinstance(qs, (bytes, bytearray)):
+            qs = qs.decode("utf-8", errors="ignore")
+        payload = {"query_string": qs}
+
+    ruta = getattr(request, "path", None) or ""
+    metodo = getattr(request, "method", None) or "GET"
+    headers = getattr(request, "headers", None)
+    user_agent = ""
+    if headers is not None:
+        try:
+            user_agent = headers.get("User-Agent", "") or headers.get(
+                "user-agent", ""
+            )
+        except Exception:
+            user_agent = ""
+
+    return _analizar_campos_core(
+        ruta=ruta,
+        payload=payload,
+        user_agent=user_agent,
+        headers=headers,
+        metodo=metodo,
+        usar_alias_normal=True,
+    )
+
+
+def clasificar_ataque(
+    ruta: Optional[str],
+    payload: Any,
+    user_agent: Optional[str],
+    headers: Any = None,
+    metodo: Optional[str] = None,
+) -> str:
+    """API legacy: solo el tipo de ataque (str). Delega en ``analizar_peticion``."""
+    return analizar_peticion(
+        ruta=ruta,
+        payload=payload,
+        user_agent=user_agent,
+        headers=headers,
+        metodo=metodo,
+    )["tipo_ataque"]
+
+
+def registrar_intento_login(ip: Optional[str]) -> bool:
+    """
+    Registra POST /login y detecta fuerza bruta (>5 intentos/minuto).
+
+    Returns:
+        bool: True si supera el umbral.
     """
     if not ip:
         return False
@@ -440,100 +888,11 @@ def registrar_intento_login(ip):
         marca for marca in intentos_login[ip] if marca > hace_un_minuto
     ]
     intentos_login[ip].append(ahora)
-
     return len(intentos_login[ip]) > 5
 
 
-def clasificar_ataque(ruta, payload, user_agent, headers=None, metodo=None):
-    """
-    Clasifica un evento del honeypot según reglas de prioridad.
-
-    Orden aplicado:
-    0) Rutas legítimas sin patrones de ataque (retorno inmediato Tráfico Normal)
-    1) SQLi (payload)
-    2) XSS (payload)
-    3) Path Traversal (ruta o payload)
-    4) CSRF (POST sin Referer coherente con Host)
-    5) Scanner Automatizado (User-Agent)
-    6) Reconocimiento (ruta señuelo)
-    7) Tráfico Normal (por defecto)
-
-    La fuerza bruta se detecta con `registrar_intento_login` en POST /login;
-    la aplicación puede sobrescribir el tipo a "Fuerza Bruta" cuando devuelve True.
-
-    Args:
-        ruta (str): Ruta solicitada, p. ej. "/login".
-        payload (str): Cuerpo o parámetros de la petición.
-        user_agent (str): Cabecera User-Agent.
-        headers (dict | None): Cabeceras HTTP (necesarias para CSRF).
-        metodo (str | None): Método HTTP (necesario para CSRF).
-
-    Returns:
-        str: Tipo de ataque detectado.
-    """
-    if _es_trafico_legitimo_prioritario(ruta, payload, metodo):
-        return TIPO_TRAFICO_NORMAL
-
-    ruta_norm = (ruta or "").lower()
-    payload_norm = (payload or "").lower()
-    ua_norm = (user_agent or "").lower()
-    texto_ruta_payload = f"{ruta_norm} {payload_norm}"
-
-    # 1) SQLi — ej.: payload "admin' OR 1=1--"
-    if _contiene_patron(payload_norm, PATRONES_SQLI):
-        return "SQLi"
-
-    # 2) XSS — ej.: payload "<script>alert(document.cookie)</script>"
-    if _contiene_patron(payload_norm, PATRONES_XSS):
-        return "XSS"
-
-    # 3) Path Traversal — analiza ruta y payload juntos (crítico en GET 404 sin cuerpo).
-    texto_completo_pt = (ruta_norm + " " + payload_norm).strip()
-    if _detectar_path_traversal(texto_completo_pt, ruta=ruta):
-        return "Path Traversal"
-
-    # 4) CSRF — ej.: POST sin Referer o Referer de otro dominio
-    if _detectar_csrf(headers, metodo):
-        return "CSRF"
-
-    # 5) Scanner — ej.: User-Agent "sqlmap/1.4"
-    if _contiene_patron(ua_norm, SCANNERS_CONOCIDOS):
-        return "Scanner Automatizado"
-
-    # 6) Reconocimiento — ej.: GET "/.env"
-    for ruta_senal in RUTAS_RECONOCIMIENTO:
-        if ruta_norm == ruta_senal or ruta_norm.startswith(ruta_senal + "/"):
-            return "Reconocimiento"
-
-    return TIPO_TRAFICO_NORMAL
-
-
-# Escala SOC del monitor (tres niveles + sin gravedad para tráfico normal).
-GRAVEDAD_CRITICA = "Crítica"
-GRAVEDAD_ALTA = "Alta"
-GRAVEDAD_SOSPECHOSO = "Sospechoso"
-GRAVEDADES_MONITOR = (GRAVEDAD_CRITICA, GRAVEDAD_ALTA, GRAVEDAD_SOSPECHOSO)
-
-# Alias legacy almacenados antes de la migración.
-_MAPA_GRAVEDAD_LEGACY = {
-    "CRÍTICO": GRAVEDAD_CRITICA,
-    "CRITICO": GRAVEDAD_CRITICA,
-    "ALTO": GRAVEDAD_ALTA,
-    "MEDIO": GRAVEDAD_SOSPECHOSO,
-    "BAJO": GRAVEDAD_SOSPECHOSO,
-}
-
-
-def normalizar_gravedad_almacenada(gravedad):
-    """
-    Devuelve la etiqueta canónica (Crítica/Alta/Sospechoso) o None si no aplica.
-
-    Args:
-        gravedad (str|None): Valor en BD o respuesta del detector.
-
-    Returns:
-        str | None
-    """
+def normalizar_gravedad_almacenada(gravedad: Any) -> Optional[str]:
+    """Normaliza etiquetas de severidad legacy hacia el vocabulario del SOC."""
     if gravedad is None:
         return None
     texto = str(gravedad).strip()
@@ -541,6 +900,9 @@ def normalizar_gravedad_almacenada(gravedad):
         return None
     if texto in GRAVEDADES_MONITOR:
         return texto
+    # BOT / BLOQUEADO proviene del perímetro IP; se preserva intacto.
+    if texto.upper() in ("BOT / BLOQUEADO", "BOT", "BOT/BLOQUEADO"):
+        return "BOT / BLOQUEADO" if "BOT" in texto.upper() else texto
     clave = texto.upper()
     if clave in _MAPA_GRAVEDAD_LEGACY:
         return _MAPA_GRAVEDAD_LEGACY[clave]
@@ -550,23 +912,17 @@ def normalizar_gravedad_almacenada(gravedad):
     return texto
 
 
-def normalizar_gravedad_filtro_api(valor):
-    """
-    Normaliza ?gravedad= del monitor a un nivel canónico o None (ver todos los incidentes).
-
-    Args:
-        valor (str|None): Parámetro de query.
-
-    Returns:
-        str | None: Crítica, Alta, Sospechoso, o None para «todos».
-    """
+def normalizar_gravedad_filtro_api(valor: Any) -> Optional[str]:
+    """Normaliza el filtro de gravedad de las APIs del monitor."""
     if valor is None:
         return None
     texto = str(valor).strip()
     if not texto or texto.lower() in ("todos", "todas", "all", ""):
         return None
+    if texto == "BOT / BLOQUEADO" or texto.upper() in ("BOT", "BOT/BLOQUEADO"):
+        return "BOT / BLOQUEADO"
     canon = normalizar_gravedad_almacenada(texto)
-    if canon in GRAVEDADES_MONITOR:
+    if canon in GRAVEDADES_MONITOR or canon == "BOT / BLOQUEADO":
         return canon
     alias = {
         "critica": GRAVEDAD_CRITICA,
@@ -580,58 +936,67 @@ def normalizar_gravedad_filtro_api(valor):
     return alias.get(texto.lower())
 
 
-def prioridad_gravedad(gravedad):
-    """Entero para ordenar de mayor a menor severidad (0 = sin gravedad)."""
+def prioridad_gravedad(gravedad: Any) -> int:
+    """Orden numérico de severidad (incluye BOT del perímetro WAF)."""
     canon = normalizar_gravedad_almacenada(gravedad)
-    return {"Crítica": 3, "Alta": 2, "Sospechoso": 1}.get(canon, 0)
+    return {
+        "Crítica": 3,
+        "BOT / BLOQUEADO": 3,
+        "Alta": 2,
+        "Sospechoso": 1,
+    }.get(canon or "", 0)
 
 
-def calcular_gravedad(tipo_ataque):
+def calcular_gravedad(tipo_ataque: Optional[str]) -> Optional[str]:
     """
     Asigna severidad al tipo de ataque clasificado.
 
-    - Crítica: SQLi, Path Traversal, RCE (explotación confirmada).
-    - Alta: XSS, Fuerza Bruta, CSRF, escaneos automatizados.
-    - Sospechoso: reconocimiento y anomalías a revisar.
-    - None: tráfico normal (sin etiqueta de riesgo).
-
-    Args:
-        tipo_ataque (str): Categoría devuelta por `clasificar_ataque`.
-
-    Returns:
-        str | None: Crítica, Alta, Sospechoso, o None.
+    Crítica: SQLi, Path Traversal, RCE, SSRF/RFI, Scanner Automatizado.
+    Alta: XSS, Fuerza Bruta, CSRF.
+    Sospechoso: Ruta Prohibida / Reconocimiento (legacy).
+    None: tráfico normal.
     """
-    if not tipo_ataque or tipo_ataque == TIPO_TRAFICO_NORMAL:
+    if not tipo_ataque or tipo_ataque in (TIPO_TRAFICO_NORMAL, TIPO_NORMAL_ALIAS):
         return None
-    if tipo_ataque in ("SQLi", "Path Traversal", "RCE"):
+    if tipo_ataque in (
+        TIPO_SQLI,
+        TIPO_PATH_TRAVERSAL,
+        TIPO_RCE,
+        TIPO_SSRF_RFI,
+        TIPO_SCANNER,
+        "Abuso de Tasa / Escaneo Agresivo",
+        "Riesgo Acumulativo (Autoban)",
+    ):
         return GRAVEDAD_CRITICA
-    if tipo_ataque in ("XSS", "Fuerza Bruta", "CSRF", "Scanner Automatizado"):
+    if tipo_ataque in (TIPO_XSS, TIPO_FUERZA_BRUTA, TIPO_CSRF):
         return GRAVEDAD_ALTA
-    if tipo_ataque == "Reconocimiento":
+    if tipo_ataque in (TIPO_RUTA_PROHIBIDA, TIPO_RECONOCIMIENTO):
         return GRAVEDAD_SOSPECHOSO
     return GRAVEDAD_SOSPECHOSO
 
 
-def es_ataque_grave(tipo_ataque):
-    """
-    Indica si el ataque requiere atención prioritaria en el monitor.
-
-    Args:
-        tipo_ataque (str): Tipo clasificado.
-
-    Returns:
-        bool: True para SQLi, XSS, Path Traversal, Fuerza Bruta o CSRF.
-
-    Ejemplos:
-        - es_ataque_grave("SQLi") → True
-        - es_ataque_grave("Reconocimiento") → False
-    """
+def es_ataque_grave(tipo_ataque: Optional[str]) -> bool:
+    """True si el tipo justifica alerta operativa / auto-ban potencial."""
     return tipo_ataque in {
-        "SQLi",
-        "XSS",
-        "Path Traversal",
-        "Fuerza Bruta",
-        "CSRF",
-        "RCE",
-        "Scanner Automatizado",
+        TIPO_SQLI,
+        TIPO_XSS,
+        TIPO_PATH_TRAVERSAL,
+        TIPO_FUERZA_BRUTA,
+        TIPO_CSRF,
+        TIPO_RCE,
+        TIPO_SSRF_RFI,
+        TIPO_SCANNER,
+        TIPO_RUTA_PROHIBIDA,
     }
+
+
+def normalizar_tipo_ataque_almacenado(tipo: Any) -> str:
+    """
+    Unifica aliases de tipo hacia el vocabulario del SOC.
+
+    «Normal» → «Tráfico Normal»; conserva «Reconocimiento» legado.
+    """
+    texto = (str(tipo) if tipo is not None else "").strip()
+    if not texto or texto in (TIPO_NORMAL_ALIAS, "Otro"):
+        return TIPO_TRAFICO_NORMAL
+    return texto

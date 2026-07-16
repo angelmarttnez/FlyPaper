@@ -1,767 +1,198 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FlyPaper - Objetivos CTF</title>
+<title>Academia de Ciberseguridad · FlyPaper CTF</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          void: '#05080f',
+          panel: '#0a1020',
+          neon: '#00ff8c',
+          steel: '#8b949e',
+        }
+      }
+    }
+  }
+</script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-    background: #05080f;
-    color: #c5e8d4;
+    background:
+      radial-gradient(900px 420px at 0% 0%, rgba(0,255,140,0.08), transparent 55%),
+      radial-gradient(800px 400px at 100% 10%, rgba(56,189,248,0.07), transparent 50%),
+      #05080f;
     min-height: 100vh;
-    background-image:
-      radial-gradient(circle at 20% 10%, rgba(0,255,140,0.05) 0%, transparent 40%),
-      radial-gradient(circle at 80% 80%, rgba(99,102,241,0.06) 0%, transparent 40%);
-  }
-  .navbar {
-    background: linear-gradient(180deg, #0a0f1c 0%, #07101a 100%);
-    border-bottom: 1px solid #1a3a2a;
-    padding: 16px 40px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 2px 20px rgba(0,255,140,0.05);
-  }
-  .logo {
-    font-size: 24px;
-    font-weight: 800;
-    color: #00ff8c;
-    letter-spacing: -0.5px;
-    text-shadow: 0 0 12px rgba(0,255,140,0.4);
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .logo::before { content: ""; }
-  .nav-links { display: flex; gap: 8px; list-style: none; }
-  .nav-links a {
-    color: #8aa89a;
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
-  .nav-links a:hover { background: #0f2a1f; color: #00ff8c; }
-  .nav-links a.active { background: #0f2a1f; color: #00ff8c; }
-
-  .container { max-width: 1200px; margin: 0 auto; padding: 56px 40px; }
-
-  .hero { text-align: center; margin-bottom: 48px; }
-  .hero h1 {
-    font-size: 42px;
-    font-weight: 800;
-    color: #fff;
-    margin-bottom: 14px;
-    letter-spacing: -1px;
-    text-shadow: 0 0 30px rgba(0,255,140,0.3);
-  }
-  .hero p { color: #7a9b8a; font-size: 16px; }
-
-  .progress-banner {
-    background: linear-gradient(135deg, rgba(0,255,140,0.08) 0%, rgba(99,102,241,0.08) 100%);
-    border: 1px solid #1a3a2a;
-    border-radius: 12px;
-    padding: 20px 28px;
-    margin-bottom: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-  }
-  .progress-text { color: #c5e8d4; font-size: 15px; }
-  .progress-text strong { color: #00ff8c; font-size: 18px; }
-  .progress-bar {
-    flex: 1;
-    max-width: 320px;
-    height: 8px;
-    background: #0a1814;
-    border-radius: 999px;
-    overflow: hidden;
-    border: 1px solid #1a3a2a;
   }
   .progress-fill {
-    width: 0;
     height: 100%;
-    background: linear-gradient(90deg, #00ff8c 0%, #00d4ff 100%);
-    box-shadow: 0 0 12px rgba(0,255,140,0.5);
-    transition: width 0.4s;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #00ff8c, #22d3ee);
+    transition: width 0.45s ease;
   }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 20px;
-    margin-bottom: 48px;
+  .card-challenge {
+    background: rgba(10, 16, 32, 0.92);
+    border: 1px solid rgba(0, 255, 140, 0.12);
+    border-radius: 1rem;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
   }
-  .challenge {
-    background: linear-gradient(180deg, #0c1620 0%, #08101a 100%);
-    border: 1px solid #1a3a2a;
-    border-radius: 12px;
-    padding: 22px;
-    transition: all 0.2s;
-    position: relative;
-    overflow: hidden;
-  }
-  .challenge::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, #00ff8c, transparent);
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
-  .challenge:hover {
-    border-color: #00ff8c;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,255,140,0.1);
-  }
-  .challenge:hover::before { opacity: 1; }
-  .challenge.resuelta {
-    border-color: #00ff8c;
-    box-shadow: 0 0 20px rgba(0, 255, 140, 0.12);
-  }
-  .challenge.resuelta::before { opacity: 1; }
-
-  .badge-resuelto {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: rgba(0, 255, 140, 0.2);
-    border: 2px solid #00ff8c;
-    color: #00ff8c;
-    font-size: 16px;
-    font-weight: 800;
-    flex-shrink: 0;
-    box-shadow: 0 0 12px rgba(0, 255, 140, 0.4);
-  }
-
-  .challenge-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 14px;
-    gap: 12px;
-  }
-  .challenge-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .challenge-name {
-    font-size: 17px;
-    font-weight: 700;
-    color: #fff;
-    line-height: 1.3;
-  }
-  .challenge-name::before { content: "> "; color: #00ff8c; }
-  .points {
-    background: rgba(0,255,140,0.1);
-    border: 1px solid rgba(0,255,140,0.3);
-    color: #00ff8c;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-  .hint-label {
-    font-size: 11px;
-    color: #5a7a6a;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 6px;
-  }
-  .hint {
-    color: #8aa89a;
-    font-size: 13px;
-    line-height: 1.5;
-    background: #06100c;
-    padding: 10px 12px;
-    border-left: 2px solid #1a3a2a;
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .hint-brief { margin-bottom: 10px; }
-
-  .hint-sqli-details {
-    margin-top: 4px;
-    border: 1px solid #1a3a2a;
-    border-radius: 8px;
-    background: #06100c;
-    overflow: hidden;
-  }
-  .hint-sqli-details[open] {
+  .card-challenge:hover {
     border-color: rgba(0, 255, 140, 0.35);
-    box-shadow: 0 0 16px rgba(0, 255, 140, 0.06);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.35);
   }
-  .hint-sqli-summary {
-    list-style: none;
-    cursor: pointer;
-    padding: 10px 12px;
-    font-size: 12px;
-    font-weight: 600;
+  .badge-estado-pendiente { background: #1e293b; color: #94a3b8; }
+  .badge-estado-resuelto {
+    background: rgba(0, 255, 140, 0.15);
     color: #00ff8c;
-    user-select: none;
-    font-family: inherit;
-    transition: background 0.2s;
+    box-shadow: 0 0 18px rgba(0, 255, 140, 0.25);
   }
-  .hint-sqli-summary::-webkit-details-marker { display: none; }
-  .hint-sqli-summary::before {
-    content: "> ";
-    display: inline-block;
-    transition: transform 0.2s;
-    color: #5a7a6a;
-  }
-  .hint-sqli-details[open] .hint-sqli-summary::before {
-    transform: rotate(90deg);
+  .badge-dif-facil { background: rgba(34,197,94,0.18); color: #4ade80; }
+  .badge-dif-media { background: rgba(234,179,8,0.18); color: #facc15; }
+  .badge-dif-dificil { background: rgba(239,68,68,0.18); color: #f87171; }
+  .cat-locked { opacity: 0.45; pointer-events: none; }
+  .nav-cat-active {
+    background: rgba(0, 255, 140, 0.1);
+    border-color: rgba(0, 255, 140, 0.4);
     color: #00ff8c;
   }
-  .hint-sqli-summary:hover { background: rgba(0, 255, 140, 0.06); }
-  .hint-sqli-body {
-    padding: 0 12px 14px;
-    font-size: 13px;
-    line-height: 1.55;
-    color: #8aa89a;
-    border-top: 1px solid #1a3a2a;
-  }
-  .hint-sqli-body p { margin: 10px 0 0; }
-  .hint-sqli-body p:first-child { margin-top: 12px; }
-  .hint-sqli-body ul {
-    margin: 8px 0 0 18px;
-    color: #7a9b8a;
-    font-size: 12px;
-  }
-  .hint-sqli-body li { margin: 4px 0; }
-  .hint-sqli-body code {
-    color: #00ff8c;
-    font-size: 12px;
-    background: rgba(0, 255, 140, 0.08);
-    padding: 1px 5px;
-    border-radius: 3px;
-  }
-  .payload-code {
-    display: block;
-    margin-top: 8px;
-    padding: 12px 14px;
-    background: #05080f;
-    border: 1px solid #1a3a2a;
-    border-radius: 6px;
-    color: #00ff8c;
-    font-size: 12px;
-    line-height: 1.45;
-    white-space: pre-wrap;
-    word-break: break-all;
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-    box-shadow: inset 0 0 20px rgba(0, 255, 140, 0.04);
-  }
-  .hint-sqli-body strong { color: #c5e8d4; font-weight: 600; }
-
-  .submit-section {
-    background: linear-gradient(180deg, #0c1620 0%, #08101a 100%);
-    border: 1px solid #1a3a2a;
-    border-radius: 12px;
-    padding: 28px;
-  }
-  .submit-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: #fff;
-    margin-bottom: 6px;
-  }
-  .submit-title::before { content: "$ "; color: #00ff8c; }
-  .submit-sub { color: #7a9b8a; font-size: 13px; margin-bottom: 18px; }
-
-  .submit-form { display: flex; gap: 10px; flex-wrap: wrap; }
-  .flag-input {
-    flex: 1;
-    min-width: 240px;
-    background: #05080f;
-    border: 1px solid #1a3a2a;
-    color: #00ff8c;
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-family: 'JetBrains Mono', monospace;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  .flag-input:focus {
-    outline: none;
-    border-color: #00ff8c;
-    box-shadow: 0 0 0 3px rgba(0,255,140,0.15);
-  }
-  .flag-input::placeholder { color: #3a5a4a; }
-  .btn-submit {
-    background: linear-gradient(135deg, #00ff8c 0%, #00d472 100%);
-    color: #05080f;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    font-family: inherit;
-    transition: transform 0.2s, box-shadow 0.2s;
-  }
-  .btn-submit:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(0,255,140,0.3);
-  }
-  .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .result {
-    margin-top: 16px;
-    padding: 14px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    display: none;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .result.show { display: block; }
-  .result.success {
-    background: rgba(0,255,140,0.1);
-    border: 1px solid #00ff8c;
-    color: #00ff8c;
-  }
-  .result.error {
-    background: rgba(255,80,80,0.1);
-    border: 1px solid #ff5050;
-    color: #ff8080;
-  }
-
-  .progress-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .btn-reset-retos {
-    background: transparent;
-    color: #8aa89a;
-    border: 1px solid #3a5a4a;
-    padding: 8px 14px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.2s;
-  }
-  .btn-reset-retos:hover {
-    color: #00ff8c;
-    border-color: #00ff8c;
-    background: rgba(0, 255, 140, 0.08);
-  }
-  .btn-reset-retos:disabled { opacity: 0.5; cursor: wait; }
-
-  .ranking { margin-top: 48px; }
-  .ranking h2 { font-size: 22px; margin-bottom: 8px; color: #fff; }
-  .ranking .subtitle { color: #7a9b8a; font-size: 14px; margin-bottom: 0; }
-  .ranking table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-  .ranking th {
-    color: #8b949e; font-size: 12px; text-transform: uppercase;
-    padding: 8px; border-bottom: 1px solid #21262d; text-align: left;
-  }
-  .ranking td { padding: 10px 8px; border-bottom: 1px solid #21262d; font-size: 14px; }
-  .fila-actual { background: rgba(88,166,255,0.08); font-weight: 600; }
-  .tus-puntos { margin-top: 12px; text-align: center; color: #58a6ff; font-size: 14px; }
-  .completados-lista { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-  .completado-badge {
-    background: rgba(63,185,80,0.12); color: #3fb950;
-    border: 1px solid rgba(63,185,80,0.3);
-    padding: 3px 8px; border-radius: 4px; font-size: 11px;
-  }
-  .completado-mas { color: #8b949e; font-size: 11px; padding: 3px 0; }
-  .sin-completados { color: #8b949e; font-size: 12px; margin-top: 8px; font-style: italic; }
-  .ranking-estado { font-size: 11px; color: #5a7a6a; margin-left: 6px; font-weight: 400; }
 </style>
 </head>
-<body class="nav-tema-ctf">
-  {% include 'partials/navbar_publico.html' %}
+<body class="text-slate-100 font-sans antialiased">
+{% include 'partials/navbar_publico.html' %}
 
-  <main class="container">
-    <div class="hero">
-      <h1>Objetivos — FlyPaper CTF</h1>
-      <p>Demuestra tus habilidades resolviendo los retos</p>
-    </div>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+  {# Header + progreso #}
+  <header class="mb-8 sm:mb-10">
+    <p class="text-neon text-xs tracking-[0.2em] uppercase font-semibold mb-2">Cyber Range · Academia</p>
+    <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">Objetivos de formación</h1>
+    <p class="mt-2 text-steel max-w-2xl text-sm sm:text-base">
+      Ruta práctica de SQL Injection. Completa los laboratorios, responde el cuestionario SOC y entrega la flag.
+    </p>
 
-    <div class="progress-banner">
-      <div class="progress-text">Has resuelto <strong id="contador-resueltas">{{ resueltas }}</strong> de <strong id="contador-total">{{ total }}</strong> retos</div>
-      <div class="progress-actions">
-        <div class="progress-bar">
-          <div class="progress-fill" id="progress-fill" data-resueltas="{{ resueltas }}" data-total="{{ total }}"></div>
-        </div>
-        <button type="button" class="btn-reset-retos" id="btn-reset-retos">Reiniciar retos</button>
-      </div>
-    </div>
-
-    <div class="grid" id="grid-retos">
-      {% for flag in flags %}
-      <div class="challenge{% if flag.resuelta %} resuelta{% endif %}" data-flag-id="{{ flag.id }}" data-reto="{{ flag.reto_nombre }}">
-        <div class="challenge-header">
-          <div class="challenge-name">{{ flag.reto_nombre }}</div>
-          <div class="challenge-meta">
-            {% if flag.resuelta %}
-            <span class="badge-resuelto" title="Reto completado">OK</span>
-            {% endif %}
-            <div class="points">{{ flag.puntos }} pts</div>
+    <div class="mt-6 rounded-2xl border border-white/5 bg-panel/80 p-5 sm:p-6">
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
+        <div>
+          <div class="text-sm text-steel">Progreso en SQLi</div>
+          <div class="text-xl font-semibold text-white">
+            {{ progreso_sqli.completados }} de {{ progreso_sqli.total }} completados
           </div>
         </div>
-        <div class="hint-label">// pista</div>
-        {% if flag.reto_nombre == reto_sqli_titulo %}
-        <div class="hint hint-brief">{{ flag.pista }}</div>
-        <details class="hint-sqli-details">
-          <summary class="hint-sqli-summary">Ver pista detallada (UNION)</summary>
-          <div class="hint-sqli-body">
-            <p>
-              El buscador interno en <code>/search</code> concatena tu texto en una consulta
-              sobre <code>posts</code> que devuelve exactamente <strong>4 columnas</strong>:
-            </p>
-            <ul>
-              <li><code>id</code></li>
-              <li><code>titulo</code></li>
-              <li><code>contenido</code></li>
-              <li><code>fecha</code></li>
-            </ul>
-            <p>
-              Para extraer filas de la tabla pública <code>usuarios</code>, alinea el
-              <code>UNION SELECT</code> con las mismas cuatro columnas de esa tabla:
-              <code>id</code>, <code>username</code>, <code>password_hash</code> y
-              <code>email</code> (se mostrarán en el resultado como id, título, contenido y fecha).
-            </p>
-            <p>Payload de ejemplo:</p>
-            <code class="payload-code">' UNION SELECT id, username, password_hash, email FROM usuarios --</code>
-            <p>
-              <strong>Objetivo:</strong> localiza al usuario <code>SQLi_flag</code> en los resultados.
-              El valor de su campo <code>password_hash</code> (10 caracteres alfanuméricos) es el
-              cuerpo de la flag; envíala aquí con el formato <code>flag&#123;...&#125;</code>.
-            </p>
-          </div>
-        </details>
-        {% else %}
-        <div class="hint">{{ flag.pista }}</div>
-        {% endif %}
-        {% if completados_por_reto.get(flag.reto_nombre) %}
-        <div class="completados-contenedor">
-        <div class="completados-lista">
-          {% for c in completados_por_reto[flag.reto_nombre][:5] %}
-          <span class="completado-badge">
-            ✓ {{ c.username }} · {{ c.fecha[:10] }}
-          </span>
-          {% endfor %}
-          {% if completados_por_reto[flag.reto_nombre]|length > 5 %}
-          <span class="completado-mas">
-            +{{ completados_por_reto[flag.reto_nombre]|length - 5 }} más
-          </span>
-          {% endif %}
+        <div class="text-sm text-steel">
+          Puntos CTF:
+          <span class="text-neon font-semibold">{{ puntos_usuario_actual or 0 }}</span>
         </div>
-        </div>
-        {% else %}
-        <div class="completados-contenedor">
-        <div class="sin-completados">Nadie ha completado este reto aún</div>
-        </div>
-        {% endif %}
       </div>
-      {% else %}
-      <div style="grid-column:1/-1;text-align:center;padding:40px;color:#5a7a6a;">No hay retos disponibles.</div>
-      {% endfor %}
+      {% set pct = (100 * progreso_sqli.completados / progreso_sqli.total) if progreso_sqli.total else 0 %}
+      <div class="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden">
+        <div class="progress-fill" style="width: {{ pct }}%"></div>
+      </div>
     </div>
+  </header>
 
-    <section class="submit-section">
-      <div class="submit-title">Enviar Flag</div>
-      <div class="submit-sub">Formato esperado: flag&#123;...&#125;</div>
-      <form class="submit-form" id="flagForm">
-        <input type="text" class="flag-input" name="flag" id="flagInput" placeholder="flag{...}" autocomplete="off" required>
-        <button type="submit" class="btn-submit">Enviar Flag</button>
-      </form>
-      <div class="result" id="result"></div>
-    </section>
+  <div class="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 lg:gap-8">
+    {# Menú categorías #}
+    <aside class="space-y-2">
+      <p class="text-xs uppercase tracking-wider text-steel mb-3 px-1">Categorías</p>
 
-    <section class="ranking" data-total-retos="{{ total }}" data-usuario-actual="{% if sesion_logueado %}{{ sesion_etiqueta }}{% endif %}">
-      <h2>🏆 Tabla de Clasificación</h2>
-      <p class="subtitle">Top 20 — Solo usuarios registrados<span id="ranking-estado" class="ranking-estado"></span></p>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Usuario</th>
-            <th>Puntos</th>
-            <th>Retos</th>
-            <th>Último logro</th>
-          </tr>
-        </thead>
-        <tbody id="ranking-tbody">
-          {% for jugador in ranking %}
-          <tr class="{{ 'fila-actual' if jugador.username == sesion_etiqueta else '' }}">
-            <td>
-              {% if jugador.posicion == 1 %}🥇
-              {% elif jugador.posicion == 2 %}🥈
-              {% elif jugador.posicion == 3 %}🥉
-              {% else %}{{ jugador.posicion }}
-              {% endif %}
-            </td>
-            <td>{{ jugador.username }}</td>
-            <td><b>{{ jugador.puntos }} pts</b></td>
-            <td>{{ jugador.retos }}/{{ total }}</td>
-            <td>{{ jugador.ultimo_completado[:10] }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5">Sé el primero en completar un reto</td></tr>
+      <div class="nav-cat-active flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold">
+        <span class="text-lg">💉</span>
+        <span>SQL Injection</span>
+      </div>
+
+      <div class="cat-locked flex items-center gap-3 rounded-xl border border-white/5 bg-panel/50 px-4 py-3 text-sm text-steel">
+        <span>🔒</span>
+        <div>
+          <div>XSS</div>
+          <div class="text-[11px]">Próximamente</div>
+        </div>
+      </div>
+      <div class="cat-locked flex items-center gap-3 rounded-xl border border-white/5 bg-panel/50 px-4 py-3 text-sm text-steel">
+        <span>🔒</span>
+        <div>
+          <div>LFI / Path Traversal</div>
+          <div class="text-[11px]">Próximamente</div>
+        </div>
+      </div>
+      <div class="cat-locked flex items-center gap-3 rounded-xl border border-white/5 bg-panel/50 px-4 py-3 text-sm text-steel">
+        <span>🔒</span>
+        <div>
+          <div>RCE</div>
+          <div class="text-[11px]">Próximamente</div>
+        </div>
+      </div>
+
+      {% if ranking %}
+      <div class="mt-8 rounded-xl border border-white/5 bg-panel/60 p-4">
+        <div class="text-xs uppercase tracking-wider text-steel mb-3">Top ranking</div>
+        <ol class="space-y-2 text-sm">
+          {% for j in ranking[:5] %}
+          <li class="flex justify-between gap-2">
+            <span class="truncate"><span class="text-steel">#{{ j.posicion }}</span> {{ j.username }}</span>
+            <span class="text-neon font-mono text-xs">{{ j.puntos }}</span>
+          </li>
           {% endfor %}
-        </tbody>
-      </table>
-      {% if puntos_usuario_actual > 0 %}
-      <p class="tus-puntos" id="tus-puntos-el">Tus puntos: <b>{{ puntos_usuario_actual }} pts</b></p>
-      {% else %}
-      <p class="tus-puntos" id="tus-puntos-el" style="display:none"></p>
+        </ol>
+      </div>
       {% endif %}
+    </aside>
+
+    {# Grid de retos SQLi #}
+    <section>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Desafíos SQL Injection</h2>
+        <span class="text-xs text-steel">Labs aislados · data/ctf/sqli_XX.db</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+        {% for reto in retos_sqli %}
+        <article class="card-challenge p-5 sm:p-6 flex flex-col min-h-[240px]">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <div class="text-xs font-mono text-neon mb-1">SQLi-{{ reto.codigo }}</div>
+              <h3 class="text-lg font-bold text-white leading-snug">{{ reto.titulo }}</h3>
+              <p class="text-sm text-steel mt-1">{{ reto.subtitulo }}</p>
+            </div>
+            {% if reto.resuelto %}
+            <span class="badge-estado-resuelto inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 6.5L4.5 9L10 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              RESUELTO
+            </span>
+            {% else %}
+            <span class="badge-estado-pendiente text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Pendiente</span>
+            {% endif %}
+          </div>
+
+          <div class="flex flex-wrap gap-2 mb-4">
+            <span class="badge-dif-{{ reto.dificultad_clase }} text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full">{{ reto.dificultad }}</span>
+            <span class="text-[11px] font-mono px-2.5 py-1 rounded-full bg-slate-800 text-slate-200">{{ reto.puntos }} pts</span>
+            {% if not reto.activo %}
+            <span class="text-[11px] px-2.5 py-1 rounded-full bg-slate-800 text-steel">🔒 Próximamente</span>
+            {% endif %}
+          </div>
+
+          <p class="text-sm text-slate-400 flex-1 mb-5 line-clamp-3">{{ reto.descripcion }}</p>
+
+          {% if reto.activo %}
+          <a href="{{ url_for('ctf_sqli.ver_reto', reto_id=reto.id) }}"
+             class="inline-flex items-center justify-center rounded-xl bg-neon text-void font-bold text-sm px-4 py-2.5 hover:brightness-110 transition">
+            Iniciar Laboratorio
+          </a>
+          {% else %}
+          <button type="button" disabled
+                  class="inline-flex items-center justify-center rounded-xl bg-slate-800 text-steel font-semibold text-sm px-4 py-2.5 cursor-not-allowed">
+            Bloqueado
+          </button>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
     </section>
-  </main>
-
-  <script>
-    const form = document.getElementById('flagForm');
-    const input = document.getElementById('flagInput');
-    const result = document.getElementById('result');
-    const btn = form.querySelector('button');
-
-    const seccionRanking = document.querySelector('.ranking');
-    const USUARIO_ACTUAL = seccionRanking?.dataset.usuarioActual || '';
-    const TOTAL_RETOS = Number(seccionRanking?.dataset.totalRetos) || 0;
-
-    function escapeHtml(texto) {
-      return String(texto)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function medallaPosicion(pos) {
-      if (pos === 1) return '🥇';
-      if (pos === 2) return '🥈';
-      if (pos === 3) return '🥉';
-      return String(pos);
-    }
-
-    function renderRankingTabla(ranking) {
-      const tbody = document.getElementById('ranking-tbody');
-      if (!tbody) return;
-      if (!ranking.length) {
-        tbody.innerHTML = '<tr><td colspan="5">Sé el primero en completar un reto</td></tr>';
-        return;
-      }
-      tbody.innerHTML = ranking.map((j) => {
-        const filaActual = USUARIO_ACTUAL && j.username === USUARIO_ACTUAL
-          ? ' class="fila-actual"' : '';
-        const ultimo = j.ultimo_completado
-          ? String(j.ultimo_completado).slice(0, 10) : '—';
-        return `<tr${filaActual}>
-          <td>${medallaPosicion(j.posicion)}</td>
-          <td>${escapeHtml(j.username)}</td>
-          <td><b>${j.puntos} pts</b></td>
-          <td>${j.retos}/${TOTAL_RETOS}</td>
-          <td>${escapeHtml(ultimo)}</td>
-        </tr>`;
-      }).join('');
-
-      if (USUARIO_ACTUAL) {
-        const jugador = ranking.find((j) => j.username === USUARIO_ACTUAL);
-        const elPuntos = document.getElementById('tus-puntos-el');
-        if (elPuntos && jugador) {
-          elPuntos.style.display = '';
-          elPuntos.innerHTML = `Tus puntos: <b>${jugador.puntos} pts</b>`;
-        }
-      }
-    }
-
-    async function cargarRanking() {
-      const estado = document.getElementById('ranking-estado');
-      if (estado) estado.textContent = ' · actualizando…';
-      try {
-        const res = await fetch('/api/ranking-ctf');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        renderRankingTabla(data.ranking || []);
-      } catch (err) {
-        // Mantener la tabla anterior si falla el fetch.
-      } finally {
-        if (estado) estado.textContent = '';
-      }
-    }
-
-    function renderCompletadosReto(contenedor, lista) {
-      if (!contenedor) return;
-      if (!lista || !lista.length) {
-        contenedor.innerHTML = '<div class="sin-completados">Nadie ha completado este reto aún</div>';
-        return;
-      }
-      const visibles = lista.slice(0, 5);
-      let html = '<div class="completados-lista">';
-      visibles.forEach((c) => {
-        const fecha = c.fecha ? String(c.fecha).slice(0, 10) : '—';
-        html += `<span class="completado-badge">✓ ${escapeHtml(c.username)} · ${escapeHtml(fecha)}</span>`;
-      });
-      if (lista.length > 5) {
-        html += `<span class="completado-mas">+${lista.length - 5} más</span>`;
-      }
-      html += '</div>';
-      contenedor.innerHTML = html;
-    }
-
-    function renderCompletadosPorReto(completadosPorReto) {
-      document.querySelectorAll('.challenge[data-reto]').forEach((card) => {
-        const reto = card.dataset.reto;
-        const contenedor = card.querySelector('.completados-contenedor');
-        renderCompletadosReto(contenedor, completadosPorReto[reto] || []);
-      });
-    }
-
-    async function cargarCompletados() {
-      try {
-        const res = await fetch('/api/completados-por-reto');
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        renderCompletadosPorReto(data || {});
-      } catch (err) {
-        // Mantener badges anteriores si falla el fetch.
-      }
-    }
-
-    function actualizarProgresoUI(resueltas, total) {
-      const elRes = document.getElementById('contador-resueltas');
-      const elTotal = document.getElementById('contador-total');
-      const barra = document.getElementById('progress-fill');
-      if (elRes) elRes.textContent = resueltas;
-      if (elTotal) elTotal.textContent = total;
-      if (barra) {
-        barra.style.width = total > 0 ? Math.round((resueltas / total) * 100) + '%' : '0%';
-      }
-    }
-
-    function marcarRetoResuelto(retoNombre) {
-      if (!retoNombre) return;
-      document.querySelectorAll('.challenge').forEach((card) => {
-        if (card.dataset.reto !== retoNombre) return;
-        card.classList.add('resuelta');
-        const meta = card.querySelector('.challenge-meta');
-        if (meta && !meta.querySelector('.badge-resuelto')) {
-          const tick = document.createElement('span');
-          tick.className = 'badge-resuelto';
-          tick.title = 'Reto completado';
-          tick.textContent = 'OK';
-          meta.insertBefore(tick, meta.firstChild);
-        }
-      });
-    }
-
-    function desmarcarTodosLosRetos() {
-      document.querySelectorAll('.challenge').forEach((card) => {
-        card.classList.remove('resuelta');
-        const tick = card.querySelector('.badge-resuelto');
-        if (tick) tick.remove();
-      });
-    }
-
-    async function reiniciarProgresoCTF() {
-      const btnReset = document.getElementById('btn-reset-retos');
-      if (btnReset) btnReset.disabled = true;
-      result.className = 'result';
-      result.textContent = '';
-
-      try {
-        const res = await fetch('/objetivos/reset', { method: 'POST' });
-        const data = await res.json().catch(() => ({ exito: false, mensaje: 'Error al procesar la respuesta' }));
-        if (data.exito === true) {
-          desmarcarTodosLosRetos();
-          actualizarProgresoUI(data.resueltas ?? 0, data.total ?? 0);
-          cargarRanking();
-          cargarCompletados();
-          result.className = 'result show success';
-          result.textContent = 'Correcto: ' + (data.mensaje || 'Progreso restablecido.');
-        } else {
-          result.className = 'result show error';
-          result.textContent = 'Error: ' + (data.mensaje || 'No se pudo reiniciar el progreso.');
-        }
-      } catch (err) {
-        result.className = 'result show error';
-        result.textContent = 'Error de red: ' + err.message;
-      } finally {
-        if (btnReset) btnReset.disabled = false;
-      }
-    }
-
-    document.getElementById('btn-reset-retos')?.addEventListener('click', reiniciarProgresoCTF);
-
-    (function initProgressBar() {
-      const barra = document.getElementById('progress-fill');
-      if (!barra) return;
-      actualizarProgresoUI(
-        Number(barra.dataset.resueltas) || 0,
-        Number(barra.dataset.total) || 0
-      );
-    })();
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const flag = input.value.trim();
-      if (!flag) return;
-
-      btn.disabled = true;
-      result.className = 'result';
-      result.textContent = '';
-
-      try {
-        const res = await fetch('/objetivos/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'flag=' + encodeURIComponent(flag)
-        });
-        const data = await res.json().catch(() => ({ exito: false, mensaje: 'Error al procesar la respuesta' }));
-        const ok = data.exito === true;
-        result.className = 'result show ' + (ok ? 'success' : 'error');
-        let texto = data.mensaje || (ok ? '¡Flag correcta!' : 'La flag introducida es incorrecta');
-        if (ok && data.puntos && !data.ya_resuelta) texto += ' (+' + data.puntos + ' pts)';
-        result.textContent = (ok ? 'Correcto: ' : 'Error: ') + texto;
-        if (ok) {
-          if (data.reto_nombre) marcarRetoResuelto(data.reto_nombre);
-          if (data.resueltas !== undefined && data.total !== undefined) {
-            actualizarProgresoUI(data.resueltas, data.total);
-          }
-          if (!data.ya_resuelta) {
-            cargarRanking();
-            cargarCompletados();
-            const elPuntos = document.getElementById('tus-puntos-el');
-            if (elPuntos && data.puntos) {
-              const match = elPuntos.textContent.match(/(\d+)/);
-              const actual = match ? parseInt(match[1], 10) : 0;
-              elPuntos.style.display = '';
-              elPuntos.innerHTML = `Tus puntos: <b>${actual + Number(data.puntos)} pts</b>`;
-            }
-          }
-          input.value = '';
-        }
-      } catch (err) {
-        result.className = 'result show error';
-        result.textContent = 'Error de red: ' + err.message;
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    cargarRanking();
-    cargarCompletados();
-    setInterval(cargarRanking, 30000);
-    setInterval(cargarCompletados, 30000);
-  </script>
+  </div>
+</main>
 </body>
 </html>

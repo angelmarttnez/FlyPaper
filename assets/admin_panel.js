@@ -145,9 +145,20 @@
   function pintarHoneypot(s) {
     const el = document.getElementById('widget-honeypot');
     if (!el) return;
+    const redisOk = s.redis_ok !== false && s.ngwaf && s.ngwaf.redis_ok !== false;
+    const circuitos = s.circuitos_abiertos || (s.ngwaf && s.ngwaf.circuitos_abiertos) || {};
+    const circuitoTxt =
+      circuitos.abuseipdb || circuitos.virustotal
+        ? 'Circuit breaker abierto (APIs)'
+        : 'APIs OK';
     el.innerHTML =
       '<div class="widget-row"><span>Estado</span><strong class="ok">' +
       (s.activo ? 'OPERATIVO' : 'OFF') +
+      '</strong></div>' +
+      '<div class="widget-row"><span>NGWAF Redis</span><strong class="' +
+      (redisOk ? 'ok' : 'err') +
+      '">' +
+      (redisOk ? 'ONLINE' : 'DEGRADADO') +
       '</strong></div>' +
       '<div class="widget-row"><span>Eventos hoy</span><strong>' +
       esc(s.eventos_hoy) +
@@ -157,6 +168,15 @@
       '</strong></div>' +
       '<div class="widget-row"><span>Bloqueadas (WAF)</span><strong>' +
       esc(s.bloqueadas_perimetro) +
+      '</strong></div>' +
+      '<div class="widget-row"><span>Rate limit</span><strong>' +
+      esc(s.rate_limit_max || 60) +
+      ' req/min</strong></div>' +
+      '<div class="widget-row"><span>Riesgo autoban</span><strong>≥' +
+      esc(s.risk_autoban_umbral || 5) +
+      '</strong></div>' +
+      '<div class="widget-row"><span>Circuit breaker</span><strong>' +
+      esc(circuitoTxt) +
       '</strong></div>';
   }
 
@@ -191,10 +211,18 @@
       el.innerHTML = '<p class="muted">No hay ataques críticos recientes.</p>';
       return;
     }
+    const firma = String(ev.firma_coincidente || '').trim();
+    const bloqueFirma = firma
+      ? '<p class="firma-waf"><span class="badge-firma">' +
+        esc(firma) +
+        '</span></p>'
+      : '';
     el.innerHTML =
       '<p><strong>' +
       esc(ev.tipo) +
-      '</strong></p><p>IP: <code>' +
+      '</strong></p>' +
+      bloqueFirma +
+      '<p>IP: <code>' +
       esc(ev.ip) +
       '</code></p><p>Ruta: <code>' +
       esc(ev.ruta) +
@@ -218,11 +246,14 @@
     if (!tbody) return;
     if (!bots.length) {
       tbody.innerHTML =
-        '<tr><td colspan="6">No hay IPs bloqueadas por el perímetro</td></tr>';
+        '<tr><td colspan="7">No hay IPs bloqueadas por el perímetro</td></tr>';
       return;
     }
     tbody.innerHTML = bots
       .map(function (b) {
+        const ttl = b.ttl_restante_seg != null
+          ? Math.max(0, Math.round(Number(b.ttl_restante_seg) / 3600)) + ' h'
+          : '—';
         return (
           '<tr><td><code>' +
           esc(b.ip) +
@@ -233,7 +264,9 @@
           '</td><td><strong>' +
           esc(Number(b.risk_score || 0).toFixed(1)) +
           '</strong></td><td>' +
-          esc(String(b.fecha_analisis || '').slice(0, 19)) +
+          esc(ttl) +
+          '</td><td class="muted">' +
+          esc(b.motivo || String(b.fecha_analisis || '').slice(0, 19) || '—') +
           '</td><td><button type="button" class="btn-whitelist" data-ip="' +
           esc(b.ip) +
           '">Desbloquear (Whitelist)</button></td></tr>'
