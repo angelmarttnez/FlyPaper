@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FlyPaper / Security Dashboard</title>
@@ -26,7 +27,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0 24px;
-    z-index: 100;
+    z-index: 9990;
   }
   header .brand { font-size: 16px; font-weight: 600; }
   header .right { display: flex; align-items: center; gap: 14px; }
@@ -172,16 +173,19 @@
   .alerta-item.grav-bot { border-left-color: #a855f7; background: rgba(124, 58, 237, 0.12); }
   .alerta-item .alerta-ip {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 13px;
     margin-bottom: 4px;
+    color: var(--text-main, #F8FAFC);
+    letter-spacing: 0.02em;
   }
-  .alerta-item .alerta-meta { color: #94a3b8; margin-top: 4px; }
+  .alerta-item .alerta-meta { color: var(--text-muted, #CBD5E1); margin-top: 4px; font-weight: 500; }
   .alerta-item .alerta-ruta {
-    color: #64748b;
+    color: var(--text-soft, #E2E8F0);
     font-size: 11px;
     margin-top: 4px;
     word-break: break-all;
+    opacity: 0.92;
   }
   .alerta-vacio {
     text-align: center;
@@ -708,7 +712,18 @@
   tr.grav-bajo { background: rgba(100, 116, 139, 0.2); border-left: 4px solid #64748b; }
 
   .celda-expandir { width: 36px; text-align: center; color: #94a3b8; font-size: 12px; }
-  .ip-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; }
+  .ip-mono {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 700;
+    color: var(--text-main, #F8FAFC);
+    letter-spacing: 0.02em;
+  }
+  .celda-ts {
+    color: var(--text-muted, #CBD5E1);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
   .tipos-lista { display: flex; flex-wrap: wrap; gap: 4px; }
   .celda-accion {
     min-width: 200px;
@@ -1317,8 +1332,208 @@
     }
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
+{# Tras el bridge: overrides del SOC ganan sobre hardcodes y reglas genéricas de aside/table #}
+<style id="dashboard-theme-reactive">
+  /* ——— SOC Monitor: variables de tema (WCAG AA) ——— */
+  body.theme-aware {
+    background: var(--bg-base) !important;
+    color: var(--text-main) !important;
+    font-family: var(--font-ui) !important;
+  }
+  body.theme-aware header,
+  body.theme-aware .periodo-bar,
+  body.theme-aware .panel-alertas,
+  body.theme-aware aside.panel-alertas,
+  body.theme-aware .table-section,
+  body.theme-aware .card-ia,
+  body.theme-aware .chart-card,
+  body.theme-aware .stat-card,
+  body.theme-aware .charts-collapsible,
+  body.theme-aware .actividad-collapsible,
+  body.theme-aware .panel-expulsiones,
+  body.theme-aware .autoban-panel {
+    background: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-main) !important;
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur, 0px));
+    -webkit-backdrop-filter: blur(var(--glass-blur, 0px));
+  }
+  /* Apple Glass: paneles premium con blur real (no bloque opaco) */
+  html[data-theme="apple-glass"] body.theme-aware .panel-alertas,
+  html[data-theme="apple-glass"] body.theme-aware aside.panel-alertas,
+  html[data-theme="apple-glass"] body.theme-aware .table-section,
+  html[data-theme="apple-glass"] body.theme-aware .card-ia,
+  html[data-theme="apple-glass"] body.theme-aware .chart-card,
+  html[data-theme="apple-glass"] body.theme-aware .periodo-bar,
+  html[data-theme="apple-glass"] body.theme-aware .stat-card,
+  html[data-theme="apple-glass"] body.theme-aware .charts-collapsible,
+  html[data-theme="apple-glass"] body.theme-aware .actividad-collapsible,
+  html[data-theme="apple-glass"] body.theme-aware .panel-expulsiones,
+  html.theme-apple-glass body.theme-aware .panel-alertas,
+  html.theme-apple-glass body.theme-aware aside.panel-alertas,
+  html.theme-apple-glass body.theme-aware .table-section,
+  html.theme-apple-glass body.theme-aware .card-ia,
+  html.theme-apple-glass body.theme-aware .chart-card,
+  html.theme-apple-glass body.theme-aware .actividad-collapsible,
+  html.theme-apple-glass body.theme-aware .stat-card {
+    background: rgba(255, 255, 255, 0.4) !important;
+    backdrop-filter: blur(16px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.08) !important;
+    border-radius: var(--radius-card, 16px);
+  }
+  html[data-theme="anime"] body.theme-aware .panel-alertas,
+  html[data-theme="anime"] body.theme-aware .table-section,
+  html[data-theme="anime"] body.theme-aware .actividad-collapsible,
+  html.theme-anime body.theme-aware .panel-alertas,
+  html.theme-anime body.theme-aware .table-section,
+  html.theme-anime body.theme-aware .actividad-collapsible {
+    border-width: 2px !important;
+    border-radius: 3px !important;
+    box-shadow: 4px 4px 0 var(--border-color) !important;
+  }
+
+  body.theme-aware header .brand,
+  body.theme-aware .panel-alertas-header,
+  body.theme-aware .table-section h3,
+  body.theme-aware .card-ia-header h3,
+  body.theme-aware .actividad-collapsible-summary,
+  body.theme-aware table td,
+  body.theme-aware .stat-card .value,
+  body.theme-aware .stat-value {
+    color: var(--text-main) !important;
+  }
+  body.theme-aware .tz-badge,
+  body.theme-aware .periodo-bar .periodo-label,
+  body.theme-aware .panel-alertas-header span.sub,
+  body.theme-aware .filters-label,
+  body.theme-aware th,
+  body.theme-aware .empty-row td,
+  body.theme-aware .alerta-vacio,
+  body.theme-aware .dia-resumen,
+  body.theme-aware .celda-expandir,
+  body.theme-aware .actividad-collapsible-desc,
+  body.theme-aware .stat-card .label {
+    color: var(--text-muted) !important;
+  }
+
+  /* IPs: máximo contraste + mono (tabla + alertas + auto-ban) */
+  body.theme-aware .ip-mono,
+  body.theme-aware td.ip-mono,
+  body.theme-aware .alerta-ip,
+  body.theme-aware .expulsion-item .exp-ip {
+    color: var(--text-main) !important;
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em;
+    text-shadow: none !important;
+  }
+  /* Timestamps: un peldaño por encima del muted para lectura SOC rápida */
+  body.theme-aware .celda-ts,
+  body.theme-aware td.celda-ts {
+    color: var(--text-soft) !important;
+    font-weight: 600 !important;
+    font-variant-numeric: tabular-nums;
+  }
+  body.theme-aware .alerta-item,
+  body.theme-aware .expulsion-item {
+    background: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-main) !important;
+  }
+  body.theme-aware .alerta-meta,
+  body.theme-aware .expulsion-item .exp-meta { color: var(--text-muted) !important; }
+  body.theme-aware .alerta-ruta { color: var(--text-soft) !important; }
+
+  body.theme-aware .btn-periodo,
+  body.theme-aware .filter-btn,
+  body.theme-aware .btn-limpiar-filtros,
+  body.theme-aware .filtro-ip-input,
+  body.theme-aware .btn-logout,
+  body.theme-aware .btn-reportar-ip {
+    background: var(--bg-input) !important;
+    color: var(--text-main) !important;
+    border-color: var(--border-color) !important;
+  }
+  body.theme-aware .btn-periodo:hover,
+  body.theme-aware .filter-btn:hover,
+  body.theme-aware .btn-limpiar-filtros:hover {
+    border-color: var(--border-accent) !important;
+    color: var(--color-accent) !important;
+  }
+  body.theme-aware .btn-periodo.active,
+  body.theme-aware .filter-btn.active {
+    background: var(--color-accent) !important;
+    color: var(--color-accent-fg) !important;
+    border-color: var(--color-accent) !important;
+  }
+  body.theme-aware .filtro-ip-input::placeholder { color: var(--text-muted) !important; }
+  body.theme-aware table th,
+  body.theme-aware table td { border-bottom-color: var(--border-color) !important; }
+  body.theme-aware tr.fila-dia {
+    background: color-mix(in srgb, var(--color-accent) 12%, var(--bg-card)) !important;
+  }
+  body.theme-aware tr.fila-dia:hover {
+    background: color-mix(in srgb, var(--color-accent) 18%, var(--bg-card)) !important;
+  }
+  body.theme-aware tr.fila-dia-contenido td,
+  body.theme-aware .dia-grupos-inner th,
+  body.theme-aware tr.fila-detalle td {
+    background: var(--bg-input) !important;
+  }
+  body.theme-aware .subtabla tbody tr.fila-evento:hover td {
+    background: color-mix(in srgb, var(--color-accent) 10%, var(--bg-input)) !important;
+  }
+  body.theme-aware .panel-alertas.glass-card,
+  body.theme-aware .actividad-collapsible.glass-card {
+    overflow: hidden;
+  }
+  body.theme-aware .live { color: var(--color-ok, #22c55e) !important; }
+
+  /* Contraste forzado por familia de tema (IPs siempre legibles) */
+  html[data-theme="dark"] body.theme-aware .ip-mono,
+  html[data-theme="dark"] body.theme-aware .alerta-ip,
+  html[data-theme="dark"] body.theme-aware .expulsion-item .exp-ip,
+  html[data-theme="hacker"] body.theme-aware .ip-mono,
+  html[data-theme="hacker"] body.theme-aware .alerta-ip,
+  html[data-theme="hacker"] body.theme-aware .expulsion-item .exp-ip {
+    color: #F8FAFC !important;
+  }
+  html[data-theme="dark"] body.theme-aware .celda-ts,
+  html[data-theme="hacker"] body.theme-aware .celda-ts {
+    color: #E2E8F0 !important;
+  }
+  html[data-theme="light"] body.theme-aware .ip-mono,
+  html[data-theme="light"] body.theme-aware .alerta-ip,
+  html[data-theme="lcd"] body.theme-aware .ip-mono,
+  html[data-theme="lcd"] body.theme-aware .alerta-ip,
+  html[data-theme="anime"] body.theme-aware .ip-mono,
+  html[data-theme="anime"] body.theme-aware .alerta-ip,
+  html.theme-anime body.theme-aware .ip-mono,
+  html.theme-anime body.theme-aware .alerta-ip {
+    color: var(--text-main) !important;
+  }
+  html[data-theme="apple-glass"] body.theme-aware .ip-mono,
+  html.theme-apple-glass body.theme-aware .ip-mono,
+  html[data-theme="apple-glass"] body.theme-aware .alerta-ip,
+  html.theme-apple-glass body.theme-aware .alerta-ip,
+  html[data-theme="apple-glass"] body.theme-aware .expulsion-item .exp-ip,
+  html.theme-apple-glass body.theme-aware .expulsion-item .exp-ip {
+    color: #1D1D1F !important;
+  }
+  html[data-theme="apple-glass"] body.theme-aware .celda-ts,
+  html.theme-apple-glass body.theme-aware .celda-ts {
+    color: #2C2C2E !important;
+  }
+  body.theme-aware .soc-muted { color: var(--text-muted) !important; }
+  body.theme-aware .export-aviso-ok { color: var(--color-ok, #22c55e) !important; }
+  body.theme-aware .soc-error-msg { color: var(--color-err, #f87171) !important; }
+</style>
 </head>
-<body{% if embed_mode %} class="embed-monitor"{% endif %}>
+<body class="theme-aware{% if embed_mode %} embed-monitor{% endif %}">
 {% if embed_mode %}
 <style>
   body.embed-monitor { padding-top: 0 !important; }
@@ -1334,6 +1549,7 @@
       <span id="badge-critico-header" class="badge-critico-header">Crítica reciente</span>
       <span class="tz-badge" id="monitor-zona-horaria" title="Zona horaria de eventos y gráficos">Europe/Madrid</span>
     </div>
+    {% include 'partials/theme_switcher.html' %}
     <a class="btn-logout" href="{{ '/admin' if embed_mode else '/admin/logout' }}">{{ 'Volver al panel' if embed_mode else 'Cerrar sesión' }}</a>
   </div>
 </header>
@@ -1419,7 +1635,7 @@
 
       <section class="actividad-registros" aria-label="Registros de actividad">
 
-        <details class="actividad-collapsible" id="panel-eventos-detectados" open>
+        <details class="actividad-collapsible glass-card" id="panel-eventos-detectados" open>
           <summary class="actividad-collapsible-summary">
             <span>Eventos detectados por IP</span>
             <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
@@ -1491,7 +1707,7 @@
           </div>
         </details>
 
-        <details class="actividad-collapsible" id="panel-actividad-publica">
+        <details class="actividad-collapsible glass-card" id="panel-actividad-publica">
           <summary class="actividad-collapsible-summary">
             <span>Actividad por IP</span>
             <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
@@ -1686,7 +1902,7 @@
       </section>
     </div>
 
-    <aside class="panel-alertas" aria-label="Alertas y anomalías">
+    <aside class="panel-alertas glass-card" aria-label="Alertas y anomalías">
       <div class="panel-anomalias-ia" id="panel-anomalias-ia">
         <h4>Detector de Anomalías</h4>
         <div id="panel-anomalias-contenido">
@@ -1811,9 +2027,9 @@
   <div id="tab-pane-admin" class="tab-pane tab-pane-admin" role="tabpanel" aria-labelledby="tab-btn-admin">
     <nav class="periodo-bar periodo-bar-admin-sync" aria-label="Período actividad admin">
       <span class="periodo-label">Período (sincronizado con Amenazas)</span>
-      <span id="admin-periodo-etiqueta" style="font-size:13px;color:#94a3b8;padding:8px 0">Hoy</span>
+      <span id="admin-periodo-etiqueta" class="soc-muted" style="font-size:13px;padding:8px 0">Hoy</span>
     </nav>
-    <details class="actividad-collapsible" id="panel-actividad-admin" open>
+    <details class="actividad-collapsible glass-card" id="panel-actividad-admin" open>
       <summary class="actividad-collapsible-summary">
         <span>Actividad de administración</span>
         <svg class="actividad-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4"/></svg>
@@ -1930,7 +2146,7 @@
 
   const TIPOS_CON_BOTON = ['sqli', 'xss', 'reconocimiento', 'scanner', 'fuerza bruta'];
 
-  /** Colores semánticos de gravedad (modo oscuro). */
+  /** Colores semánticos de gravedad (independientes del tema UI). */
   const COLOR_GRAVEDAD = {
     'Crítica': '#ef4444',
     'Alta': '#f97316',
@@ -1938,18 +2154,47 @@
     'BOT / BLOQUEADO': '#a855f7',
   };
 
-  const TOOLTIP_OSCURO = {
-    backgroundColor: '#1e293b',
-    borderColor: '#334155',
-    borderWidth: 1,
-    titleColor: '#f1f5f9',
-    bodyColor: '#cbd5e1',
-    footerColor: '#94a3b8',
-    padding: 12,
-    cornerRadius: 6,
-    displayColors: true,
-    boxPadding: 6,
-  };
+  /** Lee tokens CSS del tema activo (gráficos Chart.js reactivos). */
+  function leerTokensTema() {
+    const s = getComputedStyle(document.documentElement);
+    const v = (nombre, fallback) => (s.getPropertyValue(nombre).trim() || fallback);
+    return {
+      textMain: v('--text-main', '#F8FAFC'),
+      textMuted: v('--text-muted', '#94a3b8'),
+      textSoft: v('--text-soft', '#cbd5e1'),
+      border: v('--border-color', '#1e293b'),
+      bgCard: v('--bg-card', '#1e293b'),
+      bgInput: v('--bg-input', '#0f172a'),
+      accent: v('--color-accent', '#3b82f6'),
+      ok: v('--color-ok', '#22c55e'),
+    };
+  }
+
+  /** Tooltip Chart.js alineado al tema actual. */
+  function tooltipTema() {
+    const t = leerTokensTema();
+    return {
+      backgroundColor: t.bgCard,
+      borderColor: t.border,
+      borderWidth: 1,
+      titleColor: t.textMain,
+      bodyColor: t.textSoft,
+      footerColor: t.textMuted,
+      padding: 12,
+      cornerRadius: 6,
+      displayColors: true,
+      boxPadding: 6,
+    };
+  }
+
+  /** Escalas X/Y con colores del tema (ticks + rejilla). */
+  function escalasTema(extraX, extraY) {
+    const t = leerTokensTema();
+    return {
+      x: Object.assign({ ticks: { color: t.textMuted }, grid: { color: t.border } }, extraX || {}),
+      y: Object.assign({ ticks: { color: t.textMuted }, grid: { color: t.border }, beginAtZero: true }, extraY || {}),
+    };
+  }
 
   /** Omite tráfico normal en desgloses por tipo. */
   function filtrarMapaSinTraficoNormal(mapa) {
@@ -2003,13 +2248,14 @@
       const { left, right, top, bottom } = chart.chartArea;
       const cx = (left + right) / 2;
       const cy = (top + bottom) / 2;
+      const tokens = leerTokensTema();
       ctx.save();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#e2e8f0';
+      ctx.fillStyle = tokens.textMain;
       ctx.font = 'bold 22px sans-serif';
       ctx.fillText(String(opts.total ?? 0), cx, cy - 6);
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = tokens.textMuted;
       ctx.font = '11px sans-serif';
       ctx.fillText('eventos', cx, cy + 14);
       ctx.restore();
@@ -2136,11 +2382,8 @@
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: false }, tooltip: TOOLTIP_OSCURO },
-        scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
-        },
+        plugins: { legend: { display: false }, tooltip: tooltipTema() },
+        scales: escalasTema(),
       },
     });
   }
@@ -2155,6 +2398,7 @@
     const valores = ordenado.map((x) => x.v);
     const colores = labels.map((g) => COLOR_GRAVEDAD[g] || '#64748b');
     const total = valores.reduce((a, b) => a + b, 0);
+    const tokens = leerTokensTema();
     if (chartAbGravedad) chartAbGravedad.destroy();
     chartAbGravedad = new Chart(ctx, {
       type: 'doughnut',
@@ -2163,8 +2407,8 @@
         responsive: true,
         cutout: '62%',
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#94a3b8' } },
-          tooltip: TOOLTIP_OSCURO,
+          legend: { position: 'bottom', labels: { color: tokens.textMuted } },
+          tooltip: tooltipTema(),
           centroTotal: { total },
         },
       },
@@ -2251,8 +2495,8 @@
       <td class="ip-mono">${escapeHtml(ip)}</td>
       <td><div class="tipos-lista">${htmlTiposGrupo(grupo.tipos_ataque)}</div></td>
       <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
-      <td>${escapeHtml(grupo.primera_vez || '')}</td>
-      <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+      <td class="celda-ts">${escapeHtml(grupo.primera_vez || '')}</td>
+      <td class="celda-ts">${escapeHtml(grupo.ultima_vez || '')}</td>
       <td class="celda-accion">
         <button type="button" class="btn-desbloquear-ip" data-ip="${escapeHtml(ip)}">Desbloquear</button>
         <button type="button" class="btn-ver-eventos-ab" data-ip="${escapeHtml(ip)}">Ver eventos</button>
@@ -2525,7 +2769,7 @@
     const gravUlt = normalizarGravedad(data.ultimo_ataque_gravedad);
     document.getElementById('stat-ultimo-grav').innerHTML = gravUlt
       ? `<span class="badge ${claseGravedadBadge(gravUlt)}">${escapeHtml(gravUlt)}</span>`
-      : '<span style="color:#64748b">—</span>';
+      : '<span class="soc-muted">—</span>';
   }
 
   /** Gráfico de barras por tipo (sin tráfico normal) con color según gravedad. */
@@ -2539,6 +2783,7 @@
     const colores = labels.map((t) => colorPorGravedad(gravedadFiltrada[t] || 'Sospechoso'));
 
     if (chartTipos) chartTipos.destroy();
+    const tokensTipos = leerTokensTema();
     chartTipos = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -2546,7 +2791,7 @@
         datasets: [{
           label: 'Ataques',
           data: labels.length ? valores : [0],
-          backgroundColor: labels.length ? colores : ['#334155'],
+          backgroundColor: labels.length ? colores : [tokensTipos.border],
           borderRadius: 4,
         }],
       },
@@ -2556,7 +2801,7 @@
         plugins: {
           legend: { display: false },
           tooltip: {
-            ...TOOLTIP_OSCURO,
+            ...tooltipTema(),
             callbacks: {
               label(ctx) {
                 const v = ctx.parsed.y ?? 0;
@@ -2566,10 +2811,7 @@
             },
           },
         },
-        scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
-        },
+        scales: escalasTema(),
       },
     });
   }
@@ -2591,9 +2833,10 @@
         ? `Actividad por Día (${zonaHorariaMonitor})`
         : `Actividad por Hora (${zonaHorariaMonitor})`;
 
+    const tokensAct = leerTokensTema();
     const pointRadii = valores.map((_, i) => (i === picoIdx ? 8 : 4));
-    const pointBorderColors = valores.map((_, i) => (i === picoIdx ? '#ef4444' : '#3b82f6'));
-    const pointBg = valores.map((_, i) => (i === picoIdx ? '#3b82f6' : '#3b82f6'));
+    const pointBorderColors = valores.map((_, i) => (i === picoIdx ? '#ef4444' : tokensAct.accent));
+    const pointBg = valores.map(() => tokensAct.accent);
 
     if (chartActividad) chartActividad.destroy();
 
@@ -2608,7 +2851,7 @@
         datasets: [{
           label: 'Eventos',
           data: valores.length ? valores : [0],
-          borderColor: '#3b82f6',
+          borderColor: tokensAct.accent,
           backgroundColor: gradient,
           tension: 0.35,
           fill: true,
@@ -2623,12 +2866,12 @@
         animation: { duration: 800 },
         plugins: {
           legend: { display: false },
-          tooltip: TOOLTIP_OSCURO,
+          tooltip: tooltipTema(),
         },
-        scales: {
-          x: { ticks: { color: '#94a3b8', maxRotation: 45 }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
-        },
+        scales: escalasTema(
+          { ticks: { color: tokensAct.textMuted, maxRotation: 45 } },
+          null
+        ),
       },
     });
   }
@@ -2649,6 +2892,7 @@
     });
     const total = valores.reduce((a, b) => a + b, 0);
     const hayDatos = labels.length > 0;
+    const tokensGrav = leerTokensTema();
 
     if (chartGravedad) chartGravedad.destroy();
     chartGravedad = new Chart(ctx, {
@@ -2657,10 +2901,10 @@
         labels: hayDatos ? labels : ['Sin datos'],
         datasets: [{
           data: hayDatos ? valores : [1],
-          backgroundColor: hayDatos ? colores : ['#334155'],
-          borderColor: '#0f172a',
+          backgroundColor: hayDatos ? colores : [tokensGrav.border],
+          borderColor: tokensGrav.bgInput,
           borderWidth: 2,
-          hoverBorderColor: '#e2e8f0',
+          hoverBorderColor: tokensGrav.textMain,
           hoverOffset: 6,
         }],
       },
@@ -2675,7 +2919,7 @@
             position: 'bottom',
             align: 'start',
             labels: {
-              color: '#cbd5e1',
+              color: tokensGrav.textSoft,
               boxWidth: 14,
               boxHeight: 14,
               padding: 14,
@@ -2697,7 +2941,7 @@
           },
           centroTotal: { total: total || 0 },
           tooltip: {
-            ...TOOLTIP_OSCURO,
+            ...tooltipTema(),
             callbacks: {
               title(items) {
                 return items[0]?.label || '';
@@ -2740,6 +2984,7 @@
     });
 
     if (chartRutas) chartRutas.destroy();
+    const tokensRutas = leerTokensTema();
     chartRutas = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -2747,7 +2992,7 @@
         datasets: [{
           label: 'Ataques',
           data: labels.length ? valores : [0],
-          backgroundColor: labels.length ? colores : ['#334155'],
+          backgroundColor: labels.length ? colores : [tokensRutas.border],
           borderRadius: 4,
           barThickness: 14,
         }],
@@ -2758,8 +3003,8 @@
         animation: { duration: 800 },
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, beginAtZero: true },
-          y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } },
+          x: { ticks: { color: tokensRutas.textMuted }, grid: { color: tokensRutas.border }, beginAtZero: true },
+          y: { ticks: { color: tokensRutas.textMuted, font: { size: 11 } }, grid: { display: false } },
         },
       },
     });
@@ -2984,7 +3229,7 @@
 
   function htmlSubtabla(eventos) {
     if (!eventos.length) {
-      return '<p style="color:#94a3b8;padding:8px">Sin eventos en este rango</p>';
+      return '<p class="soc-muted" style="padding:8px">Sin eventos en este rango</p>';
     }
     const filas = eventos
       .map((ev) => {
@@ -2997,7 +3242,7 @@
           <td><span class="badge ${badgeClass(tipo)}">${escapeHtml(tipo)}</span></td>
           <td>${htmlCeldaFirma(ev)}</td>
           <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
-          <td>${escapeHtml(ev.timestamp || '')}</td>
+          <td class="celda-ts">${escapeHtml(ev.timestamp || '')}</td>
           <td class="celda-accion-sub">
             <button type="button" class="btn-analizar-ia" data-evento-id="${eventoId}">Analizar</button>
           </td>
@@ -3220,7 +3465,7 @@
       cuerpo.innerHTML = '<div class="ia-spinner">Analizando evento...</div>';
     } else if (opciones.error) {
       titulo.textContent = 'Análisis del evento';
-      cuerpo.innerHTML = `<p style="color:#f87171;font-size:14px">${escapeHtml(opciones.error)}</p>`;
+      cuerpo.innerHTML = `<p class="soc-error-msg" style="font-size:14px">${escapeHtml(opciones.error)}</p>`;
     } else if (opciones.analisis) {
       const a = opciones.analisis;
       titulo.textContent = 'Análisis del ataque';
@@ -3374,7 +3619,8 @@
     aviso.textContent = valido
       ? `Exportación lista: ${document.getElementById('export-ip-publica').value} · ${document.getElementById('export-fecha-publica').value}`
       : MSG_EXPORT_ACTIVIDAD;
-    aviso.style.color = valido ? '#7dd3a8' : '#94a3b8';
+    aviso.classList.toggle('export-aviso-ok', valido);
+    aviso.classList.toggle('soc-muted', !valido);
   }
 
   async function cargarIpsExportActividadPublica() {
@@ -3521,7 +3767,7 @@
 
   function htmlSubtablaPeticiones(peticiones, ambito) {
     if (!peticiones.length) {
-      return '<p style="color:#94a3b8;padding:8px">Sin peticiones en este rango</p>';
+      return '<p class="soc-muted" style="padding:8px">Sin peticiones en este rango</p>';
     }
     const filas = peticiones
       .map((p) => {
@@ -3536,7 +3782,7 @@
           <td>${escapeHtml(p.metodo || '')}</td>
           <td>${escapeHtml(codigo)}</td>
           ${colsAlerta}
-          <td>${escapeHtml(p.timestamp || '')}</td>
+          <td class="celda-ts">${escapeHtml(p.timestamp || '')}</td>
         </tr>`;
       })
       .join('');
@@ -3589,7 +3835,7 @@
     const accionHtml =
       ambito === 'publico' && ipsActivasCache.has(ip)
         ? `<button type="button" class="btn-bloquear-ip" data-ip="${escapeHtml(ip)}">Bloquear</button>`
-        : '<span style="color:#64748b">—</span>';
+        : '<span class="soc-muted">—</span>';
 
     const tr = document.createElement('tr');
     tr.className = 'fila-grupo';
@@ -3598,8 +3844,8 @@
       <td class="celda-expandir">${expandido ? '−' : '+'}</td>
       <td class="ip-mono">${escapeHtml(ip)}</td>
       <td>${total}</td>
-      <td>${escapeHtml(grupo.primera_vez || '')}</td>
-      <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+      <td class="celda-ts">${escapeHtml(grupo.primera_vez || '')}</td>
+      <td class="celda-ts">${escapeHtml(grupo.ultima_vez || '')}</td>
       <td class="celda-accion">${accionHtml}</td>
     `;
 
@@ -3789,8 +4035,8 @@
       <td>${eventosVisibles.length}</td>
       <td><div class="tipos-lista">${htmlTiposGrupo(grupo.tipos_ataque)}</div></td>
       <td><span class="badge ${claseGravedadBadge(grav)}">${escapeHtml(grav)}</span></td>
-      <td>${escapeHtml(grupo.primera_vez || '')}</td>
-      <td>${escapeHtml(grupo.ultima_vez || '')}</td>
+      <td class="celda-ts">${escapeHtml(grupo.primera_vez || '')}</td>
+      <td class="celda-ts">${escapeHtml(grupo.ultima_vez || '')}</td>
       <td class="celda-accion">
         <button type="button" class="btn-reportar-ip" data-ip="${escapeHtml(ip)}">Reportar</button>
         <a href="/admin/reportes?tab=ip&ip=${encodeURIComponent(ip)}" class="link-reportes-ip" target="_blank" rel="noopener" title="Ver reportes de esta IP en admin">Reportes</a>
@@ -4021,6 +4267,19 @@
   recargarTodo();
   cargarIpsActivas();
   cargarAnomalias();
+
+  /**
+   * Cambio de tema en vivo (selector / postMessage del panel SOC padre).
+   * Reaplica Chart.js con tokens CSS; tablas/alertas ya usan clases temáticas.
+   */
+  function refrescarUiPorTema() {
+    actualizarGraficosDesdeCache();
+    if (cacheStatsAutoban) {
+      renderChartAbTipos(cacheStatsAutoban.ataques_por_tipo);
+      renderChartAbGravedad(cacheStatsAutoban.ataques_por_gravedad);
+    }
+  }
+  window.addEventListener('theme-changed', refrescarUiPorTema);
 
   document.getElementById('filtro-ip-publica').addEventListener('input', () => {
     renderTablaActividadPeticiones('publico');

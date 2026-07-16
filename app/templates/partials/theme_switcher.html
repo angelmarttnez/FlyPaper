@@ -1,0 +1,250 @@
+{# Selector desplegable global: 6 temas FlyPaper (cambio reactivo sin reload) #}
+<div class="theme-switcher" data-theme-switcher style="position:relative;z-index:9998">
+  <button type="button" class="theme-switcher-toggle" aria-haspopup="true" aria-expanded="false" title="Cambiar tema" aria-label="Cambiar tema visual">
+    <span class="theme-switcher-current" aria-hidden="true">🌑</span>
+  </button>
+  <div class="theme-switcher-menu" role="menu" aria-label="Temas visuales" style="z-index:9999">
+    <button type="button" role="menuitem" data-theme-set="light"><span class="theme-ico">☀️</span> Light</button>
+    <button type="button" role="menuitem" data-theme-set="dark"><span class="theme-ico">🌑</span> Dark</button>
+    <button type="button" role="menuitem" data-theme-set="hacker"><span class="theme-ico">👾</span> Hacker</button>
+    <button type="button" role="menuitem" data-theme-set="lcd"><span class="theme-ico">📟</span> LCD</button>
+    <button type="button" role="menuitem" data-theme-set="anime"><span class="theme-ico">⛩️</span> Anime</button>
+    <button type="button" role="menuitem" data-theme-set="apple-glass"><span class="theme-ico">🍎</span> Apple Glass</button>
+  </div>
+</div>
+<script>
+(function () {
+  var CLAVE = 'theme';
+  var MSG_TIPO = 'flypaper-theme';
+  var VALIDOS = { light: 1, dark: 1, hacker: 1, lcd: 1, anime: 1, 'apple-glass': 1 };
+  var ICONOS = {
+    light: '☀️',
+    dark: '🌑',
+    hacker: '👾',
+    lcd: '📟',
+    anime: '⛩️',
+    'apple-glass': '🍎'
+  };
+  var CLASES_TEMA = ['theme-light', 'theme-dark', 'theme-hacker', 'theme-lcd', 'theme-anime', 'theme-apple-glass'];
+  var aplicando = false;
+
+  /** Devuelve el tema activo del documento o dark por defecto. */
+  function temaActual() {
+    var t = document.documentElement.getAttribute('data-theme') || 'dark';
+    return VALIDOS[t] ? t : 'dark';
+  }
+
+  /**
+   * Quita clases de tema antiguas y aplica la del tema nuevo en <html> y <body>.
+   * No pisa className completo para no destruir otras clases (theme-aware, etc.).
+   */
+  function sincronizarClases(tema) {
+    var html = document.documentElement;
+    var body = document.body;
+    CLASES_TEMA.forEach(function (c) {
+      html.classList.remove(c);
+      if (body) body.classList.remove(c);
+    });
+    var clase = 'theme-' + tema;
+    html.classList.add(clase);
+    if (body) body.classList.add(clase);
+  }
+
+  /** Actualiza iconos y estado activo de todos los selectores de la página. */
+  function actualizarSwitchers(tema) {
+    document.querySelectorAll('[data-theme-switcher]').forEach(function (wrap) {
+      var cur = wrap.querySelector('.theme-switcher-current');
+      if (cur) cur.textContent = ICONOS[tema] || '🌑';
+      wrap.querySelectorAll('[data-theme-set]').forEach(function (btn) {
+        btn.classList.toggle('is-active', btn.getAttribute('data-theme-set') === tema);
+      });
+      cerrarMenu(wrap);
+    });
+  }
+
+  /**
+   * Propaga el tema a iframes same-origin (p. ej. Monitor SOC embebido).
+   * Sin esto el iframe solo ve el tema al recargar.
+   */
+  function difundirAIframes(tema) {
+    var origen = window.location.origin;
+    document.querySelectorAll('iframe').forEach(function (frame) {
+      try {
+        if (frame.contentWindow) {
+          frame.contentWindow.postMessage({ type: MSG_TIPO, theme: tema }, origen);
+        }
+      } catch (e) { /* iframe cross-origin o aún sin documento */ }
+    });
+  }
+
+  /** Enlaza el evento load de cada iframe para reenviar el tema al cargar. */
+  function cablearIframe(frame) {
+    if (!frame || frame.dataset.themeBound === '1') return;
+    frame.dataset.themeBound = '1';
+    frame.addEventListener('load', function () {
+      difundirAIframes(temaActual());
+    });
+  }
+
+  function observarIframes() {
+    document.querySelectorAll('iframe').forEach(cablearIframe);
+    if (typeof MutationObserver === 'undefined') return;
+    var obs = new MutationObserver(function (muts) {
+      muts.forEach(function (m) {
+        m.addedNodes.forEach(function (n) {
+          if (n.nodeType !== 1) return;
+          if (n.tagName === 'IFRAME') cablearIframe(n);
+          else if (n.querySelectorAll) n.querySelectorAll('iframe').forEach(cablearIframe);
+        });
+      });
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  /**
+   * Aplica el tema de forma reactiva: data-theme, clases, localStorage,
+   * evento theme-changed y postMessage a iframes.
+   * @param {string} tema
+   * @param {Object} opts - omitirStorage, omitirBroadcast, forzar (booleanos opcionales)
+   */
+  function aplicarTema(tema, opts) {
+    opts = opts || {};
+    if (!VALIDOS[tema]) tema = 'dark';
+    if (aplicando) return;
+    if (!opts.forzar && temaActual() === tema) {
+      actualizarSwitchers(tema);
+      return;
+    }
+
+    aplicando = true;
+    try {
+      document.documentElement.setAttribute('data-theme', tema);
+      document.documentElement.dataset.theme = tema;
+      if (document.body) {
+        document.body.setAttribute('data-theme', tema);
+        document.body.dataset.theme = tema;
+      }
+      sincronizarClases(tema);
+
+      if (!opts.omitirStorage) {
+        try { localStorage.setItem(CLAVE, tema); } catch (e) {}
+      }
+
+      actualizarSwitchers(tema);
+
+      /* Fuerza recálculo de estilos heredados en motores lentos */
+      void document.documentElement.offsetHeight;
+
+      window.dispatchEvent(new CustomEvent('theme-changed', {
+        detail: { theme: tema }
+      }));
+
+      if (!opts.omitirBroadcast) {
+        difundirAIframes(tema);
+        /* Avisa al padre si estamos dentro de un iframe (selector del monitor standalone) */
+        if (window.parent && window.parent !== window) {
+          try {
+            window.parent.postMessage({ type: MSG_TIPO, theme: tema }, window.location.origin);
+          } catch (e) {}
+        }
+      }
+    } finally {
+      aplicando = false;
+    }
+  }
+
+  function posicionarMenu(wrap) {
+    var menu = wrap.querySelector('.theme-switcher-menu');
+    var toggle = wrap.querySelector('.theme-switcher-toggle');
+    if (!menu || !toggle) return;
+    var r = toggle.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = Math.round(r.bottom + 8) + 'px';
+    menu.style.right = Math.round(window.innerWidth - r.right) + 'px';
+    menu.style.left = 'auto';
+    menu.style.zIndex = '9999';
+  }
+
+  function cerrarMenu(wrap) {
+    wrap.classList.remove('is-open');
+    var toggle = wrap.querySelector('.theme-switcher-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    var menu = wrap.querySelector('.theme-switcher-menu');
+    if (menu) {
+      menu.style.position = '';
+      menu.style.top = '';
+      menu.style.right = '';
+      menu.style.left = '';
+    }
+  }
+
+  function cablear() {
+    document.querySelectorAll('[data-theme-switcher]').forEach(function (wrap) {
+      if (wrap.dataset.bound === '1') return;
+      wrap.dataset.bound = '1';
+
+      var toggle = wrap.querySelector('.theme-switcher-toggle');
+      if (toggle) {
+        toggle.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var abrir = !wrap.classList.contains('is-open');
+          document.querySelectorAll('[data-theme-switcher].is-open').forEach(cerrarMenu);
+          if (abrir) {
+            wrap.classList.add('is-open');
+            toggle.setAttribute('aria-expanded', 'true');
+            posicionarMenu(wrap);
+          }
+        });
+      }
+
+      wrap.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('[data-theme-set]');
+        if (!btn || !wrap.contains(btn)) return;
+        aplicarTema(btn.getAttribute('data-theme-set'), { forzar: true });
+      });
+    });
+
+    document.addEventListener('click', function () {
+      document.querySelectorAll('[data-theme-switcher].is-open').forEach(cerrarMenu);
+    });
+
+    window.addEventListener('resize', function () {
+      document.querySelectorAll('[data-theme-switcher].is-open').forEach(posicionarMenu);
+    });
+    window.addEventListener('scroll', function () {
+      document.querySelectorAll('[data-theme-switcher].is-open').forEach(posicionarMenu);
+    }, true);
+
+    /* Sync entre pestañas / iframe ↔ padre vía localStorage */
+    window.addEventListener('storage', function (ev) {
+      if (ev.key !== CLAVE || !ev.newValue || !VALIDOS[ev.newValue]) return;
+      aplicarTema(ev.newValue, { omitirStorage: true, omitirBroadcast: true, forzar: true });
+    });
+
+    /* Sync padre → iframe (y viceversa) sin recargar */
+    window.addEventListener('message', function (ev) {
+      if (ev.origin !== window.location.origin) return;
+      var d = ev.data;
+      if (!d || d.type !== MSG_TIPO || !d.theme || !VALIDOS[d.theme]) return;
+      if (d.theme === temaActual()) return;
+      aplicarTema(d.theme, { omitirBroadcast: true, forzar: true });
+    });
+
+    observarIframes();
+    aplicarTema(temaActual(), { forzar: true, omitirBroadcast: false });
+  }
+
+  /* API pública para el dashboard / paneles embebidos */
+  window.FlyPaperTheme = {
+    apply: aplicarTema,
+    get: temaActual,
+    MSG_TIPO: MSG_TIPO
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', cablear);
+  } else {
+    cablear();
+  }
+})();
+</script>

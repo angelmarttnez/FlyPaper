@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}FlyPaper{% endblock %}</title>
+{% include 'partials/theme_head.html' %}
+{% block head_extra %}{% endblock %}
+<style>
+  /* Utilidades globales basadas en variables de tema */
+  .bg-theme-base { background: var(--bg-base); }
+  .bg-theme-card { background: var(--bg-card); }
+  .text-theme-main { color: var(--text-main); }
+  .text-theme-muted { color: var(--text-muted); }
+  .border-theme { border-color: var(--border-color); }
+  .accent-theme { color: var(--color-accent); }
+  .transition-theme { transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease; }
+  .alerta-error, .alerta-ok, .alerta-warn, .alerta-info { font-weight: 600; }
+</style>
+</head>
+<body class="theme-aware transition-theme {% block body_class %}{% endblock %}" data-theme="dark">
+{% block navbar %}
+  {% set mostrar_theme_switcher = true %}
+  {% include 'partials/navbar_publico.html' %}
+{% endblock %}
+{% block content %}{% endblock %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

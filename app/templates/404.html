@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Página no encontrada · FlyPaper</title>
@@ -26,8 +27,9 @@
   }
   a:hover { text-decoration: underline; }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
   <main>
     <h1>404</h1>
     <p>La página que buscas no existe.</p>

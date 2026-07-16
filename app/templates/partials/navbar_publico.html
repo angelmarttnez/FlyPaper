@@ -66,6 +66,9 @@
     color: #00ff8c;
     border-color: #00ff8c;
   }
+  .navbar-right .theme-switcher {
+    margin-left: 4px;
+  }
 </style>
 <nav class="navbar">
   <div class="logo">FlyPaper</div>
@@ -77,6 +80,7 @@
       <li><a href="/search"{% if nav_activo == 'search' %} class="active"{% endif %}>Buscar</a></li>
       <li><a href="/diversion/carta"{% if nav_activo == 'diversion' %} class="active"{% endif %}>Aburrido</a></li>
     </ul>
+    {% include 'partials/theme_switcher.html' %}
     <div class="nav-sesion" aria-label="Estado de sesión">
       <span class="nav-sesion-label">Sesión: <strong>{{ sesion_etiqueta }}</strong></span>
       {% if sesion_logueado %}

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Victoria · FlyPaper</title>
@@ -75,8 +76,9 @@
     letter-spacing: 0.15em;
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
   <main class="expulsion-pantalla" role="status">
     <h1 class="expulsion-titulo">Muy bien, has acertado</h1>
     <p class="expulsion-subtitulo">

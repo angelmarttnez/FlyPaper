@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FlyPaper - {{ post.titulo }}</title>
@@ -263,8 +264,9 @@
   }
   .btn-submit:hover { opacity: 0.9; transform: translateY(-1px); }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
   {% include 'partials/navbar_publico.html' %}
 
   <main class="container">

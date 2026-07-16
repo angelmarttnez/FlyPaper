@@ -153,23 +153,115 @@ def _sembrar_reto_02(conexion: sqlite3.Connection, flag: str) -> None:
     )
 
 
-def _sembrar_reto_placeholder(conexion: sqlite3.Connection, flag: str, reto_id: int) -> None:
-    """Esqueleto para retos 03/04 (aún no jugables)."""
+def _sembrar_reto_03(conexion: sqlite3.Connection, flag: str) -> None:
+    """
+    Artículos públicos + vault oculto (filtro local defectuoso en la ruta del lab).
+    """
     cursor = conexion.cursor()
     cursor.executescript(
         """
-        CREATE TABLE IF NOT EXISTS placeholder (
+        DROP TABLE IF EXISTS placeholder;
+        CREATE TABLE IF NOT EXISTS articles (
             id INTEGER PRIMARY KEY,
-            mensaje TEXT,
-            flag_reservada TEXT
+            title TEXT NOT NULL,
+            body TEXT,
+            author TEXT
         );
-        DELETE FROM placeholder;
+        CREATE TABLE IF NOT EXISTS vault (
+            id INTEGER PRIMARY KEY,
+            secret_name TEXT,
+            flag_value TEXT NOT NULL
+        );
+        DELETE FROM articles;
+        DELETE FROM vault;
         """
     )
-    cursor.execute(
-        "INSERT INTO placeholder (id, mensaje, flag_reservada) VALUES (1, ?, ?);",
-        (f"Laboratorio SQLi-{reto_id:02d} reservado", flag),
+    articulos = [
+        (1, "Briefing SOC", "Resumen diario de alertas.", "analyst"),
+        (2, "Playbook SQLi", "Pasos de contención ante inyección.", "blue_team"),
+        (3, "Hardening WAF", "Firmas y normalización anti-evasión.", "secops"),
+    ]
+    cursor.executemany(
+        "INSERT INTO articles (id, title, body, author) VALUES (?, ?, ?, ?);",
+        articulos,
     )
+    cursor.execute(
+        "INSERT INTO vault (id, secret_name, flag_value) VALUES (1, ?, ?);",
+        ("FILTER_BYPASS_TARGET", flag),
+    )
+
+
+def _sembrar_reto_04(conexion: sqlite3.Connection, flag: str) -> None:
+    """
+    Catálogo de ítems + vault (WAF real activo en la ruta del lab).
+    """
+    cursor = conexion.cursor()
+    cursor.executescript(
+        """
+        DROP TABLE IF EXISTS placeholder;
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            category TEXT
+        );
+        CREATE TABLE IF NOT EXISTS vault (
+            id INTEGER PRIMARY KEY,
+            codename TEXT,
+            flag_value TEXT NOT NULL
+        );
+        DELETE FROM items;
+        DELETE FROM vault;
+        """
+    )
+    items = [
+        (1, "Sensor IDS", 1200.0, "hardware"),
+        (2, "Licencia WAF", 499.0, "software"),
+        (3, "Playbook IR", 0.0, "docs"),
+        (4, "Honeytoken Pack", 89.0, "deception"),
+    ]
+    cursor.executemany(
+        "INSERT INTO items (id, name, price, category) VALUES (?, ?, ?, ?);",
+        items,
+    )
+    cursor.execute(
+        "INSERT INTO vault (id, codename, flag_value) VALUES (1, ?, ?);",
+        ("WAF_EVASION_TARGET", flag),
+    )
+
+
+def _esquema_lab_completo(conexion: sqlite3.Connection, reto_id: int) -> bool:
+    """True si la BD del reto tiene el esquema jugable (no placeholder)."""
+    cursor = conexion.cursor()
+    if reto_id == 1:
+        tabla = "users"
+    elif reto_id == 2:
+        tabla = "products"
+    elif reto_id == 3:
+        tabla = "articles"
+    elif reto_id == 4:
+        tabla = "items"
+    else:
+        return False
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name = ?;",
+        (tabla,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _sembrar_reto(conexion: sqlite3.Connection, reto_id: int, flag: str) -> None:
+    """Despacha el seeder del laboratorio correspondiente."""
+    if reto_id == 1:
+        _sembrar_reto_01(conexion, flag)
+    elif reto_id == 2:
+        _sembrar_reto_02(conexion, flag)
+    elif reto_id == 3:
+        _sembrar_reto_03(conexion, flag)
+    elif reto_id == 4:
+        _sembrar_reto_04(conexion, flag)
+    else:
+        raise ValueError(f"Reto SQLi desconocido: {reto_id}")
 
 
 def asegurar_lab_reto(reto_id: int) -> str:
@@ -177,6 +269,7 @@ def asegurar_lab_reto(reto_id: int) -> str:
     Crea/puebla la BD del reto si no existe. Devuelve la flag del laboratorio.
 
     Si la BD ya existe, reutiliza la flag de ``lab_meta``.
+    Si el esquema es placeholder antiguo, re-siembra conservando la flag.
     """
     RUTA_CTF.mkdir(parents=True, exist_ok=True)
     ruta = ruta_bd_reto(reto_id)
@@ -186,17 +279,19 @@ def asegurar_lab_reto(reto_id: int) -> str:
     conexion.row_factory = sqlite3.Row
     try:
         flag = _leer_meta_flag(conexion) if existe else None
+        esquema_ok = _esquema_lab_completo(conexion, reto_id) if existe else False
+
         if not flag:
             flag = generar_flag_ctf_aleatoria()
-            if reto_id == 1:
-                _sembrar_reto_01(conexion, flag)
-            elif reto_id == 2:
-                _sembrar_reto_02(conexion, flag)
-            else:
-                _sembrar_reto_placeholder(conexion, flag, reto_id)
+            _sembrar_reto(conexion, reto_id, flag)
             _escribir_meta(conexion, flag, reto_id)
             conexion.commit()
             logger.info("Lab SQLi-%02d sembrado en %s", reto_id, ruta)
+        elif not esquema_ok:
+            _sembrar_reto(conexion, reto_id, flag)
+            _escribir_meta(conexion, flag, reto_id)
+            conexion.commit()
+            logger.info("Lab SQLi-%02d migrado (esquema jugable) en %s", reto_id, ruta)
         return flag
     finally:
         conexion.close()
@@ -217,6 +312,12 @@ def sincronizar_flags_academia_flypaper() -> None:
 
     Así ``enviar_flag_por_usuario`` y el ranking CTF puntúan la academia.
     """
+    # Nombres legacy (retos 03/04 renombrados al activarlos).
+    legacy_nombres = {
+        3: ("SQLi-03 · Error Based",),
+        4: ("SQLi-04 · Blind Time",),
+    }
+
     for reto in CATALOGO_RETOS:
         rid = int(reto["id"])
         nombre = RETO_NOMBRE[rid]
@@ -226,6 +327,12 @@ def sincronizar_flags_academia_flypaper() -> None:
 
         with obtener_conexion() as conexion:
             cursor = conexion.cursor()
+            # Migrar nombre canónico si existía el título antiguo.
+            for nombre_viejo in legacy_nombres.get(rid, ()):
+                cursor.execute(
+                    "UPDATE flags SET reto_nombre = ? WHERE reto_nombre = ?;",
+                    (nombre, nombre_viejo),
+                )
             cursor.execute(
                 "SELECT id, flag_string FROM flags WHERE reto_nombre = ?;",
                 (nombre,),

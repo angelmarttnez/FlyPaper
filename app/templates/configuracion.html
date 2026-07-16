@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <title>FlyPaper Admin — Configuración</title>
 <style>
@@ -45,8 +46,9 @@ body{background:#0f1419;color:#e4e6eb;min-height:100vh;display:flex}
 .btn-secondary{background:#21262d;color:#e4e6eb;border:1px solid #30363d}
 .btn-secondary:hover{background:#30363d}
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
 <aside class="sidebar">
   <div class="logo">Fly<span>Paper</span></div>
   <nav class="nav">

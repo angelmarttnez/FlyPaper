@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acceso restringido · FlyPaper SOC</title>
@@ -8,31 +9,35 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     min-height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: radial-gradient(ellipse at top, #1a1028 0%, #0a0e1a 55%, #050508 100%);
-    color: #e2e8f0;
+    font-family: var(--font-ui);
+    background: var(--bg-base);
+    color: var(--text-main);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
   .card {
     width: 100%;
     max-width: 480px;
-    background: rgba(15, 20, 35, 0.92);
-    border: 1px solid rgba(248, 81, 73, 0.35);
-    border-radius: 16px;
+    background: var(--bg-card);
+    border: var(--border-width-ui, 1px) solid var(--alert-error-border);
+    border-radius: var(--radius-card, 16px);
     padding: 40px 32px;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 40px rgba(248, 81, 73, 0.08);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     text-align: center;
+    color: var(--text-main);
   }
   .icono {
     width: 72px;
     height: 72px;
     margin: 0 auto 20px;
     border-radius: 50%;
-    background: linear-gradient(135deg, rgba(248, 81, 73, 0.25), rgba(210, 153, 34, 0.15));
-    border: 2px solid rgba(248, 81, 73, 0.5);
+    background: var(--alert-error-bg);
+    border: 2px solid var(--alert-error-border);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -41,26 +46,28 @@
   h1 {
     font-size: 22px;
     font-weight: 700;
-    color: #f85149;
+    color: var(--alert-error-fg);
     margin-bottom: 8px;
     letter-spacing: -0.02em;
   }
   .subtitle {
     font-size: 14px;
-    color: #8b949e;
+    color: var(--text-muted);
     line-height: 1.55;
     margin-bottom: 24px;
+    font-weight: 500;
   }
   .ip-box {
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: calc(var(--radius-card, 16px) - 4px);
     padding: 14px 18px;
     margin-bottom: 20px;
-    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 15px;
-    color: #58a6ff;
+    color: var(--color-accent);
     word-break: break-all;
+    font-weight: 600;
   }
   .meta {
     display: grid;
@@ -71,46 +78,54 @@
     font-size: 12px;
   }
   .meta-item {
-    background: rgba(88, 166, 255, 0.06);
-    border: 1px solid #21262d;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 10px 12px;
   }
   .meta-label {
-    color: #6e7681;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-size: 10px;
     margin-bottom: 4px;
+    font-weight: 700;
   }
-  .meta-value { color: #c9d1d9; font-weight: 500; }
+  .meta-value { color: var(--text-main); font-weight: 600; }
   .score {
     font-size: 13px;
-    color: #d29922;
+    color: var(--alert-warn-fg);
+    background: var(--alert-warn-bg);
+    border: 1px solid var(--alert-warn-border);
+    border-radius: 8px;
+    padding: 10px 12px;
     margin-bottom: 24px;
+    font-weight: 600;
   }
   form { margin-top: 8px; }
   button {
     width: 100%;
     padding: 14px 20px;
     border: none;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #238636, #2ea043);
-    color: #fff;
+    border-radius: calc(var(--radius-card, 16px) - 4px);
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.1s, box-shadow 0.2s;
   }
   button:hover {
-    box-shadow: 0 8px 24px rgba(46, 160, 67, 0.35);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-accent) 35%, transparent);
+    transform: var(--hover-transform, none);
   }
   button:active { transform: scale(0.98); }
   .hint {
     margin-top: 16px;
     font-size: 12px;
-    color: #6e7681;
+    color: var(--text-muted);
     line-height: 1.5;
+    font-weight: 500;
   }
   .badge-soc {
     display: inline-block;
@@ -118,16 +133,18 @@
     padding: 4px 10px;
     border-radius: 999px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: 0.04em;
-    background: rgba(248, 81, 73, 0.12);
-    color: #ff7b72;
-    border: 1px solid rgba(248, 81, 73, 0.35);
+    background: var(--alert-error-bg);
+    color: var(--alert-error-fg);
+    border: 1px solid var(--alert-error-border);
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
-  <div class="card">
+<body class="theme-aware">
+  <div class="theme-switcher-float">{% include 'partials/theme_switcher.html' %}</div>
+  <div class="card glass-card">
     <div class="badge-soc">PERÍMETRO SOC · REPUTACIÓN IP</div>
     <div class="icono">🛡️</div>
     <h1>Tráfico clasificado como sospechoso</h1>

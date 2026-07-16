@@ -411,15 +411,20 @@ def normalizar_input_evasion(
     Pre-procesamiento anti-evasión antes de aplicar firmas WAF.
 
     1. Decodificación URL recursiva (≥2 pasadas).
-    2. Sustitución de comentarios SQL (``/**/``, ``--``, ``#``) por espacios.
-    3. Colapso de espacios en blanco.
-    4. Conversión a minúsculas.
+    2. Eliminación de comentarios SQL de bloque (``/**/``) — se borran del
+       texto (no se sustituyen por espacio). Esto es un fallo pedagógico /
+       realista: ``UNION/**/SELECT`` queda como ``unionselect`` y no dispara
+       la firma ``\\bunion\\b...\\bselect\\b``.
+    3. Comentarios de línea ``--`` / ``#`` → espacio.
+    4. Colapso de espacios en blanco.
+    5. Conversión a minúsculas.
     """
     cadena = _decodificar_url_recursivo(_a_texto(texto), max_decodificaciones)
     resultado = cadena.lower()
-    resultado = _PATRON_COMENTARIO_SQL_BLOCK.sub(" ", resultado)
+    # Fallo deliberado (CTF + realismo): strip de bloque sin insertar espacio.
+    resultado = _PATRON_COMENTARIO_SQL_BLOCK.sub("", resultado)
     resultado = _PATRON_COMENTARIO_SQL_LINEA.sub(" ", resultado)
-    resultado = _PATRON_COMENTARIO_SQL_VACIO.sub(" ", resultado)
+    resultado = _PATRON_COMENTARIO_SQL_VACIO.sub("", resultado)
     resultado = re.sub(r"\s+", " ", resultado).strip()
     return _truncar_texto(resultado)
 
@@ -429,11 +434,11 @@ def _normalizar_sin_strip_comentarios_linea(texto: Any) -> str:
     Variante para firmas de corte ``--`` / ``#``.
 
     Solo decodifica, lower y colapsa espacios; conserva ``--`` y ``#``.
-    Sí neutraliza ``/**/`` para unir keywords (UNION/**/SELECT).
+    Los comentarios de bloque se eliminan (misma política que normalizar_input_evasion).
     """
     cadena = _decodificar_url_recursivo(_a_texto(texto)).lower()
-    cadena = _PATRON_COMENTARIO_SQL_BLOCK.sub(" ", cadena)
-    cadena = _PATRON_COMENTARIO_SQL_VACIO.sub(" ", cadena)
+    cadena = _PATRON_COMENTARIO_SQL_BLOCK.sub("", cadena)
+    cadena = _PATRON_COMENTARIO_SQL_VACIO.sub("", cadena)
     cadena = re.sub(r"\s+", " ", cadena).strip()
     return _truncar_texto(cadena)
 
@@ -605,6 +610,26 @@ def _search_get_query_es_limpia(ruta: Optional[str], payload_norm: str) -> bool:
     return bool(_PATRON_QUERY_SEARCH_LIMPIA.match(query))
 
 
+def _ruta_academia_sqli_exenta_waf(ruta_norm: str) -> bool:
+    """
+    Labs SQLi 01–03: WAF perimetral no interfiere (telemetría educativa sí).
+
+    Lab 04 (WAF Evasion): NUNCA exento — firmas y riesgo Redis aplican al 100%.
+    """
+    if not ruta_norm.startswith("/objetivos/sqli"):
+        return False
+    partes = [p for p in ruta_norm.split("/") if p]
+    # ['objetivos', 'sqli', '<id|lab|verify>', ...]
+    if len(partes) < 3:
+        return True
+    segmento = partes[2]
+    # /objetivos/sqli/4/...  ó  /objetivos/sqli/04/...
+    if segmento in ("4", "04"):
+        return False
+    # /objetivos/sqli/verify/4 — el verify no es el lab ofensivo; queda exento.
+    return True
+
+
 def _es_trafico_legitimo_prioritario(
     ruta: Optional[str], payload: Any, metodo: Optional[str]
 ) -> bool:
@@ -617,8 +642,9 @@ def _es_trafico_legitimo_prioritario(
     ruta_norm = _normalizar_ruta_clasificacion(ruta)
     texto_completo = normalizar_input_evasion(f"{ruta or ''} {_a_texto(payload)}")
 
-    # Academia CTF SQLi: labs deliberadamente vulnerables — WAF no interfiere.
-    if ruta_norm.startswith("/objetivos/sqli"):
+    # Academia CTF SQLi 01–03: labs deliberadamente vulnerables — WAF no interfiere.
+    # Reto 04 queda fuera a propósito (entrenamiento anti-WAF + riesgo Redis).
+    if _ruta_academia_sqli_exenta_waf(ruta_norm):
         return True
 
     if _contiene_patrones_ataque(texto_completo, ruta):
@@ -771,12 +797,16 @@ def _analizar_campos_core(
 
     # En modo educativo no clasificamos CSRF ni rutas prohibidas del lab:
     # el alumno prueba payloads, no sondeo de recon.
+    # Lab 04: tampoco CSRF (el foco es evasión SQLi; AJAX sin Referer no debe ensuciar).
     if not modo_educativo:
         firma = _detectar_ruta_prohibida(ruta)
         if firma:
             return _con_norm(_resultado_con_ataque(TIPO_RUTA_PROHIBIDA, firma))
 
-        if _detectar_csrf(headers, metodo):
+        ruta_cls = _normalizar_ruta_clasificacion(ruta)
+        if not ruta_cls.startswith("/objetivos/sqli/4") and _detectar_csrf(
+            headers, metodo
+        ):
             return _con_norm(
                 _resultado_con_ataque(
                     TIPO_CSRF, "Detectado POST sin Referer coherente (CSRF)"

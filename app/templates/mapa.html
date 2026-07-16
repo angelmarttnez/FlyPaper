@@ -4,6 +4,7 @@
 <!-- Flask: implement GET /admin/api/mapa-ips returning JSON described in spec -->
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Mapa de Ataques — FlyPaper</title>
@@ -124,8 +125,9 @@
   .kv span:first-child{color:var(--muted)}
   .kv span:last-child{color:var(--text-strong);font-weight:500}
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
 <div class="app">
 
   <aside class="sidebar">

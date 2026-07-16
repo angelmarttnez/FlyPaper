@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FlyPaper · Portal de Administración</title>
@@ -154,8 +155,10 @@
     line-height: 1.4;
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
+  <div class="theme-switcher-float">{% include 'partials/theme_switcher.html' %}</div>
   <div class="card">
     <div class="logo">ADM</div>
     <h1>Portal de Administración</h1>

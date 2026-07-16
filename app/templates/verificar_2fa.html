@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FlyPaper · Verificación 2FA</title>
@@ -129,8 +130,10 @@
     background: rgba(79, 124, 255, 0.08);
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
+  <div class="theme-switcher-float">{% include 'partials/theme_switcher.html' %}</div>
   <div class="card">
     <div class="icono">🔐</div>
     <h1>Verificación en dos pasos</h1>

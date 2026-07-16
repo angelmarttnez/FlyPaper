@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FlyPaper · Admin Panel</title>
@@ -177,8 +178,9 @@
     main { padding: 20px; }
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
   <aside>
     <div class="brand">
       <div class="logo">FP</div>
@@ -197,7 +199,8 @@
   <main>
     <header class="top">
       <h1>Dashboard</h1>
-      <div class="user">
+      <div class="user" style="display:flex;align-items:center;gap:12px">
+        {% include 'partials/theme_switcher.html' %}
         <span>admin@flypaper.io</span>
         <div class="avatar">AD</div>
       </div>

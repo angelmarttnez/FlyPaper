@@ -4,17 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FlyPaper - Blog</title>
+{% include 'partials/theme_head.html' %}
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0a0e1a;
-    color: #e4e6eb;
+    font-family: var(--font-ui);
+    background: var(--bg-base);
+    color: var(--text-main);
     min-height: 100vh;
+    text-shadow: var(--text-glow);
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
   .navbar {
-    background: linear-gradient(180deg, #11162a 0%, #0d1220 100%);
-    border-bottom: 1px solid #1f2742;
+    background: var(--bg-card-soft);
+    border-bottom: 1px solid var(--border-color);
     padding: 16px 40px;
     display: flex;
     align-items: center;
@@ -22,15 +25,13 @@
     position: sticky;
     top: 0;
     z-index: 100;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
   }
   .logo {
     font-size: 24px;
     font-weight: 800;
-    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-accent);
     letter-spacing: -0.5px;
   }
   .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
@@ -149,8 +150,9 @@
     border-radius: 14px;
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
   {% include 'partials/navbar_publico.html' %}
 
   <main class="container">

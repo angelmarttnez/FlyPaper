@@ -82,9 +82,13 @@ def registrar_intento_waf_lab(
     payload: Any,
     ruta: Optional[str] = None,
     metodo: Optional[str] = None,
+    modo_educativo: Optional[bool] = None,
 ) -> Optional[dict[str, Any]]:
     """
-    Analiza el payload en modo educativo y lo empuja a Redis (LPUSH + LTRIM + EXPIRE).
+    Analiza el payload y lo empuja a Redis (LPUSH + LTRIM + EXPIRE).
+
+    ``modo_educativo``: por defecto True en labs 01–03 (fuerza firmas pese a
+    whitelist). En el reto 04 se fuerza False para reflejar el WAF real.
 
     Returns:
         dict del log insertado, o None si no hay sesión / Redis caído.
@@ -98,6 +102,10 @@ def registrar_intento_waf_lab(
         logger.warning("Telemetría CTF: categoría inválida %r", categoria)
         return None
 
+    # Reto 04: consola = veredicto real del perímetro (sin modo educativo).
+    if modo_educativo is None:
+        modo_educativo = int(reto_id) != 4
+
     ruta_analisis = ruta or request.path or f"/objetivos/{cat}/{reto_id}"
     metodo_analisis = (metodo or request.method or "POST").upper()
     ua = request.headers.get("User-Agent", "")
@@ -110,7 +118,7 @@ def registrar_intento_waf_lab(
             user_agent=ua,
             headers=headers,
             metodo=metodo_analisis,
-            modo_educativo=True,
+            modo_educativo=bool(modo_educativo),
         )
     except Exception as exc:
         logger.error("Telemetría CTF: fallo analizar_peticion — %s", exc)

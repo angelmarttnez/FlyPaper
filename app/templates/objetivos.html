@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="es" class="dark">
+<html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Academia de Ciberseguridad · FlyPaper CTF</title>
+{% include 'partials/theme_head.html' %}
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
@@ -21,119 +22,198 @@
   }
 </script>
 <style>
-  body {
-    background:
-      radial-gradient(900px 420px at 0% 0%, rgba(0,255,140,0.08), transparent 55%),
-      radial-gradient(800px 400px at 100% 10%, rgba(56,189,248,0.07), transparent 50%),
-      #05080f;
-    min-height: 100vh;
+  .navbar {
+    background: var(--bg-card-soft);
+    border-bottom: 1px solid var(--border-color);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 9990;
+    backdrop-filter: blur(var(--glass-blur));
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+    isolation: isolate;
+  }
+  .navbar .logo {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--color-accent);
+    letter-spacing: -0.5px;
+  }
+  .nav-links { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+  .nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .nav-links a:hover,
+  .nav-links a.active {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
   }
   .progress-fill {
     height: 100%;
     border-radius: 999px;
-    background: linear-gradient(90deg, #00ff8c, #22d3ee);
+    background: linear-gradient(90deg, var(--color-accent), var(--color-accent-2));
     transition: width 0.45s ease;
   }
   .card-challenge {
-    background: rgba(10, 16, 32, 0.92);
-    border: 1px solid rgba(0, 255, 140, 0.12);
     border-radius: 1rem;
-    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    border-width: 1px;
+    border-style: solid;
   }
   .card-challenge:hover {
-    border-color: rgba(0, 255, 140, 0.35);
+    border-color: var(--border-accent);
     transform: translateY(-2px);
-    box-shadow: 0 16px 40px rgba(0,0,0,0.35);
   }
-  .badge-estado-pendiente { background: #1e293b; color: #94a3b8; }
+  .badge-estado-pendiente {
+    background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+    color: var(--text-muted);
+  }
   .badge-estado-resuelto {
-    background: rgba(0, 255, 140, 0.15);
-    color: #00ff8c;
-    box-shadow: 0 0 18px rgba(0, 255, 140, 0.25);
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--color-accent) 25%, transparent);
   }
-  .badge-dif-facil { background: rgba(34,197,94,0.18); color: #4ade80; }
-  .badge-dif-media { background: rgba(234,179,8,0.18); color: #facc15; }
-  .badge-dif-dificil { background: rgba(239,68,68,0.18); color: #f87171; }
+  .badge-dif-facil { background: var(--alert-ok-bg); color: var(--alert-ok-fg); border: 1px solid var(--alert-ok-border); }
+  .badge-dif-media { background: var(--alert-warn-bg); color: var(--alert-warn-fg); border: 1px solid var(--alert-warn-border); }
+  .badge-dif-dificil { background: var(--alert-error-bg); color: var(--alert-error-fg); border: 1px solid var(--alert-error-border); }
   .cat-locked { opacity: 0.45; pointer-events: none; }
   .nav-cat-active {
-    background: rgba(0, 255, 140, 0.1);
-    border-color: rgba(0, 255, 140, 0.4);
-    color: #00ff8c;
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border: 1px solid var(--border-accent);
+    color: var(--color-accent);
+  }
+  .academia-cta {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+    transition: filter 0.2s ease, background-color 0.3s ease, color 0.3s ease;
+  }
+  .academia-cta:hover { filter: brightness(1.08); }
+  .pts-chip {
+    background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+    color: var(--text-soft);
+  }
+  .progress-track {
+    background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+  }
+  /* Navbar en página de academia: alinear con tema */
+  body.academia-theme .navbar {
+    background: var(--bg-card-soft);
+    border-bottom: 1px solid var(--border-color);
+    backdrop-filter: blur(var(--glass-blur));
+    color: var(--text-main);
+  }
+  body.academia-theme .navbar .logo,
+  body.academia-theme .navbar .nav-links a {
+    color: var(--text-main);
+  }
+  body.academia-theme .navbar .nav-links a.active,
+  body.academia-theme .navbar .nav-links a:hover {
+    color: var(--color-accent);
+  }
+  body.academia-theme .nav-sesion {
+    border-left-color: var(--border-color);
+  }
+  body.academia-theme .nav-sesion-label { color: var(--text-muted); }
+  body.academia-theme .nav-sesion-label strong { color: var(--text-main); }
+  body.academia-theme .nav-sesion-login {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+    border: 1px solid var(--color-accent);
+  }
+  body.academia-theme .nav-sesion-login:hover {
+    filter: brightness(1.08);
+    background: var(--color-accent);
+  }
+  body.academia-theme .nav-sesion-logout {
+    color: var(--text-muted);
+    border-color: var(--border-color);
+  }
+  body.academia-theme .nav-sesion-logout:hover {
+    color: var(--color-accent);
+    border-color: var(--border-accent);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body class="text-slate-100 font-sans antialiased">
+<body class="theme-aware academia-theme font-sans antialiased transition-theme" data-theme="dark">
 {% include 'partials/navbar_publico.html' %}
 
-<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-  {# Header + progreso #}
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10 transition-all duration-300">
   <header class="mb-8 sm:mb-10">
-    <p class="text-neon text-xs tracking-[0.2em] uppercase font-semibold mb-2">Cyber Range · Academia</p>
-    <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-white">Objetivos de formación</h1>
-    <p class="mt-2 text-steel max-w-2xl text-sm sm:text-base">
+    <p class="theme-accent text-xs tracking-[0.2em] uppercase font-semibold mb-2">Cyber Range · Academia</p>
+    <h1 class="text-3xl sm:text-4xl font-bold tracking-tight">Objetivos de formación</h1>
+    <p class="theme-muted mt-2 max-w-2xl text-sm sm:text-base">
       Ruta práctica de SQL Injection. Completa los laboratorios, responde el cuestionario SOC y entrega la flag.
     </p>
 
-    <div class="mt-6 rounded-2xl border border-white/5 bg-panel/80 p-5 sm:p-6">
+    <div class="theme-panel mt-6 rounded-2xl border p-5 sm:p-6 transition-all duration-300">
       <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
         <div>
-          <div class="text-sm text-steel">Progreso en SQLi</div>
-          <div class="text-xl font-semibold text-white">
+          <div class="theme-muted text-sm">Progreso en SQLi</div>
+          <div class="text-xl font-semibold">
             {{ progreso_sqli.completados }} de {{ progreso_sqli.total }} completados
           </div>
         </div>
-        <div class="text-sm text-steel">
+        <div class="theme-muted text-sm">
           Puntos CTF:
-          <span class="text-neon font-semibold">{{ puntos_usuario_actual or 0 }}</span>
+          <span class="theme-accent font-semibold">{{ puntos_usuario_actual or 0 }}</span>
         </div>
       </div>
       {% set pct = (100 * progreso_sqli.completados / progreso_sqli.total) if progreso_sqli.total else 0 %}
-      <div class="h-2.5 w-full rounded-full bg-slate-800 overflow-hidden">
+      <div class="progress-track h-2.5 w-full rounded-full overflow-hidden">
         <div class="progress-fill" style="width: {{ pct }}%"></div>
       </div>
     </div>
   </header>
 
   <div class="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 lg:gap-8">
-    {# Menú categorías #}
     <aside class="space-y-2">
-      <p class="text-xs uppercase tracking-wider text-steel mb-3 px-1">Categorías</p>
+      <p class="theme-muted text-xs uppercase tracking-wider mb-3 px-1">Categorías</p>
 
-      <div class="nav-cat-active flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold">
+      <div class="nav-cat-active flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-300">
         <span class="text-lg">💉</span>
         <span>SQL Injection</span>
       </div>
 
-      <div class="cat-locked flex items-center gap-3 rounded-xl border border-white/5 bg-panel/50 px-4 py-3 text-sm text-steel">
+      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm">
         <span>🔒</span>
         <div>
           <div>XSS</div>
-          <div class="text-[11px]">Próximamente</div>
+          <div class="text-[11px] theme-muted">Próximamente</div>
         </div>
       </div>
-      <div class="cat-locked flex items-center gap-3 rounded-xl border border-white/5 bg-panel/50 px-4 py-3 text-sm text-steel">
+      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm">
         <span>🔒</span>
         <div>
           <div>LFI / Path Traversal</div>
-          <div class="text-[11px]">Próximamente</div>
+          <div class="text-[11px] theme-muted">Próximamente</div>
         </div>
       </div>
-      <div class="cat-locked flex items-center gap-3 rounded-xl border border-white/5 bg-panel/50 px-4 py-3 text-sm text-steel">
+      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm">
         <span>🔒</span>
         <div>
           <div>RCE</div>
-          <div class="text-[11px]">Próximamente</div>
+          <div class="text-[11px] theme-muted">Próximamente</div>
         </div>
       </div>
 
       {% if ranking %}
-      <div class="mt-8 rounded-xl border border-white/5 bg-panel/60 p-4">
-        <div class="text-xs uppercase tracking-wider text-steel mb-3">Top ranking</div>
+      <div class="theme-panel mt-8 rounded-xl border p-4 transition-all duration-300">
+        <div class="theme-muted text-xs uppercase tracking-wider mb-3">Top ranking</div>
         <ol class="space-y-2 text-sm">
           {% for j in ranking[:5] %}
           <li class="flex justify-between gap-2">
-            <span class="truncate"><span class="text-steel">#{{ j.posicion }}</span> {{ j.username }}</span>
-            <span class="text-neon font-mono text-xs">{{ j.puntos }}</span>
+            <span class="truncate"><span class="theme-muted">#{{ j.posicion }}</span> {{ j.username }}</span>
+            <span class="theme-accent font-mono text-xs">{{ j.puntos }}</span>
           </li>
           {% endfor %}
         </ol>
@@ -141,21 +221,20 @@
       {% endif %}
     </aside>
 
-    {# Grid de retos SQLi #}
     <section>
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold">Desafíos SQL Injection</h2>
-        <span class="text-xs text-steel">Labs aislados · data/ctf/sqli_XX.db</span>
+        <span class="theme-muted text-xs">Labs aislados · data/ctf/sqli_XX.db</span>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
         {% for reto in retos_sqli %}
-        <article class="card-challenge p-5 sm:p-6 flex flex-col min-h-[240px]">
+        <article class="card-challenge theme-surface p-5 sm:p-6 flex flex-col min-h-[240px] transition-all duration-300">
           <div class="flex items-start justify-between gap-3 mb-3">
             <div>
-              <div class="text-xs font-mono text-neon mb-1">SQLi-{{ reto.codigo }}</div>
-              <h3 class="text-lg font-bold text-white leading-snug">{{ reto.titulo }}</h3>
-              <p class="text-sm text-steel mt-1">{{ reto.subtitulo }}</p>
+              <div class="theme-accent text-xs font-mono mb-1">SQLi-{{ reto.codigo }}</div>
+              <h3 class="text-lg font-bold leading-snug">{{ reto.titulo }}</h3>
+              <p class="theme-muted text-sm mt-1">{{ reto.subtitulo }}</p>
             </div>
             {% if reto.resuelto %}
             <span class="badge-estado-resuelto inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
@@ -169,22 +248,22 @@
 
           <div class="flex flex-wrap gap-2 mb-4">
             <span class="badge-dif-{{ reto.dificultad_clase }} text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full">{{ reto.dificultad }}</span>
-            <span class="text-[11px] font-mono px-2.5 py-1 rounded-full bg-slate-800 text-slate-200">{{ reto.puntos }} pts</span>
+            <span class="pts-chip text-[11px] font-mono px-2.5 py-1 rounded-full">{{ reto.puntos }} pts</span>
             {% if not reto.activo %}
-            <span class="text-[11px] px-2.5 py-1 rounded-full bg-slate-800 text-steel">🔒 Próximamente</span>
+            <span class="pts-chip text-[11px] px-2.5 py-1 rounded-full">🔒 Próximamente</span>
             {% endif %}
           </div>
 
-          <p class="text-sm text-slate-400 flex-1 mb-5 line-clamp-3">{{ reto.descripcion }}</p>
+          <p class="theme-muted text-sm flex-1 mb-5 line-clamp-3">{{ reto.descripcion }}</p>
 
           {% if reto.activo %}
           <a href="{{ url_for('ctf_sqli.ver_reto', reto_id=reto.id) }}"
-             class="inline-flex items-center justify-center rounded-xl bg-neon text-void font-bold text-sm px-4 py-2.5 hover:brightness-110 transition">
+             class="academia-cta inline-flex items-center justify-center rounded-xl font-bold text-sm px-4 py-2.5">
             Iniciar Laboratorio
           </a>
           {% else %}
           <button type="button" disabled
-                  class="inline-flex items-center justify-center rounded-xl bg-slate-800 text-steel font-semibold text-sm px-4 py-2.5 cursor-not-allowed">
+                  class="pts-chip inline-flex items-center justify-center rounded-xl font-semibold text-sm px-4 py-2.5 cursor-not-allowed">
             Bloqueado
           </button>
           {% endif %}

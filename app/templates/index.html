@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+{% include 'partials/theme_head.html' %}
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Plataforma de Seguridad Interna — FlyPaper Corp</title>
@@ -9,28 +10,31 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0f1419;
-    --card:#161b22;
-    --border:#21262d;
-    --text:#e6edf3;
-    --muted:#8b949e;
-    --blue:#58a6ff;
+    --bg: var(--bg-base);
+    --card: var(--bg-card);
+    --border: var(--border-color);
+    --text: var(--text-main);
+    --muted: var(--text-muted);
+    --blue: var(--color-accent);
     --red:#f85149;
     --amber:#d29922;
     --yellow:#e3b341;
-    --green:#3fb950;
+    --green: var(--color-ok, #3fb950);
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5;overflow-x:hidden}
+  html,body{
+    background:var(--bg);color:var(--text);
+    font-family:var(--font-ui,'Inter',system-ui,sans-serif);
+    -webkit-font-smoothing:antialiased;line-height:1.5;overflow-x:hidden;
+  }
   a{color:inherit;text-decoration:none}
   .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
 
-  /* Animated background grid */
   .bg-grid{
     position:fixed;inset:0;z-index:-2;
     background-image:
-      linear-gradient(rgba(88,166,255,0.06) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(88,166,255,0.06) 1px,transparent 1px);
+      linear-gradient(color-mix(in srgb, var(--color-accent) 8%, transparent) 1px,transparent 1px),
+      linear-gradient(90deg,color-mix(in srgb, var(--color-accent) 8%, transparent) 1px,transparent 1px);
     background-size:48px 48px;
     animation:gridmove 30s linear infinite;
     mask-image:radial-gradient(ellipse at 50% 0%,black 30%,transparent 80%);
@@ -39,10 +43,9 @@
   .bg-glow{
     position:fixed;inset:0;z-index:-1;pointer-events:none;
     background:
-      radial-gradient(600px circle at 15% 20%,rgba(88,166,255,0.10),transparent 60%),
-      radial-gradient(500px circle at 85% 60%,rgba(248,81,73,0.06),transparent 60%);
+      radial-gradient(600px circle at 15% 20%,var(--bg-base-glow-a),transparent 60%),
+      radial-gradient(500px circle at 85% 60%,var(--bg-base-glow-b),transparent 60%);
   }
-  /* Floating particles */
   .particles{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
   .particles span{
     position:absolute;display:block;width:2px;height:2px;border-radius:50%;
@@ -56,128 +59,220 @@
     100%{transform:translateY(-10vh) translateX(40px);opacity:0}
   }
 
+  /* Ocultar grid/partículas en Apple Glass: el canvas Monterey es el fondo */
+  html[data-theme="apple-glass"] .bg-grid,
+  html[data-theme="apple-glass"] .particles,
+  html.theme-apple-glass .bg-grid,
+  html.theme-apple-glass .particles { display: none; }
+  html[data-theme="apple-glass"] .bg-glow,
+  html.theme-apple-glass .bg-glow { opacity: 0.35; }
+
   /* NAV */
   nav.top{
-    position:sticky;top:0;z-index:50;
-    backdrop-filter:blur(10px);
-    background:rgba(15,20,25,0.7);
+    position:sticky;top:0;z-index:9990;
+    backdrop-filter:blur(16px) saturate(180%);
+    -webkit-backdrop-filter:blur(16px) saturate(180%);
+    background:color-mix(in srgb, var(--bg-card-soft) 85%, transparent);
     border-bottom:1px solid var(--border);
   }
+  html[data-theme="apple-glass"] nav.top,
+  html.theme-apple-glass nav.top {
+    background: rgba(255, 255, 255, 0.35);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  }
   nav.top .wrap{max-width:1200px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
-  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:.3px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:.3px;color:var(--text)}
   .logo .shield{
     width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;
     color:var(--blue);
   }
   .logo .blue{color:var(--blue)}
+
   .btn{
     display:inline-flex;align-items:center;gap:8px;
-    padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px;
+    padding:12px 22px;border-radius:12px;font-weight:600;font-size:14px;
     border:1px solid transparent;cursor:pointer;transition:all .2s ease;
   }
-  .btn-primary{background:var(--blue);color:#0a0f14;}
-  .btn-primary:hover{background:#79b8ff;box-shadow:0 0 24px rgba(88,166,255,.4);transform:translateY(-1px)}
-  .btn-outline{background:transparent;color:var(--text);border-color:var(--border)}
-  .btn-outline:hover{border-color:var(--blue);color:var(--blue)}
-  .btn-ghost{background:rgba(88,166,255,.08);color:var(--blue);border:1px solid rgba(88,166,255,.25)}
-  .btn-ghost:hover{background:rgba(88,166,255,.16)}
-  .btn-sm{padding:6px 12px;font-size:13px;border-radius:6px}
+  .btn-primary{
+    background:var(--color-accent);
+    color:var(--color-accent-fg);
+  }
+  .btn-primary:hover{
+    filter:brightness(1.06);
+    box-shadow:0 8px 24px color-mix(in srgb, var(--color-accent) 35%, transparent);
+    transform:translateY(-1px);
+  }
+  .btn-outline{
+    background:transparent;
+    color:var(--text);
+    border:1px solid var(--border);
+  }
+  .btn-outline:hover{
+    border-color:var(--color-accent);
+    color:var(--color-accent);
+    background:color-mix(in srgb, var(--color-accent) 8%, transparent);
+  }
+  .btn-ghost{background:color-mix(in srgb, var(--color-accent) 10%, transparent);color:var(--color-accent);border:1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)}
+  .btn-ghost:hover{background:color-mix(in srgb, var(--color-accent) 16%, transparent)}
+  .btn-sm{padding:6px 12px;font-size:13px;border-radius:8px}
 
-  /* HERO */
+  /* Apple HIG: píldora + azul iOS #0071e3 */
+  html[data-theme="apple-glass"] .btn,
+  html.theme-apple-glass .btn { border-radius: 9999px; padding: 12px 24px; }
+  html[data-theme="apple-glass"] .btn-primary,
+  html.theme-apple-glass .btn-primary {
+    background: #0071E3;
+    color: #FFFFFF;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 113, 227, 0.25);
+  }
+  html[data-theme="apple-glass"] .btn-primary:hover,
+  html.theme-apple-glass .btn-primary:hover {
+    background: #0077ED;
+    box-shadow: 0 6px 20px rgba(0, 113, 227, 0.35);
+  }
+  html[data-theme="apple-glass"] .btn-outline,
+  html.theme-apple-glass .btn-outline {
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    color: #1D1D1F;
+  }
+  html[data-theme="apple-glass"] .btn-outline:hover,
+  html.theme-apple-glass .btn-outline:hover {
+    background: rgba(255, 255, 255, 0.55);
+    border-color: rgba(0, 113, 227, 0.35);
+    color: #0071E3;
+  }
+
+  /* HERO — contraste WCAG AA en todos los temas */
   section.hero{max-width:1200px;margin:0 auto;padding:90px 24px 60px;text-align:center;position:relative}
   .badge{
     display:inline-flex;align-items:center;gap:8px;
-    padding:6px 14px;border-radius:999px;font-size:12px;font-weight:500;
-    background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);color:var(--blue);
+    padding:6px 14px;border-radius:999px;font-size:12px;font-weight:650;
+    background:color-mix(in srgb, var(--color-accent) 12%, var(--bg-card));
+    border:1px solid color-mix(in srgb, var(--color-accent) 35%, var(--border-color));
+    color:var(--color-accent);
     margin-bottom:24px;
   }
-  .badge .dot{width:6px;height:6px;border-radius:50%;background:var(--blue);box-shadow:0 0 8px var(--blue)}
-  h1{font-size:clamp(36px,5vw,60px);font-weight:700;line-height:1.1;letter-spacing:-1px;margin-bottom:20px;
-    background:linear-gradient(180deg,#fff 0%,#9ba9b7 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 8px color-mix(in srgb, var(--color-accent) 50%, transparent)}
+
+  /* Título: degradado solo con extremos de alto contraste (nunca blanco→gris claro sobre fondo claro) */
+  h1.hero-title,
+  section.hero h1{
+    font-size:clamp(36px,5vw,60px);font-weight:700;line-height:1.1;letter-spacing:-1px;margin-bottom:20px;
+    color: var(--text-main);
+    background: linear-gradient(180deg, var(--hero-title-from, var(--text-main)) 0%, var(--hero-title-to, var(--text-soft)) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
-  .sub{font-size:18px;color:var(--muted);max-width:640px;margin:0 auto 36px}
+  /* Fallback si background-clip falla: color sólido */
+  @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+    h1.hero-title, section.hero h1 {
+      color: var(--text-main);
+      background: none;
+      -webkit-text-fill-color: unset;
+    }
+  }
+
+  .sub{
+    font-size:18px;
+    color:var(--text-muted);
+    max-width:640px;margin:0 auto 36px;
+    font-weight:500;
+  }
   .ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:0}
 
   /* SECTIONS */
   section{max-width:1200px;margin:0 auto;padding:60px 24px}
   .section-head{text-align:center;margin-bottom:40px}
-  .section-head h2{font-size:32px;font-weight:700;margin-bottom:10px;letter-spacing:-.5px}
-  .section-head p{color:var(--muted);font-size:15px}
+  .section-head h2{font-size:32px;font-weight:700;margin-bottom:10px;letter-spacing:-.5px;color:var(--text-main)}
+  .section-head p{color:var(--text-muted);font-size:15px;font-weight:500}
 
-  /* FEATURES */
+  /* FEATURES / glass-card */
   .grid-features{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
-  .feature{
-    background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;
+  .feature,
+  .glass-card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius-card, 14px);
+    padding:28px;
     transition:all .25s ease;position:relative;overflow:hidden;
     display:flex;flex-direction:column;
+    box-shadow:var(--shadow-card);
+    backdrop-filter:blur(var(--glass-blur, 0px));
+    -webkit-backdrop-filter:blur(var(--glass-blur, 0px));
+    color:var(--text-main);
   }
-  a.feature-link{
-    text-decoration:none;color:inherit;cursor:pointer;
-  }
+  a.feature-link{text-decoration:none;color:inherit;cursor:pointer}
   .feature::before{
-    content:"";position:absolute;inset:0;border-radius:14px;padding:1px;
-    background:linear-gradient(135deg,rgba(88,166,255,.4),transparent 60%);
+    content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;
+    background:linear-gradient(135deg,color-mix(in srgb, var(--color-accent) 40%, transparent),transparent 60%);
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude;
     opacity:0;transition:opacity .25s;pointer-events:none;
   }
   .feature:hover::before{opacity:1}
-  a.feature-link:hover{transform:translateY(-3px);box-shadow:0 12px 40px -10px rgba(88,166,255,.25);border-color:rgba(88,166,255,.3)}
+  a.feature-link:hover{transform:translateY(-3px);box-shadow:0 12px 40px -10px color-mix(in srgb, var(--color-accent) 25%, transparent);border-color:color-mix(in srgb, var(--color-accent) 35%, transparent)}
+  /* Apple/Anime: micro-interacciones definidas en theme_head (mayor especificidad) */
   .feature .icon{
     width:46px;height:46px;border-radius:10px;display:flex;align-items:center;justify-content:center;
-    background:rgba(88,166,255,.1);color:var(--blue);margin-bottom:18px;
+    background:color-mix(in srgb, var(--color-accent) 12%, transparent);color:var(--color-accent);margin-bottom:18px;
   }
-  .feature h3{font-size:18px;font-weight:600;margin-bottom:8px}
-  .feature p{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:18px;flex:1}
+  .feature h3{font-size:18px;font-weight:600;margin-bottom:8px;color:var(--text-main)}
+  .feature p{color:var(--text-muted);font-size:14px;line-height:1.6;margin-bottom:18px;flex:1;font-weight:500}
   .feature .feat-link{
-    margin-top:auto;font-size:13px;font-weight:600;color:var(--blue);display:inline-flex;align-items:center;gap:6px;
+    margin-top:auto;font-size:13px;font-weight:600;color:var(--color-accent);display:inline-flex;align-items:center;gap:6px;
   }
   .feature .feat-link:hover{text-decoration:underline}
   .feature .feat-link svg{width:14px;height:14px}
 
-  /* FOOTER */
   footer{
     border-top:1px solid var(--border);margin-top:60px;padding:30px 24px;
-    text-align:center;color:var(--muted);font-size:13px;
+    text-align:center;color:var(--text-muted);font-size:13px;
   }
   footer .links{margin-top:10px;display:flex;gap:18px;justify-content:center;flex-wrap:wrap}
-  footer .links a{color:var(--blue);font-family:'JetBrains Mono',monospace;font-size:12px}
+  footer .links a{color:var(--color-accent);font-family:'JetBrains Mono',monospace;font-size:12px}
   footer .links a:hover{text-decoration:underline}
 
   .ranking-preview { max-width: 400px; margin: 0 auto; text-align: center; }
   .ranking-item {
     display: flex; justify-content: space-between;
     padding: 8px 12px; border-bottom: 1px solid var(--border);
-    font-size: 14px;
+    font-size: 14px; color: var(--text-main);
   }
 
   @media(max-width:768px){
     .grid-features{grid-template-columns:1fr}
-    h1{font-size:36px}
+    h1.hero-title, section.hero h1{font-size:36px}
     .sub{font-size:16px}
   }
 </style>
+{% include 'partials/theme_bridge.html' %}
 </head>
-<body>
+<body class="theme-aware">
 
 <div class="bg-grid"></div>
 <div class="bg-glow"></div>
 <div class="particles" id="particles"></div>
 
 <nav class="top">
-  <div class="wrap">
+  <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;width:100%">
     <a href="/" class="logo">
       <span class="shield">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       </span>
       <span><span class="blue">Fly</span>Paper</span>
     </a>
+    {% include 'partials/theme_switcher.html' %}
   </div>
 </nav>
 
 <section class="hero">
   <div class="badge"><span class="dot"></span> INTRANET SEGURO · v4.2.1</div>
-  <h1>Plataforma de Seguridad Interna</h1>
+  <h1 class="hero-title">Plataforma de Seguridad Interna</h1>
   <p class="sub">Monitorea, detecta y responde a amenazas en la red de FlyPaper Corp. Solo para personal autorizado.</p>
   <div class="ctas">
     <a href="/login" class="btn btn-primary">Acceder al Portal →</a>
@@ -191,7 +286,7 @@
     <p>Visibilidad integral del perímetro corporativo.</p>
   </div>
   <div class="grid-features">
-    <a href="/admin" class="feature feature-link">
+    <a href="/admin" class="feature feature-link glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       </div>
@@ -199,7 +294,7 @@
       <p>Consola centralizada para gestionar usuarios, revisar reportes de seguridad, supervisar el mapa de ataques y configurar alertas.</p>
       <span class="feat-link">Ir al Panel <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
     </a>
-    <a href="/objetivos" class="feature feature-link">
+    <a href="/objetivos" class="feature feature-link glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
       </div>
@@ -207,7 +302,7 @@
       <p>Retos de captura de bandera (CTF) para investigadores autorizados. Pon a prueba tus habilidades ofensivas y defensivas en un entorno controlado.</p>
       <span class="feat-link">Ir al Lab <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
     </a>
-    <a href="/search" class="feature feature-link">
+    <a href="/search" class="feature feature-link glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </div>
@@ -215,7 +310,7 @@
       <p>Búsqueda corporativa rápida para localizar documentos, artículos del blog, registros de incidentes y recursos internos.</p>
       <span class="feat-link">Buscar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
     </a>
-    <a href="/blog" class="feature feature-link">
+    <a href="/blog" class="feature feature-link glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       </div>
@@ -223,7 +318,7 @@
       <p>Noticias internas, análisis de vulnerabilidades, write-ups de retos y comunicados del equipo de seguridad de FlyPaper Corp.</p>
       <span class="feat-link">Leer Blog <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
     </a>
-    <a href="/documentacion" class="feature feature-link">
+    <a href="/documentacion" class="feature feature-link glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       </div>
@@ -231,7 +326,7 @@
       <p>Informes de seguridad, análisis de vulnerabilidades, writeups y teoría técnica del laboratorio FlyPaper Research.</p>
       <span class="feat-link">Ver documentación <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
     </a>
-    <a href="/secure/search" class="feature feature-link">
+    <a href="/secure/search" class="feature feature-link glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><rect x="9" y="10" width="6" height="5" rx="1"/></svg>
       </div>
@@ -239,7 +334,7 @@
       <p>Zona segura. El sistema aplicará una expulsión inmediata si se detecta cualquier vector de ataque o comportamiento anómalo.</p>
       <span class="feat-link">Acceder <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
     </a>
-    <div class="feature">
+    <div class="feature glass-card fade-in-blur">
       <div class="icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
       </div>
@@ -254,7 +349,7 @@
     <h2>🏆 CTF — Tabla de Clasificación</h2>
     <p>Los mejores jugadores del laboratorio FlyPaper.</p>
   </div>
-  <div class="ranking-preview">
+  <div class="ranking-preview fade-in-blur">
     <div id="ranking-container">Cargando...</div>
   </div>
 </section>
