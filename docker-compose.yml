@@ -58,6 +58,7 @@ services:
       RATE_LIMIT_WINDOW_SEC: ${RATE_LIMIT_WINDOW_SEC:-60}
       RISK_SCORE_AUTOBAN: ${RISK_SCORE_AUTOBAN:-5}
       REDIS_BLOCK_TTL: ${REDIS_BLOCK_TTL:-86400}
+      # SECRET_KEY / INITIAL_SOC_* / FLYPAPER_STRICT_DEPLOY llegan vía env_file (.env)
     volumes:
       # Persistencia unificada de todas las SQLite (honeypot + CTF)
       - ./data:/app/data

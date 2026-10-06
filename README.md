@@ -1,216 +1,194 @@
-# FlyPaper — Honeypot Web con CTF y Monitor de Seguridad
+# FlyPaper — Honeypot Web, Academia CTF y Panel SOC
 
-FlyPaper es un honeypot web diseñado para atraer, registrar y analizar ataques en tiempo real. Simula un entorno corporativo vulnerable con panel de administración, blog, buscador interno y un sistema CTF con flags capturables. Incluye un dashboard privado para el analista de seguridad con análisis de payloads mediante inteligencia artificial.
+**Versión de entrega práctica:** marcar el commit evaluable con la etiqueta Git `v1.0-practica3`.
 
-Desarrollado como proyecto del Master en Ciberseguridad Avanzada EVOLVE 2026.
+FlyPaper es un honeypot web que atrae, registra y analiza ataques en tiempo real. Simula un portal corporativo vulnerable (login, blog, buscador, rutas señuelo) con **Academia CTF** (SQLi, XSS, IDOR, Path Traversal, SuperLab) y un **panel SOC** (`/admin`) con monitor, perímetro NGWAF (Redis), mapa, reportes y análisis IA (Groq).
 
-URL del proyecto: http://91.99.214.254:5000
-
----
-
-## Stack Tecnologico
-
-| Componente       | Tecnologia          | Version |
-|------------------|---------------------|---------|
-| Backend          | Python + Flask      | 3.11    |
-| Base de datos    | SQLite              | 3.x     |
-| Servidor WSGI    | Gunicorn            | 21.x    |
-| Contenedor       | Docker + Compose    | 29.x    |
-| IA / Analisis    | Claude (Anthropic)  | Sonnet 4|
-| Frontend         | HTML + CSS + JS     | --      |
-| Graficas         | Chart.js            | 4.x     |
-| Infraestructura  | Hetzner Cloud CX22  | --      |
+Proyecto académico — Máster en Ciberseguridad Avanzada EVOLVE 2026.  
+**Licencia:** MIT (ver archivo [`LICENSE`](LICENSE)).
 
 ---
 
-## Caracteristicas
+## 1. Requisitos previos
 
-- Superficie de ataque falsa: login corporativo, panel admin, buscador, blog, rutas seneuelo
-- Vulnerabilidad SQLi intencionada en /search para el sistema CTF
-- XSS almacenado en comentarios del blog
-- Deteccion automatica de ataques: SQLi, XSS, Path Traversal, Fuerza Bruta, CSRF, Scanner
-- Niveles de gravedad: CRITICO, ALTO, MEDIO, BAJO
-- Dashboard privado con graficas, filtros y agrupacion por IP atacante
-- Analisis de payloads con IA en lenguaje natural
-- Resumen diario automatico generado por Claude
-- Deteccion de anomalias en tiempo real
-- Sistema CTF con flags capturables y ranking de participantes
-- Exportacion forense en CSV y cabeceras HTTP estilo Wireshark
-- Sistema de expulsion activa: bloqueo de IPs desde el monitor
-- Despliegue con Docker en Hetzner Cloud
+| Requisito | Notas |
+|-----------|--------|
+| Python 3.11+ | Desarrollo local |
+| Git | Clonado del repositorio |
+| Redis 7 | NGWAF (rate-limit, bloqueos). En local: contenedor en `6379` |
+| Docker + Compose v2 | Despliegue en VM / producción ligera |
+| (Opcional) Claves API | Groq, Telegram, AbuseIPDB, VirusTotal, CARTO |
 
 ---
 
-## Arquitectura
-
-```
-flypaper/
-├── app.py               # Nucleo de la aplicacion, rutas y logica principal
-├── detector.py          # Motor de clasificacion y deteccion de ataques
-├── database.py          # Capa de acceso a datos y esquema relacional
-├── ai_analyzer.py       # Modulo de inteligencia artificial con Claude
-├── telegram_notifier.py # Notificaciones de alertas via Telegram Bot API
-├── timezone_fp.py       # Gestion centralizada de zona horaria (Europe/Madrid)
-├── Dockerfile           # Imagen Docker de produccion
-├── docker-compose.yml   # Orquestacion de contenedores
-├── requirements.txt     # Dependencias del proyecto
-├── templates/           # Plantillas HTML
-│   ├── login.html       # Portal de acceso corporativo falso
-│   ├── admin.html       # Panel de administracion falso
-│   ├── search.html      # Buscador vulnerable a SQLi
-│   ├── blog.html        # Blog corporativo con XSS en comentarios
-│   ├── post.html        # Vista de post individual con comentarios
-│   ├── objetivos.html   # Sistema CTF con flags
-│   ├── dashboard.html   # Dashboard del analista de seguridad
-│   ├── monitor_login.html # Acceso al monitor
-│   ├── usuarios.html    # Panel de usuarios
-│   ├── configuracion.html # Configuracion falsa del sistema
-│   ├── reportes.html    # Reportes de incidentes
-│   └── expulsado.html   # Pagina de expulsion de IPs bloqueadas
-└── assets/
-    └── Cat.gif          # GIF de expulsion activa
-```
-
----
-
-## Instalacion en Local
-
-### Requisitos previos
-- Python 3.11 o superior
-- Git
-- Docker Desktop (para despliegue con contenedor)
-
-### Pasos
+## 2. Instalación y ejecución paso a paso (local)
 
 ```bash
-# Clonar el repositorio
+# 1) Clonar
 git clone https://github.com/angelmarttnez/FlyPaper.git
 cd FlyPaper
 
-# Instalar dependencias
+# 2) Entorno virtual
+python -m venv .venv
+# Windows:  .venv\Scripts\activate
+source .venv/bin/activate
+
+# 3) Dependencias
 pip install -r requirements.txt
 
-# Crear el archivo de variables de entorno
-# Crear un archivo .env en la raiz con:
-# ANTHROPIC_API_KEY=sk-ant-tu-api-key
+# 4) Configuración (valores ficticios en la plantilla; sustituye por los tuyos)
+cp .env.example .env
+# Editar al menos: SECRET_KEY, y si usas IA/Telegram: GROQ_API_KEY, TELEGRAM_*
 
-# Arrancar la aplicacion
+# 5) Redis (ejemplo con Docker Desktop)
+docker run -d --name flypaper-redis-dev -p 6379:6379 redis:7-alpine
+
+# 6) Arrancar
 python app.py
 ```
 
-Verificar en el navegador:
-- http://localhost:5000 — Login de FlyPaper
-- http://localhost:5000/blog — Blog corporativo
-- http://localhost:5000/monitor/login — Dashboard del analista
+Abre http://127.0.0.1:5000
 
 ---
 
-## Despliegue con Docker
+## 3. Despliegue con contenedores (VM)
+
+Ficheros: `Dockerfile`, `docker-compose.yml` (servicios `flypaper` + `redis`).
 
 ```bash
-# Construir la imagen
-docker-compose build
+cd FlyPaper
+cp .env.example .env
+# En VM pública: SECRET_KEY aleatorio, INITIAL_SOC_PASSWORD fuerte,
+# FLYPAPER_STRICT_DEPLOY=1, TELEGRAM_*, GROQ_API_KEY
 
-# Arrancar en segundo plano
-docker-compose up -d
-
-# Verificar estado
-docker-compose ps
-
-# Ver logs en tiempo real
-docker-compose logs -f
+docker compose up --build -d
+docker compose ps
+docker compose logs -f flypaper
 ```
 
----
-
-## Credenciales de Acceso
-
-Las credenciales de acceso se proporcionan por canal privado al evaluador.
-
-Aún así existe la posibilidad de acceder como invitado.
+- App: http://SERVIDOR:5000  
+- Datos: volumen `./data` → `/app/data`  
+- Redis: red interna Compose (no publicado al exterior)
 
 ---
 
-## Uso
+## 4. Uso básico
 
-### Cara publica (el atacante)
+| URL | Qué hace |
+|-----|----------|
+| `/` · `/login` | Portal honeypot |
+| `/blog` · `/search` | Blog (XSS) y buscador real |
+| `/objetivos` | Academia CTF |
+| `/documentacion` | Docs y writeups |
+| `/admin/login` | Panel SOC (2FA Telegram) |
+| `/diversion/carta` | Minijuego Rosco |
 
-1. Acceder a la URL del proyecto
-2. Explorar las rutas seneuelo: /.env, /backup, /config, /phpinfo, /wp-admin
-3. Intentar SQL Injection en /search
-4. Probar XSS en los comentarios del blog
-5. Capturar flags en /objetivos
-
-### Dashboard del analista
-
-1. Acceder a /monitor/login con usuario analyst
-2. Seleccionar el periodo de tiempo (Hoy, 7 dias, 30 dias...)
-3. Revisar la tabla de IPs agrupadas y expandir para ver eventos
-4. Usar el boton Analizar para obtener analisis IA de cada payload
-5. Exportar evidencias en CSV o cabeceras HTTP
-6. Bloquear IPs atacantes desde el panel
+**Cara pública (atacante / alumno):** explorar señuelos (`/.env`, `/backup`, …), labs en `/objetivos`, capturar flags.  
+**SOC:** login → 2FA → monitor, perímetro, reportes (resúmenes IA), mapa.
 
 ---
 
-## Notificaciones Telegram
+## 5. Datos de acceso de prueba (laboratorio)
 
-FlyPaper envía alertas a un **grupo de Telegram con Topics** (hilos separados por tipo
-de evento): logins, ataques críticos, auto-ban y resumen diario IA.
+> Solo para entorno local / primera BD vacía. **Cámbialos** en cualquier VM expuesta.
 
-### Configurar el bot y los topics
+| Ámbito | Usuario | Contraseña | Notas |
+|--------|---------|------------|--------|
+| Panel SOC (bootstrap) | `Flypaper` | `Flypaper_123` | Solo si no defines `INITIAL_SOC_*` y `flypaper_priv.db` está vacía. Exige 2FA Telegram y cambio obligatorio de credenciales. |
+| Portal demo (tests) | `demo_flypaper` | `DemoFlyPaper2026!` | Crear con `python scripts/preparar_cuenta_demo.py` |
+| Variables tests | `FLYPAPER_TEST_USER` / `FLYPAPER_TEST_PASSWORD` | Ver `.env.example` | Evitan 429 en `/register` |
 
-1. Crea el bot con **@BotFather** (`/newbot`) y copia el token.
-2. Crea un grupo, activa **Topics** en ajustes del grupo y añade el bot como administrador.
-3. Crea un topic por categoría (Logins, Ataques, Auto-Ban, Resumen).
-4. Obtén el **chat_id** del grupo y el **message_thread_id** de cada topic
-   (consulta `getUpdates` tras enviar un mensaje en cada topic).
-5. Añade al `.env`:
+Sin Telegram configurado, el 2FA SOC no se puede completar: define `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` y `TELEGRAM_TOPIC_LOGINS`.
 
-```env
-TELEGRAM_BOT_TOKEN=tu_token_aqui
-TELEGRAM_CHAT_ID=id_del_grupo
-TELEGRAM_TOPIC_LOGINS=id_del_topic_logins
-TELEGRAM_TOPIC_ATAQUES=id_del_topic_ataques_criticos
-TELEGRAM_TOPIC_RESUMEN=id_del_topic_resumen_diario
+---
+
+## 6. Estructura del proyecto
+
+```
+FlyPaper/
+├── app.py / wsgi.py          # Aplicación Flask y entrypoint Gunicorn
+├── ai_analyzer.py            # Análisis IA (Groq)
+├── Dockerfile / docker-compose.yml
+├── requirements.txt
+├── .env.example              # Variables (valores ficticios)
+├── LICENSE                   # MIT
+├── README.md
+├── assets/                   # JS panel SOC, estáticos
+├── docs/writeups/            # Writeups Academia
+├── scripts/                  # Demo, reinicio lab, forzar resumen IA
+├── tests/                    # Pruebas automatizadas + tests/README.md
+└── app/
+    ├── database.py           # SQLite multi-BD
+    ├── core/                 # WAF, Redis NGWAF, Telegram, timezone
+    ├── ctf_*/ superlab/      # Laboratorios CTF
+    ├── admin_gestion/        # Cuentas SOC y participantes
+    └── templates/            # Jinja2
 ```
 
-6. Prueba la configuración:
+Persistencia local (no va a Git): directorio `data/*.db`.
+
+---
+
+## 7. Configuración (`.env.example`)
+
+Todas las variables necesarias están documentadas en [`.env.example`](.env.example) con **valores ficticios**. Copia a `.env` y sustituye por secretos reales **solo en tu máquina/servidor** (el fichero `.env` está en `.gitignore`).
+
+Variables clave: `SECRET_KEY`, `GROQ_API_KEY`, `TELEGRAM_*`, `REDIS_URL`, `CARTO_API_KEY`, `INITIAL_SOC_PASSWORD`, `FLYPAPER_STRICT_DEPLOY`.
+
+---
+
+## 8. Pruebas automatizadas
+
+Ver detalle en [`tests/README.md`](tests/README.md).
 
 ```bash
-python -c "from telegram_notifier import test_telegram; test_telegram()"
+export PYTHONPATH=.          # Windows: $env:PYTHONPATH="."
+python scripts/ejecutar_pruebas_lab.py
+python tests/solve_xss_01.py
+python tests/test_soc_stres.py --all
 ```
 
-7. Reinicia la aplicación.
+---
 
-Si `TELEGRAM_BOT_TOKEN` no está definido, las notificaciones quedan desactivadas.
+## 9. Software de terceros (origen y licencia)
 
-### Eventos notificados
+| Componente | Uso | Licencia / origen |
+|------------|-----|-------------------|
+| Flask, Werkzeug | Framework web | BSD-3 — https://flask.palletsprojects.com |
+| Gunicorn | WSGI | MIT |
+| Redis / redis-py | Perímetro NGWAF | BSD / MIT |
+| bcrypt | Hash de contraseñas | Apache-2.0 |
+| Groq SDK | Análisis IA | Licencia del proveedor + ToS Groq |
+| Leaflet | Mapa SOC | BSD-2 — https://leafletjs.com |
+| CARTO basemaps | Teselas mapa | ToS CARTO |
+| Chart.js | Gráficas monitor | MIT |
+| Markdown (PyPI) | Writeups | BSD |
 
-| Topic | Evento |
-|-------|--------|
-| Logins | Acceso a `/admin/login` y `/monitor/login` |
-| Ataques | Incidentes **Críticos** en tráfico público (máx. 1/IP cada 5 min) |
-| Resumen | Resumen diario automático generado por IA |
+El código propio del honeypot/CTF/SOC es original del proyecto salvo las dependencias anteriores.
 
 ---
 
-## Superficie de Ataque Simulada
+## 10. Secretos y repositorio
 
-| Ruta               | Tipo              | Vulnerabilidad                         |
-|--------------------|-------------------|----------------------------------------|
-| /login             | Interaccion activa| Deteccion de fuerza bruta              |
-| /search            | Interaccion activa| SQLi real por concatenacion de strings |
-| /blog              | Interaccion activa| XSS almacenado en comentarios          |
-| /admin             | Reconocimiento    | Panel corporativo falso                |
-| /.env              | Reconocimiento    | Credenciales falsas                    |
-| /backup            | Reconocimiento    | JSON de backup falso                   |
-| /config            | Reconocimiento    | XML de configuracion falso             |
-| /phpinfo           | Reconocimiento    | Simulacion phpinfo()                   |
-| /wp-admin          | Reconocimiento    | Simulacion WordPress                   |
-| /objetivos         | CTF               | Flags capturables                      |
+- **No** versionar `.env`, `data/`, `*.db`, claves API ni certificados (`.gitignore`).
+- Si un secreto se subió por error: **revocarlo** en el proveedor y limpiar historial Git (un commit que solo borre el fichero no basta).
+- Entrega evaluable: etiqueta **`v1.0-practica3`** sobre el commit acordado.
+
+```bash
+git tag -a v1.0-practica3 -m "Entrega práctica 3 FlyPaper"
+git push origin v1.0-practica3
+```
 
 ---
 
-## Licencia
+## 11. Checklist rápido de seguridad operativa (VM)
 
-MIT License — angelmarttnez 2026
+1. `SECRET_KEY` aleatorio; `FLYPAPER_STRICT_DEPLOY=1`  
+2. Cambiar usuario/clave SOC tras el primer login  
+3. Telegram solo con operadores de confianza  
+4. Valorar `FLYPAPER_ALLOW_SOC_RECOVERY=0`  
+5. Firewall: puerto 5000 (o reverse proxy TLS)
+
+---
+
+MIT License — angelmarttnez / FlyPaper 2026

@@ -67,60 +67,65 @@ git checkout main
 
 ## 3. Variables de entorno
 
-### 3.1. Variable opcional: analizador IA
+El archivo `.env` **no se copia** dentro de la imagen (`.dockerignore`). Compose lo carga con `env_file: .env`.
+
+### 3.1. Variables recomendadas en VM
 
 | Variable | Obligatoria | Descripción |
 |----------|-------------|-------------|
-| `ANTHROPIC_API_KEY` | No | Clave de la API de Anthropic (Claude). Sin ella, el honeypot y el monitor funcionan; las rutas de análisis IA del panel devuelven error controlado. |
+| `SECRET_KEY` | **Sí en Internet** | Firma de cookies Flask (`openssl rand -hex 32`) |
+| `GROQ_API_KEY` | No | Análisis IA y resúmenes; sin ella el honeypot funciona |
+| `GROQ_MODEL` | No | Por defecto `openai/gpt-oss-20b` |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` / `TELEGRAM_TOPIC_*` | Para 2FA SOC | Topics Logins, Ataques, Resumen |
+| `REDIS_URL` | Compose la fija | `redis://redis:6379/0` en red interna |
+| `CARTO_API_KEY` | No | Mapa SOC (teselas `?key=`) |
+| `INITIAL_SOC_USERNAME` / `INITIAL_SOC_PASSWORD` | **Sí con STRICT** | Cuenta al crear `flypaper_priv.db` |
+| `FLYPAPER_STRICT_DEPLOY=1` | Recomendado VM | Exige `INITIAL_SOC_PASSWORD` (sin default débil) |
+| `FLYPAPER_ALLOW_SOC_RECOVERY=0` | Recomendado VM | Desactiva reset de password por Telegram |
+| `ABUSEIPDB_API_KEY` / `VIRUSTOTAL_API_KEY` | No | Reputación perimetral |
+| `ANTHROPIC_API_KEY` | No | Legacy / opcional; el analizador activo es **Groq** |
 
-El archivo `.env` **no se copia** dentro de la imagen Docker (está en `.dockerignore`). Hay dos formas de inyectar la clave en el contenedor:
-
-**Opción A — archivo `.env` en la raíz del proyecto (recomendada en servidor):**
+Crear `.env` en el servidor:
 
 ```bash
 cd ~/FlyPaper
+cp .env.example .env
 nano .env
 ```
 
-Contenido de ejemplo:
+Ejemplo mínimo VM:
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-api03-xxxxxxxxxxxxxxxx
+SECRET_KEY=cambia_esto_con_openssl_rand_hex_32
+INITIAL_SOC_USERNAME=Flypaper
+INITIAL_SOC_PASSWORD=TuPasswordFuerte12!
+FLYPAPER_STRICT_DEPLOY=1
+FLYPAPER_ALLOW_SOC_RECOVERY=0
+GROQ_API_KEY=gsk_xxxxxxxx
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+TELEGRAM_TOPIC_LOGINS=...
+TELEGRAM_TOPIC_ATAQUES=...
+TELEGRAM_TOPIC_RESUMEN=...
 ```
 
-Descomentar en `docker-compose.yml` las líneas:
+Compose ya define `REDIS_URL=redis://redis:6379/0` y monta `./data:/app/data`.
 
-```yaml
-env_file:
-  - .env
-```
+### 3.2. Persistencia y sesión
 
-**Opción B — variable en el shell antes de levantar el servicio:**
+- **SQLite**: bajo `FLYPAPER_DATA_DIR` (`/app/data` en contenedor).
+- **Redis**: volumen Docker `flypaper-redis-data` (bloqueos / rate-limit / riesgo).
+- **Zona horaria**: `Europe/Madrid` (`tzdata`).
 
-```bash
-export ANTHROPIC_API_KEY="sk-ant-api03-xxxxxxxxxxxxxxxx"
-docker compose up --build -d
-```
+### 3.3. Credenciales SOC (bootstrap)
 
-`docker-compose.yml` ya mapea `${ANTHROPIC_API_KEY:-}` al entorno del contenedor.
+| Ámbito | Comportamiento |
+|--------|----------------|
+| Primer arranque + BD privada vacía | Crea una cuenta `admin_panel` con `INITIAL_SOC_*` o, en lab sin STRICT, `Flypaper` / `Flypaper_123` |
+| Tras 2FA | Obligatorio cambiar usuario y contraseña en `/admin/cambiar-password` |
+| Portal CTF | Cuentas registradas por alumnos; demos locales vía `scripts/preparar_cuenta_demo.py` |
 
-### 3.2. Variables que no requieren configuración externa
-
-FlyPaper no usa fichero `.env` para el resto de parámetros en producción:
-
-- **Clave de sesión Flask**: definida en código (`aplicacion.secret_key` en `app.py`).
-- **Bases de datos SQLite**: rutas fijas `flypaper.db` y `flypaper_priv.db` en `/app` dentro del contenedor; se crean al importar `app.py` vía `inicializar_db()`.
-- **Zona horaria**: `Europe/Madrid` en `timezone_fp.py` (paquete `tzdata` en `requirements.txt`).
-
-### 3.3. Credenciales por defecto (solo laboratorio)
-
-Tras el primer arranque, `database.py` inserta cuentas de demostración. Útiles para verificar el despliegue; **cambiarlas en un entorno expuesto a Internet real**.
-
-| Ámbito | Usuario | Contraseña | Acceso |
-|--------|---------|------------|--------|
-| Panel admin honeypot | `admin` | `admin` | `/login` → `/admin` |
-| Monitor SOC | `analyst` | `FlyPaper2026!` | `/monitor/login` → `/monitor` |
-| Usuario demo público | `Carlos` | `Carlos123` | `/login` → `/search` |
+**No** uses el bootstrap de laboratorio en un VPS expuesto sin `FLYPAPER_STRICT_DEPLOY=1`.
 
 ---
 
