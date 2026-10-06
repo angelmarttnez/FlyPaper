@@ -109,6 +109,9 @@ Thumbs.db
 # -----------------------------------------------------------------------------
 *_old.py
 *_Old.py
+*.bak
+*.bak.*
+app/legacy/
 
 # -----------------------------------------------------------------------------
 # 9. Documentación interna (no publicar)
@@ -121,3 +124,4 @@ informe/despliegue.md
 # 10. Informe de auditoría local (confidencialidad absoluta)
 # -----------------------------------------------------------------------------
 proyecto.md
+INFORME_TECNICO_PROYECTO.md
