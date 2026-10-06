@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>{{ reto.titulo }} · XSS</title>
+{% include 'partials/theme_head.html' %}
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  textarea { width: 100%; min-height: 120px; }
+  .ok { color: #3fb950; }
+</style>
+</head>
+<body>
+  <p><a href="/objetivos">← Objetivos</a></p>
+  <h1>{{ reto.titulo }}</h1>
+  <p>{{ reto.descripcion }}</p>
+  {% if resuelto %}
+  <p class="ok">Reto resuelto. Flag: <code>{{ flag_esperada }}</code></p>
+  {% else %}
+  {% include 'partials/ctf_pedir_pista.html' %}
+  <form method="post" action="{{ url_for('ctf_xss.reto_01_comentario') }}">
+    <label>Comentario (almacenado en el lab XSS, no en el blog público)</label>
+    <textarea name="contenido" placeholder="Tu payload XSS…"></textarea>
+    <p style="font-size:13px;opacity:0.8;">Incluye en el payload una referencia a <code>/objetivos/xss/01/robo-cookie?token=…</code> (recibirás el token al enviar).</p>
+    <button type="submit">Publicar comentario</button>
+  </form>
+  <form method="post" action="{{ url_for('ctf_xss.reto_01_admin_revisar') }}" style="margin-top:1rem;">
+    <button type="submit">Simular revisión del bot admin</button>
+  </form>
+  {% endif %}
+</body>
+</html>
