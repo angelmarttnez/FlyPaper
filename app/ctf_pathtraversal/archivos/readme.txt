@@ -1,0 +1,1 @@
+Descargas permitidas solo desde /archivos/.

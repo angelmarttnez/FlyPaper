@@ -1,0 +1,3 @@
+CONFIDENCIAL
+
+Flag del reto: flag{path_traversal_informes}

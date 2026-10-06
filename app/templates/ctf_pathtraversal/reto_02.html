@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>{{ reto.titulo }}</title>
+{% include 'partials/theme_head.html' %}
+</head>
+<body class="theme-aware" style="font-family:system-ui;max-width:720px;margin:2rem auto;padding:0 1rem;">
+  <p><a href="/objetivos">← Objetivos</a></p>
+  <h1>{{ reto.titulo }}</h1>
+  <p><strong>Filtro activo:</strong> este lab rechaza <code>../</code> y <code>..\</code> en el parámetro
+     <code>file</code> <em>tal como aparece en la URL</em> (antes de interpretar encoding).</p>
+  <p>{{ reto.descripcion }}</p>
+  <p>Endpoint: <code>GET /objetivos/pathtraversal/02/descargar?file=…</code></p>
+  <ul>
+    <li><a href="{{ url_for('ctf_pathtraversal.reto_02_descargar', file='informe_q1.txt') }}">informe_q1.txt (legítimo)</a></li>
+  </ul>
+  {% if not resuelto %}
+  {% include 'partials/ctf_pedir_pista.html' %}
+  {% endif %}
+  {% if resuelto %}<p style="color:#3fb950;">Reto completado.</p>{% endif %}
+</body>
+</html>

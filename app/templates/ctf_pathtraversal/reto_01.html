@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>{{ reto.titulo }}</title>
+{% include 'partials/theme_head.html' %}
+</head>
+<body style="font-family:system-ui;max-width:720px;margin:2rem auto;padding:0 1rem;">
+  <p><a href="/objetivos">← Objetivos</a></p>
+  <h1>{{ reto.titulo }}</h1>
+  <p>{{ reto.descripcion }}</p>
+  <p>Prueba descargas:</p>
+  <ul>
+    <li><a href="{{ url_for('ctf_pathtraversal.reto_01_descargar', file='informe_q1.txt') }}">informe_q1.txt</a></li>
+    <li><a href="{{ url_for('ctf_pathtraversal.reto_01_descargar', file='informe_q2.txt') }}">informe_q2.txt</a></li>
+  </ul>
+  {% if not resuelto %}
+  {% include 'partials/ctf_pedir_pista.html' %}
+  {% endif %}
+  {% if resuelto %}<p style="color:#3fb950;">Reto completado.</p>{% endif %}
+</body>
+</html>
