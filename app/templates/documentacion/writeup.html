@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{ writeup.titulo }} · Writeup · FlyPaper</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: var(--font-ui, system-ui, sans-serif);
+    background: var(--bg-base);
+    color: var(--text-main);
+    min-height: 100vh;
+    line-height: 1.65;
+  }
+  a { color: var(--color-accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .doc-wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+  }
+  .doc-nav-top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    align-items: center;
+    margin-bottom: 24px;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .doc-hero {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .doc-kicker {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    margin-bottom: 8px;
+  }
+  .doc-hero h1 {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .doc-hero p { color: var(--text-muted); margin: 0; }
+  .doc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-main);
+  }
+  .btn-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-fg, #051008);
+    border-color: var(--color-accent);
+  }
+  .btn-primary:hover { filter: brightness(1.06); text-decoration: none; }
+  .btn:hover { text-decoration: none; border-color: var(--border-accent); }
+
+  .doc-markdown {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 28px 32px;
+    box-shadow: var(--shadow-card);
+  }
+  .doc-markdown h1 { font-size: 1.45rem; margin: 1.5em 0 0.6em; }
+  .doc-markdown h1:first-child { margin-top: 0; }
+  .doc-markdown h2 {
+    font-size: 1.2rem;
+    margin: 1.75em 0 0.5em;
+    padding-bottom: 0.35em;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .doc-markdown h3 { font-size: 1.05rem; margin: 1.25em 0 0.4em; color: var(--text-soft); }
+  .doc-markdown p, .doc-markdown li { color: var(--text-muted); }
+  .doc-markdown ul, .doc-markdown ol { margin: 0.5em 0 1em 1.25em; }
+  .doc-markdown li { margin: 0.35em 0; }
+  .doc-markdown hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 1.75em 0;
+  }
+  .doc-markdown code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.88em;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    padding: 0.12em 0.35em;
+    border-radius: 4px;
+  }
+  .doc-markdown pre {
+    background: color-mix(in srgb, var(--bg-base) 60%, #000);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+  .doc-markdown pre code {
+    background: none;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .doc-markdown table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+    font-size: 14px;
+  }
+  .doc-markdown th, .doc-markdown td {
+    border: 1px solid var(--border-color);
+    padding: 8px 10px;
+    text-align: left;
+  }
+  .doc-markdown th {
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    color: var(--text-main);
+  }
+  .doc-markdown strong { color: var(--text-main); font-weight: 650; }
+
+  .writeup-index {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+  }
+  .writeup-index h2 { font-size: 1rem; margin-bottom: 12px; }
+  .writeup-index ul { list-style: none; padding: 0; margin: 0; }
+  .writeup-index li { margin: 8px 0; }
+  .writeup-index a { font-weight: 600; }
+  .writeup-index span { display: block; font-size: 12px; color: var(--text-muted); }
+</style>
+{% include 'partials/theme_bridge.html' %}
+</head>
+<body class="theme-aware">
+{% set nav_activo = 'documentacion' %}
+{% include 'partials/navbar_publico.html' %}
+
+<main class="doc-wrap">
+  <nav class="doc-nav-top" aria-label="Miga de pan">
+    <a href="{{ url_for('pagina_documentacion') }}">Documentación</a>
+    <span>/</span>
+    <span>Writeups</span>
+    <span>/</span>
+    <span>{{ writeup.titulo }}</span>
+  </nav>
+
+  <header class="doc-hero">
+    <p class="doc-kicker">Academia CTF · Solución paso a paso</p>
+    <h1>{{ writeup.titulo }}</h1>
+    {% if writeup.subtitulo %}
+    <p>{{ writeup.subtitulo }}</p>
+    {% endif %}
+    <div class="doc-actions">
+      {% if writeup.lab_url %}
+      <a class="btn btn-primary" href="{{ writeup.lab_url }}">Abrir laboratorio</a>
+      {% endif %}
+      <a class="btn" href="{{ url_for('pagina_documentacion') }}#writeups-academia">Todos los writeups</a>
+      {% if volver_url %}
+      <a class="btn" href="{{ volver_url }}">← Volver</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <article class="doc-markdown">
+    {{ writeup.contenido_html | safe }}
+  </article>
+
+  {% if otros_writeups %}
+  <section class="writeup-index" aria-labelledby="otros-writeups">
+    <h2 id="otros-writeups">Otros writeups</h2>
+    <ul>
+      {% for w in otros_writeups %}
+      {% if w.slug != writeup.slug %}
+      <li>
+        <a href="{{ w.url_writeup }}">{{ w.titulo }}</a>
+        <span>{{ w.subtitulo }}</span>
+      </li>
+      {% endif %}
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</main>
+</body>
+</html>

@@ -1,0 +1,94 @@
+{# Panel «Pedir pista» (estilo SuperLab / academia). Requiere url_pista_endpoint. #}
+<style>
+  .ctf-pista-panel {
+    margin-top: 1.25rem;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color, #3d4663);
+    background: color-mix(in srgb, var(--color-accent, #6366f1) 6%, var(--bg-card, #141a2e));
+  }
+  .ctf-pista-panel h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-main, #e8eef5);
+  }
+  .ctf-pista-panel .ctf-pista-desc {
+    font-size: 12px;
+    color: var(--text-muted, #8b91a7);
+    margin-bottom: 10px;
+  }
+  .btn-pedir-pista {
+    appearance: none;
+    cursor: pointer;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-accent, #6366f1);
+    background: transparent;
+    color: var(--color-accent, #6366f1);
+    font-size: 13px;
+    font-weight: 650;
+    transition: background 0.2s, color 0.2s;
+  }
+  .btn-pedir-pista:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-accent, #6366f1) 14%, transparent);
+  }
+  .btn-pedir-pista:disabled { opacity: 0.55; cursor: wait; }
+  .ctf-pista-resultado {
+    margin-top: 12px;
+    padding: 12px;
+    border-left: 3px solid var(--color-accent, #6366f1);
+    background: var(--bg-input, rgba(0,0,0,0.2));
+    font-size: 13px;
+    color: var(--text-muted, #b4b8c5);
+    line-height: 1.5;
+    display: none;
+  }
+  .ctf-pista-resultado.visible { display: block; }
+  .ctf-pista-resultado strong { color: var(--text-main, #fff); }
+  .ctf-pista-error { color: var(--color-err, #f87171); font-size: 12px; margin-top: 8px; }
+</style>
+<section class="ctf-pista-panel" aria-labelledby="ctf-pista-titulo">
+  <h3 id="ctf-pista-titulo">Ayuda pedagógica</h3>
+  <p class="ctf-pista-desc">Consume una pista oficial del reto (queda registrada en tu telemetría de lab).</p>
+  <button type="button" class="btn-pedir-pista" id="btn-pedir-pista-ctf" data-url="{{ url_pista_endpoint }}">
+    Pedir pista
+  </button>
+  <div class="ctf-pista-resultado" id="ctf-pista-resultado" role="status"></div>
+  <p class="ctf-pista-error" id="ctf-pista-error" hidden></p>
+</section>
+<script>
+(function () {
+  var btn = document.getElementById("btn-pedir-pista-ctf");
+  var box = document.getElementById("ctf-pista-resultado");
+  var err = document.getElementById("ctf-pista-error");
+  if (!btn || !box) return;
+  btn.addEventListener("click", function () {
+    var url = btn.getAttribute("data-url");
+    if (!url) return;
+    btn.disabled = true;
+    if (err) { err.hidden = true; err.textContent = ""; }
+    fetch(url, { method: "GET", headers: { Accept: "application/json" }, credentials: "same-origin" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok || !res.j.exito) {
+          if (err) {
+            err.hidden = false;
+            err.textContent = res.j.mensaje || "No se pudo obtener la pista.";
+          }
+          return;
+        }
+        box.innerHTML = "<strong>Pista:</strong> " + (res.j.pista || "");
+        box.classList.add("visible");
+      })
+      .catch(function () {
+        btn.disabled = false;
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Error de red al pedir la pista.";
+        }
+      });
+  });
+})();
+</script>
