@@ -389,6 +389,88 @@ CUESTIONARIOS: dict[int, list[dict[str, Any]]] = {
 # Alias de compatibilidad.
 SOLUCIONES_QUIZ = CUESTIONARIOS
 
+# ---------------------------------------------------------------------------
+# SuperLab NexusCorp — reto encadenado (ranking: solo flag final)
+# ---------------------------------------------------------------------------
+
+RETO_SUPERLAB_NOMBRE = "SuperLab · Cadena NexusCorp"
+SUPERLAB_PUNTOS = 300
+
+# Importación tardía de flags narrativas (evita ciclos en carga del paquete CTF).
+def _flags_superlab():
+    from app.superlab.datos_ficticios import (
+        FLAG_FASE_1,
+        FLAG_FASE_2,
+        FLAG_FASE_3,
+        FLAG_FASE_4,
+        FLAG_FASE_5,
+    )
+
+    return FLAG_FASE_1, FLAG_FASE_2, FLAG_FASE_3, FLAG_FASE_4, FLAG_FASE_5
+
+
+def obtener_flag_superlab_final() -> str:
+    """Flag que puntúa en el ranking CTF."""
+    return _flags_superlab()[4]
+
+
+def checkpoints_superlab() -> list[dict[str, Any]]:
+    """
+    Flags intermedias (sin puntos en ranking); solo checkpoints de progreso.
+    """
+    f1, f2, f3, f4, f5 = _flags_superlab()
+    return [
+        {"orden": 1, "etiqueta": "Credenciales filtradas", "flag": f1, "fase_min": 1},
+        {"orden": 2, "etiqueta": "Control de acceso roto", "flag": f2, "fase_min": 2},
+        {"orden": 3, "etiqueta": "SQLi en staging", "flag": f3, "fase_min": 3},
+        {"orden": 4, "etiqueta": "Mensaje provisionales", "flag": f4, "fase_min": 4},
+        {"orden": 5, "etiqueta": "Cadena completa", "flag": f5, "fase_min": 5, "puntua": True},
+    ]
+
+
+# Pistas pedibles por fase (0–4). Solo se entregan si fase_actual >= fase solicitada.
+PISTAS_SUPERLAB: dict[int, str] = {
+    0: (
+        "Revisa los ficheros que un servidor suele exponer por defecto "
+        "para indicar a los rastreadores qué no visitar"
+    ),
+    1: (
+        "El código fuente de una página a veces guarda cosas que "
+        "nadie debería haber subido"
+    ),
+    2: "No toda API comprueba quién eres, solo que estés dentro",
+    3: (
+        "Antes de intentar acceder a algo que no existe todavía, "
+        "prueba a descubrirlo con la herramienta adecuada"
+    ),
+    4: "No todos los mensajes son ruido, busca el que hable de contraseñas",
+}
+
+
+def obtener_pista_superlab(fase: int) -> Optional[str]:
+    """Devuelve texto de pista para la fase o None si no existe."""
+    return PISTAS_SUPERLAB.get(int(fase))
+
+
+CATALOGO_SUPERLAB: dict[str, Any] = {
+    "id": "superlab",
+    "codigo": "SL",
+    "titulo": "SuperLab NexusCorp",
+    "subtitulo": "Cadena ofensiva multi-fase (6 pasos)",
+    "dificultad": "Avanzado",
+    "dificultad_clase": "dificil",
+    "puntos": SUPERLAB_PUNTOS,
+    "activo": True,
+    "descripcion": (
+        "Reto narrativo encadenado: reconocimiento, legacy expuesto, IDOR, "
+        "fuzzing simulado, SQLi en staging y filtración de credenciales provisionales."
+    ),
+    "objetivo": "Completa las 5 flags de la cadena; solo la final suma 300 pts en el ranking.",
+    "pista": PISTAS_SUPERLAB.get(0, ""),
+    "url_entrada": "/web-nexuscorp/",
+}
+
+
 CATALOGO_RETOS: list[dict[str, Any]] = [
     {
         "id": 1,

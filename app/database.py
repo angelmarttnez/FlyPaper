@@ -42,23 +42,27 @@ RETO_CTF_PATH_TRAVERSAL = "Path Traversal"
 # Único usuario público del reto UNION: password_hash = cuerpo de la flag SQLi.
 USUARIO_CTF_SQLI = "SQLi_flag"
 PISTA_CTF_SQLI_BREVE = (
-    "Usa UNION en /search para leer la tabla usuarios y localizar al usuario SQLi_flag."
+    "Explora los laboratorios SQLi en /objetivos/sqli/ (Bases aisladas por reto)."
 )
 ROL_USUARIO_NORMAL = "usuario"
 ROL_USUARIO_ADMIN_BD = "admin"
 # Cuentas reales de panel / monitor viven solo en `usuarios_privados`.
 ROL_PRIV_ADMIN_PANEL = "admin_panel"
 ROL_PRIV_MONITOR = "monitor"
-# Cuentas legacy de laboratorio eliminadas del bootstrap (admin/analyst).
-USUARIOS_PRIVADOS_LEGACY_ELIMINAR = ("admin", "analyst")
+# Cuentas legacy eliminadas en cada arranque (bootstrap antiguo de dos super-admins).
+USUARIOS_PRIVADOS_LEGACY_ELIMINAR = (
+    "admin",
+    "analyst",
+    "Mart.Angel",
+    "Best.Carlos",
+)
 
 logger = logging.getLogger(__name__)
 
-# Metadatos de super-administradores; contraseñas solo vía variables de entorno.
-_SUPER_ADMIN_BOOTSTRAP_ENV = (
-    ("Mart.Angel", "INITIAL_ADMIN_ANGEL_PASSWORD", "Martí Angel", "mart.angel@flypaper.internal"),
-    ("Best.Carlos", "INITIAL_ADMIN_CARLOS_PASSWORD", "Best Carlos", "best.carlos@flypaper.internal"),
-)
+# Cuenta SOC inicial (solo si flypaper_priv.db está vacía tras limpiar legacy).
+SOC_USUARIO_BOOTSTRAP = "Flypaper"
+SOC_PASSWORD_BOOTSTRAP_DEFAULT = "Flypaper_123"
+_PATRON_USERNAME_SOC = re.compile(r"^[a-zA-Z0-9._-]{3,64}$")
 # Formato estricto: flag{10 caracteres alfanuméricos} (grupo 1 = cuerpo de la flag).
 PATRON_FLAG_CTF = re.compile(r"^flag\{([a-zA-Z0-9]{10})\}$")
 
@@ -611,6 +615,7 @@ def inicializar_db():
     _inicializar_bd_privada()
     _migrar_privados_desde_bd_publica_si_existe()
     poblar_entorno_simulacion()
+    sincronizar_catalogo_blog_publico()
     asegurar_flags_ctf_dinamicas()
     _migrar_reto_sqli_legacy()
     asegurar_usuario_ctf_sqli_flag()
@@ -1221,7 +1226,29 @@ def _inicializar_bd_privada():
     """
     with obtener_conexion_privada() as conexion:
         conexion.executescript(ddl)
+        cursor = conexion.cursor()
+        _migrar_columnas_usuarios_privados(cursor)
         conexion.commit()
+
+
+def _migrar_columnas_usuarios_privados(cursor) -> None:
+    """Añade columnas de ciclo de vida SOC en BDs antiguas."""
+    columnas = {
+        fila[1] for fila in cursor.execute("PRAGMA table_info(usuarios_privados);")
+    }
+    if "debe_cambiar_password" not in columnas:
+        cursor.execute(
+            "ALTER TABLE usuarios_privados "
+            "ADD COLUMN debe_cambiar_password INTEGER NOT NULL DEFAULT 0;"
+        )
+    if "fecha_creacion" not in columnas:
+        cursor.execute(
+            "ALTER TABLE usuarios_privados ADD COLUMN fecha_creacion DATETIME;"
+        )
+    if "ultimo_login" not in columnas:
+        cursor.execute(
+            "ALTER TABLE usuarios_privados ADD COLUMN ultimo_login DATETIME;"
+        )
 
 
 def _migrar_privados_desde_bd_publica_si_existe():
@@ -1281,34 +1308,59 @@ def _verificar_hash_privado(password: str, hash_almacenado: str) -> bool:
         return False
 
 
-def _cuentas_super_admin_bootstrap():
+def _credenciales_bootstrap_soc() -> tuple[str, str]:
     """
-    Super-administradores SOC para bootstrapping inicial.
+    Usuario y contraseña inicial SOC (env opcional, si no valores por defecto).
 
-    Las contraseñas se leen de variables de entorno (nunca del código fuente).
-    Si falta una variable, se omite esa cuenta y se registra un warning.
+    Variables: ``INITIAL_SOC_USERNAME``, ``INITIAL_SOC_PASSWORD`` o alias
+    ``INITIAL_ADMIN_PASSWORD`` solo para la contraseña.
+
+    Con ``FLYPAPER_STRICT_DEPLOY=1`` exige INITIAL_SOC_PASSWORD (no fallback débil).
     """
-    cuentas = []
-    for username, env_key, nombre, email in _SUPER_ADMIN_BOOTSTRAP_ENV:
-        password = os.getenv(env_key)
-        if not password or not str(password).strip():
-            logger.warning(
-                "Bootstrap SOC: omitida cuenta %s (%s no definida en el entorno).",
-                username,
-                env_key,
+    usuario = (os.getenv("INITIAL_SOC_USERNAME") or SOC_USUARIO_BOOTSTRAP).strip()
+    password = (
+        (os.getenv("INITIAL_SOC_PASSWORD") or "").strip()
+        or (os.getenv("INITIAL_ADMIN_PASSWORD") or "").strip()
+    )
+    estricto = (os.getenv("FLYPAPER_STRICT_DEPLOY") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if not password:
+        if estricto:
+            raise RuntimeError(
+                "FLYPAPER_STRICT_DEPLOY=1: define INITIAL_SOC_PASSWORD en .env "
+                "(no se permite el bootstrap por defecto)."
             )
-            continue
-        cuentas.append(
-            (
-                username,
-                str(password).strip(),
-                ROL_PRIV_ADMIN_PANEL,
-                "/admin",
-                nombre,
-                email,
-            )
-        )
-    return tuple(cuentas)
+        password = SOC_PASSWORD_BOOTSTRAP_DEFAULT
+    return usuario, password
+
+
+def _cuenta_inicial_soc_bootstrap():
+    """
+    Única cuenta admin_panel cuando la BD privada está vacía.
+
+    ``debe_cambiar_password=1``: en el primer acceso hay que cambiar usuario y clave.
+    """
+    username, password = _credenciales_bootstrap_soc()
+    logger.warning("=" * 72)
+    logger.warning(
+        "BOOTSTRAP SOC — cuenta inicial '%s' (rol admin_panel). "
+        "Contraseña por defecto documentada en .env.example; cámbiala en el primer login.",
+        username,
+    )
+    logger.warning("=" * 72)
+    return (
+        username,
+        password,
+        ROL_PRIV_ADMIN_PANEL,
+        "/admin",
+        "Administrador FlyPaper",
+        "soc@flypaper.internal",
+        True,
+    )
 
 
 def _eliminar_cuentas_privadas_legacy(cursor):
@@ -1326,32 +1378,44 @@ def _eliminar_cuentas_privadas_legacy(cursor):
 
 def asegurar_cuentas_privilegiadas():
     """
-    Bootstrap seguro de super-administradores en flypaper_priv.db.
+    Bootstrap seguro de cuentas SOC en flypaper_priv.db.
 
+    - Migra columnas nuevas.
     - Elimina cuentas legacy (admin/analyst).
-    - Crea Mart.Angel y Best.Carlos solo si no existen (hash bcrypt, sin texto plano).
-    - No sobrescribe contraseñas de cuentas ya existentes.
+    - Si la tabla ya tiene filas, no inserta ni modifica credenciales.
+    - Si está vacía, crea la cuenta ``Flypaper`` (admin_panel) con cambio obligatorio al entrar.
     """
     with obtener_conexion_privada() as conexion:
         cursor = conexion.cursor()
+        _migrar_columnas_usuarios_privados(cursor)
         _eliminar_cuentas_privadas_legacy(cursor)
+        cursor.execute("SELECT COUNT(*) AS n FROM usuarios_privados;")
+        if int(cursor.fetchone()["n"]) > 0:
+            conexion.commit()
+            return
 
-        for username, password, rol, redirige, nombre, email in _cuentas_super_admin_bootstrap():
-            cursor.execute(
-                "SELECT id FROM usuarios_privados WHERE username = ?;",
-                (username,),
-            )
-            if cursor.fetchone():
-                continue
-            password_hash = _hash_contrasena_privada(password)
-            cursor.execute(
-                """
-                INSERT INTO usuarios_privados (
-                    username, password_hash, rol, redirige, nombre, email
-                ) VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                (username, password_hash, rol, redirige, nombre, email),
-            )
+        marca = marca_ahora()
+        fila = _cuenta_inicial_soc_bootstrap()
+        username, password, rol, redirige, nombre, email, debe_cambiar = fila
+        password_hash = _hash_contrasena_privada(password)
+        cursor.execute(
+            """
+            INSERT INTO usuarios_privados (
+                username, password_hash, rol, redirige, nombre, email,
+                debe_cambiar_password, fecha_creacion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                username,
+                password_hash,
+                rol,
+                redirige,
+                nombre,
+                email,
+                1 if debe_cambiar else 0,
+                marca,
+            ),
+        )
         conexion.commit()
 
 
@@ -1388,7 +1452,7 @@ def verificar_usuario_privado(username, password):
         cursor = conexion.cursor()
         cursor.execute(
             """
-            SELECT username, password_hash, rol, redirige
+            SELECT username, password_hash, rol, redirige, debe_cambiar_password
             FROM usuarios_privados
             WHERE username = ?;
             """,
@@ -1402,10 +1466,16 @@ def verificar_usuario_privado(username, password):
         redirige = fila["redirige"]
         if not redirige:
             redirige = "/admin"
+        cursor.execute(
+            "UPDATE usuarios_privados SET ultimo_login = ? WHERE username = ?;",
+            (marca_ahora(), nombre),
+        )
+        conexion.commit()
         return {
             "username": fila["username"],
             "rol": fila["rol"],
             "redirige": redirige,
+            "debe_cambiar_password": bool(fila["debe_cambiar_password"]),
         }
 
 
@@ -1603,14 +1673,123 @@ def reiniciar_progreso_ctf_por_usuario(usuario_id):
         return eliminadas
 
 
+def sincronizar_catalogo_blog_publico():
+    """
+    Mantiene el catálogo de entradas de /blog alineado con app.contenido_blog.
+
+    Inserta posts nuevos, actualiza contenido por título y elimina entradas obsoletas.
+    """
+    from app.contenido_blog import definiciones_posts_blog, titulos_catalogo_blog
+
+    definiciones = definiciones_posts_blog()
+    titulos_validos = titulos_catalogo_blog()
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("SELECT COUNT(*) AS n FROM usuarios;")
+        if cursor.fetchone()["n"] == 0:
+            return
+
+        cursor.execute("SELECT id, username FROM usuarios ORDER BY id;")
+        filas_usuarios = cursor.fetchall()
+        mapa_usuarios = {fila["username"]: fila["id"] for fila in filas_usuarios}
+        autor_por_defecto = filas_usuarios[0]["id"]
+
+        cursor.execute("SELECT id, titulo FROM posts;")
+        for fila in cursor.fetchall():
+            if fila["titulo"] not in titulos_validos:
+                cursor.execute(
+                    "DELETE FROM comentarios WHERE post_id = ?;",
+                    (fila["id"],),
+                )
+                cursor.execute("DELETE FROM posts WHERE id = ?;", (fila["id"],))
+
+        for entrada in definiciones:
+            autor_id = mapa_usuarios.get(
+                entrada["autor_username"], autor_por_defecto
+            )
+            cursor.execute(
+                "SELECT id FROM posts WHERE titulo = ?;",
+                (entrada["titulo"],),
+            )
+            existente = cursor.fetchone()
+            if existente:
+                cursor.execute(
+                    """
+                    UPDATE posts
+                    SET contenido = ?, autor_id = ?, imagen_url = ?
+                    WHERE id = ?;
+                    """,
+                    (
+                        entrada["contenido"],
+                        autor_id,
+                        entrada["imagen_url"],
+                        existente["id"],
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO posts (titulo, contenido, autor_id, fecha, imagen_url)
+                    VALUES (?, ?, ?, ?, ?);
+                    """,
+                    (
+                        entrada["titulo"],
+                        entrada["contenido"],
+                        autor_id,
+                        entrada["fecha"],
+                        entrada["imagen_url"],
+                    ),
+                )
+
+        _asegurar_comentarios_demo_blog(cursor)
+        conexion.commit()
+
+
+def _asegurar_comentarios_demo_blog(cursor):
+    """Comentarios ficticios en la entrada principal del blog si aún no tiene ninguno."""
+    titulo_demo = "FlyPaper 2.0: nuevo panel de seguridad y monitorización"
+    cursor.execute("SELECT id FROM posts WHERE titulo = ?;", (titulo_demo,))
+    fila = cursor.fetchone()
+    if not fila:
+        return
+    post_id = fila["id"]
+    cursor.execute(
+        "SELECT COUNT(*) AS n FROM comentarios WHERE post_id = ?;",
+        (post_id,),
+    )
+    if cursor.fetchone()["n"] > 0:
+        return
+    marca = marca_ahora()
+    demos = [
+        (post_id, "10.0.1.42", "Carlos Méndez", "Buen trabajo. Revisad los logs antes del go-live.", marca, 1),
+        (
+            post_id,
+            "10.0.1.88",
+            "Lucía Vega",
+            "Ya tenemos alertas para UNION SELECT y el mapa SOC con geolocalización.",
+            marca,
+            1,
+        ),
+    ]
+    cursor.executemany(
+        """
+        INSERT INTO comentarios (
+            post_id, ip_autor, autor_nombre, contenido, fecha, visible
+        ) VALUES (?, ?, ?, ?, ?, ?);
+        """,
+        demos,
+    )
+
+
 def poblar_entorno_simulacion():
     """
     Inserta datos falsos del entorno corporativo y flags del CTF.
 
-    Solo inserta si las tablas principales de simulación están vacías (usuarios, posts, flags).
+    Solo inserta si usuarios y flags están vacíos (el blog se sincroniza aparte).
     - 3 empleados en `usuarios` (sin cuentas privilegiadas; el señuelo admin se añade aparte).
     - Cuentas /admin y /monitor en `usuarios_privados` vía `asegurar_cuentas_privilegiadas()`.
-    - 3 posts de blog sobre FlyPaper con comentarios de empleados.
+    - Catálogo de blog vía `sincronizar_catalogo_blog_publico()`.
     - 2 flags: SQLi (100 pts) y Path Traversal / LFI (150 pts).
     """
     marca = marca_ahora()
@@ -1620,9 +1799,7 @@ def poblar_entorno_simulacion():
 
         # Solo sembrar si el entorno de simulación aún no tiene datos.
         if not (
-            _tabla_vacia(cursor, "usuarios")
-            and _tabla_vacia(cursor, "posts")
-            and _tabla_vacia(cursor, "flags")
+            _tabla_vacia(cursor, "usuarios") and _tabla_vacia(cursor, "flags")
         ):
             return
 
@@ -1665,112 +1842,6 @@ def poblar_entorno_simulacion():
             """,
             [(*fila, ROL_USUARIO_NORMAL) for fila in usuarios_seed],
         )
-
-        cursor.execute("SELECT id, username FROM usuarios ORDER BY id;")
-        mapa_usuarios = {fila["username"]: fila["id"] for fila in cursor.fetchall()}
-
-        posts_seed = [
-            (
-                "FlyPaper 2.0: nuevo panel de seguridad",
-                (
-                    "Presentamos FlyPaper 2.0, nuestra plataforma interna de monitorización "
-                    "de amenazas. El equipo de IT ha integrado detección automática de SQLi, "
-                    "XSS y escaneos en tiempo real. El despliegue en producción está previsto "
-                    "para el próximo trimestre."
-                ),
-                mapa_usuarios.get("lucia.vega"),
-                marca,
-                "/static/blog/flypaper-security.png",
-            ),
-            (
-                "Onboarding RRHH: acceso al portal de empleados",
-                (
-                    "Desde RRHH recordamos que el acceso al portal FlyPaper requiere usuario "
-                    "corporativo. Si olvidáis la contraseña, abrid ticket con el departamento; "
-                    "no compartáis credenciales por correo."
-                ),
-                mapa_usuarios.get("javier.pena"),
-                marca,
-                "/static/blog/onboarding-rrhh.png",
-            ),
-            (
-                "Ventas y métricas: exportación de informes",
-                (
-                    "El módulo de Ventas ya puede exportar informes CSV desde el dashboard "
-                    "FlyPaper. Marina Rodríguez explica en este post cómo generar reportes "
-                    "semanales sin saturar la API interna."
-                ),
-                mapa_usuarios.get("marina.rodriguez"),
-                marca,
-                "/static/blog/ventas-informes.png",
-            ),
-        ]
-
-        cursor.executemany(
-            """
-            INSERT INTO posts (titulo, contenido, autor_id, fecha, imagen_url)
-            VALUES (?, ?, ?, ?, ?);
-            """,
-            posts_seed,
-        )
-
-        cursor.execute("SELECT id, titulo FROM posts ORDER BY id;")
-        posts_por_id = list(cursor.fetchall())
-
-        comentarios_seed = []
-        if len(posts_por_id) >= 1:
-            comentarios_seed.extend(
-                [
-                    (
-                        posts_por_id[0]["id"],
-                        "10.0.1.42",
-                        "Carlos Méndez",
-                        "Buen trabajo, equipo. Revisad los logs del honeypot antes del go-live.",
-                        marca,
-                        1,
-                    ),
-                    (
-                        posts_por_id[0]["id"],
-                        "10.0.1.88",
-                        "Lucía Vega",
-                        "Ya tenemos alertas para intentos de UNION SELECT en /login.",
-                        marca,
-                        1,
-                    ),
-                ]
-            )
-        if len(posts_por_id) >= 2:
-            comentarios_seed.append(
-                (
-                    posts_por_id[1]["id"],
-                    "10.0.2.15",
-                    "Javier Peña",
-                    "Añadido enlace al manual de política de contraseñas en la intranet.",
-                    marca,
-                    1,
-                )
-            )
-        if len(posts_por_id) >= 3:
-            comentarios_seed.append(
-                (
-                    posts_por_id[2]["id"],
-                    "10.0.3.77",
-                    "Marina Rodríguez",
-                    "Los informes de Ventas ya no tiran del servidor de backups.",
-                    marca,
-                    1,
-                )
-            )
-
-        if comentarios_seed:
-            cursor.executemany(
-                """
-                INSERT INTO comentarios (
-                    post_id, ip_autor, autor_nombre, contenido, fecha, visible
-                ) VALUES (?, ?, ?, ?, ?, ?);
-                """,
-                comentarios_seed,
-            )
 
         flags_seed = [
             (
@@ -3957,3 +4028,386 @@ def limpiar_datos_monitor():
             resultado[nombre] = cursor.rowcount
         conexion.commit()
     return resultado
+
+
+def reiniciar_entorno_pruebas_completo() -> dict[str, int | str]:
+    """
+    Reinicia el laboratorio para pruebas: ataques, progreso CTF, usuarios portal y SOC.
+
+    Conserva catálogo de flags, posts del blog y usuarios señuelo de flypaper.db.
+    Tras vaciar SOC, recrea la cuenta bootstrap (Flypaper o INITIAL_SOC_* en .env).
+
+    Detén el servidor Flask antes en Windows si SQLite devuelve "database is locked".
+
+    Returns:
+        dict: filas borradas por tabla/área y credenciales SOC indicadas.
+    """
+    from app.core.ip_reputation import vaciar_claves_flypaper_redis
+
+    tablas_principal = (
+        "eventos",
+        "registro_peticiones",
+        "ips_bloqueadas",
+        "flags_resueltas",
+        "objetivos_completados",
+        "reportes_enviados",
+        "resumenes_diarios_ia",
+        "resumenes_log",
+    )
+    stats: dict[str, int | str] = {}
+
+    with obtener_conexion() as conexion:
+        cursor = conexion.cursor()
+        for tabla in tablas_principal:
+            cursor.execute(f"DELETE FROM {tabla};")
+            stats[tabla] = cursor.rowcount
+        conexion.commit()
+
+    with obtener_conexion_users() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("DELETE FROM usuarios_registrados;")
+        stats["usuarios_registrados"] = cursor.rowcount
+        conexion.commit()
+
+    with obtener_conexion_privada() as conexion:
+        cursor = conexion.cursor()
+        cursor.execute("DELETE FROM codigos_2fa;")
+        stats["codigos_2fa"] = cursor.rowcount
+        cursor.execute("DELETE FROM usuarios_privados;")
+        stats["usuarios_privados"] = cursor.rowcount
+        conexion.commit()
+
+    asegurar_cuentas_privilegiadas()
+    usuario_soc, _ = _credenciales_bootstrap_soc()
+    stats["soc_bootstrap_usuario"] = usuario_soc
+    stats["soc_bootstrap_nota"] = (
+        "Contraseña: INITIAL_SOC_PASSWORD en .env o Flypaper_123 por defecto. "
+        "Cambio obligatorio en primer login."
+    )
+
+    try:
+        from app.superlab.superlab_db import obtener_conexion_superlab
+
+        with obtener_conexion_superlab() as conexion:
+            cur = conexion.cursor()
+            cur.execute("DELETE FROM superlab_progreso;")
+            stats["superlab_progreso"] = cur.rowcount
+            conexion.commit()
+    except Exception as exc:
+        logger.warning("SuperLab: no se pudo vaciar progreso — %s", exc)
+        stats["superlab_progreso"] = 0
+
+    ruta_xss = RUTA_DATOS / "ctf" / "xss_01.db"
+    if ruta_xss.is_file():
+        conexion_xss = sqlite3.connect(str(ruta_xss))
+        try:
+            cur_xss = conexion_xss.cursor()
+            cur_xss.execute("DELETE FROM comentarios_lab;")
+            stats["xss_comentarios_lab"] = cur_xss.rowcount
+            conexion_xss.commit()
+        finally:
+            conexion_xss.close()
+    else:
+        stats["xss_comentarios_lab"] = 0
+
+    stats["redis_claves"] = vaciar_claves_flypaper_redis()
+    return stats
+
+
+def registrar_evento_auditoria_soc(
+    actor: str,
+    accion: str,
+    detalle: dict | None = None,
+    ip_admin: str = "",
+) -> None:
+    """Persiste acciones del panel SOC en ``eventos`` (ámbito admin)."""
+    payload = {"admin": actor, "accion": accion, **(detalle or {})}
+    guardar_evento(
+        ip=ip_admin or "127.0.0.1",
+        ruta="/admin/auditoria-soc",
+        metodo="SOC",
+        payload=payload,
+        user_agent="FlyPaper-SOC-Audit",
+        tipo_ataque=f"Auditoría SOC: {accion}",
+        headers={},
+        gravedad="BAJO",
+        ambito="admin",
+        firma_coincidente=accion,
+    )
+
+
+def obtener_soc_por_username(username: str) -> dict | None:
+    """Fila de usuarios_privados (sin hash) o None."""
+    nombre = (username or "").strip()
+    if not nombre:
+        return None
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            """
+            SELECT id, username, rol, redirige, nombre, email,
+                   debe_cambiar_password, fecha_creacion, ultimo_login
+            FROM usuarios_privados WHERE username = ?;
+            """,
+            (nombre,),
+        )
+        fila = cur.fetchone()
+    return dict(fila) if fila else None
+
+
+def listar_cuentas_soc() -> list[dict]:
+    """Listado para gestión /admin/usuarios-soc."""
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            """
+            SELECT id, username, rol, debe_cambiar_password,
+                   fecha_creacion, ultimo_login, nombre, email
+            FROM usuarios_privados
+            ORDER BY username ASC;
+            """
+        )
+        return [dict(f) for f in cur.fetchall()]
+
+
+def contar_admins_soc() -> int:
+    """Cuentas con rol admin_panel."""
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM usuarios_privados WHERE rol = ?;",
+            (ROL_PRIV_ADMIN_PANEL,),
+        )
+        return int(cur.fetchone()["n"] or 0)
+
+
+def crear_cuenta_soc(
+    username: str,
+    rol: str,
+    password_plano: str,
+    *,
+    nombre: str = "",
+    email: str = "",
+    debe_cambiar_password: bool = True,
+) -> dict:
+    """
+    Alta manual de cuenta SOC (contraseña ya generada o temporal).
+
+    Returns:
+        dict con exito/mensaje/id.
+    """
+    nombre_usuario = (username or "").strip()
+    rol_norm = (rol or "").strip().lower()
+    if rol_norm not in (ROL_PRIV_ADMIN_PANEL, ROL_PRIV_MONITOR):
+        return {"exito": False, "mensaje": "Rol SOC no válido."}
+    if not nombre_usuario or len(nombre_usuario) < 3:
+        return {"exito": False, "mensaje": "Usuario demasiado corto."}
+    if len(password_plano or "") < 12:
+        return {"exito": False, "mensaje": "La contraseña temporal debe tener al menos 12 caracteres."}
+
+    redirige = "/admin"
+    password_hash = _hash_contrasena_privada(password_plano)
+    marca = marca_ahora()
+    try:
+        with obtener_conexion_privada() as conexion:
+            cur = conexion.cursor()
+            cur.execute(
+                """
+                INSERT INTO usuarios_privados (
+                    username, password_hash, rol, redirige, nombre, email,
+                    debe_cambiar_password, fecha_creacion
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    nombre_usuario,
+                    password_hash,
+                    rol_norm,
+                    redirige,
+                    nombre or nombre_usuario,
+                    email or "",
+                    1 if debe_cambiar_password else 0,
+                    marca,
+                ),
+            )
+            nuevo_id = cur.lastrowid
+            conexion.commit()
+    except sqlite3.IntegrityError:
+        return {"exito": False, "mensaje": "Ese usuario SOC ya existe."}
+
+    return {"exito": True, "id": nuevo_id, "username": nombre_usuario}
+
+
+def eliminar_cuenta_soc(username: str) -> dict:
+    """Elimina cuenta SOC por username."""
+    nombre = (username or "").strip()
+    if not nombre:
+        return {"exito": False, "mensaje": "Usuario no indicado."}
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute("DELETE FROM usuarios_privados WHERE username = ?;", (nombre,))
+        n = cur.rowcount
+        cur.execute("DELETE FROM codigos_2fa WHERE username = ?;", (nombre,))
+        conexion.commit()
+    if n < 1:
+        return {"exito": False, "mensaje": "Cuenta SOC no encontrada."}
+    return {"exito": True}
+
+
+def resetear_password_soc(username: str, password_plano: str) -> dict:
+    """Asigna contraseña temporal y fuerza cambio en próximo login."""
+    nombre = (username or "").strip()
+    if len(password_plano or "") < 12:
+        return {"exito": False, "mensaje": "La contraseña temporal debe tener al menos 12 caracteres."}
+    password_hash = _hash_contrasena_privada(password_plano)
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            """
+            UPDATE usuarios_privados
+            SET password_hash = ?, debe_cambiar_password = 1
+            WHERE username = ?;
+            """,
+            (password_hash, nombre),
+        )
+        if cur.rowcount < 1:
+            return {"exito": False, "mensaje": "Cuenta SOC no encontrada."}
+        conexion.commit()
+    return {"exito": True}
+
+
+def completar_onboarding_soc(
+    username_actual: str,
+    password_actual: str,
+    username_nuevo: str,
+    password_nueva: str,
+    password_confirmacion: str,
+) -> dict:
+    """
+    Primer acceso SOC: cambio obligatorio de usuario y contraseña.
+
+    Valida contraseña actual, nuevo usuario (distinto del bootstrap) y clave ≥12 caracteres.
+    """
+    actual = (username_actual or "").strip()
+    nuevo_user = (username_nuevo or "").strip()
+    if password_nueva != password_confirmacion:
+        return {"exito": False, "mensaje": "La confirmación de contraseña no coincide."}
+    if len(password_nueva or "") < 12:
+        return {"exito": False, "mensaje": "La nueva contraseña debe tener al menos 12 caracteres."}
+    if password_nueva == password_actual:
+        return {"exito": False, "mensaje": "La nueva contraseña debe ser distinta de la actual."}
+    if not _PATRON_USERNAME_SOC.match(nuevo_user):
+        return {
+            "exito": False,
+            "mensaje": "Usuario inválido: use 3-64 caracteres (letras, números, . _ -).",
+        }
+    if nuevo_user.lower() == actual.lower():
+        return {"exito": False, "mensaje": "Elige un nombre de usuario distinto al actual."}
+    if nuevo_user == SOC_USUARIO_BOOTSTRAP:
+        return {
+            "exito": False,
+            "mensaje": f"No uses la cuenta inicial «{SOC_USUARIO_BOOTSTRAP}»; elige tu usuario personal.",
+        }
+
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            "SELECT password_hash, debe_cambiar_password FROM usuarios_privados WHERE username = ?;",
+            (actual,),
+        )
+        fila = cur.fetchone()
+        if fila is None:
+            return {"exito": False, "mensaje": "Cuenta SOC no encontrada."}
+        if not bool(fila["debe_cambiar_password"]):
+            return {"exito": False, "mensaje": "El onboarding ya fue completado."}
+        if not _verificar_hash_privado(password_actual, fila["password_hash"]):
+            return {"exito": False, "mensaje": "Contraseña actual incorrecta."}
+
+        cur.execute(
+            "SELECT 1 FROM usuarios_privados WHERE username = ? AND username != ? LIMIT 1;",
+            (nuevo_user, actual),
+        )
+        if cur.fetchone():
+            return {"exito": False, "mensaje": "Ese nombre de usuario SOC ya existe."}
+
+        nuevo_hash = _hash_contrasena_privada(password_nueva)
+        cur.execute(
+            """
+            UPDATE usuarios_privados
+            SET username = ?, password_hash = ?, debe_cambiar_password = 0
+            WHERE username = ?;
+            """,
+            (nuevo_user, nuevo_hash, actual),
+        )
+        cur.execute(
+            "UPDATE codigos_2fa SET username = ? WHERE username = ?;",
+            (nuevo_user, actual),
+        )
+        conexion.commit()
+    return {"exito": True, "username_nuevo": nuevo_user}
+
+
+def cambiar_password_soc_autenticado(
+    username: str,
+    password_actual: str,
+    password_nueva: str,
+    password_confirmacion: str,
+) -> dict:
+    """Cambio de contraseña sin renombrar (cuentas que ya completaron onboarding)."""
+    nombre = (username or "").strip()
+    if password_nueva != password_confirmacion:
+        return {"exito": False, "mensaje": "La confirmación no coincide."}
+    if len(password_nueva or "") < 12:
+        return {"exito": False, "mensaje": "La nueva contraseña debe tener al menos 12 caracteres."}
+    if password_nueva == password_actual:
+        return {"exito": False, "mensaje": "La nueva contraseña debe ser distinta de la actual."}
+
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            "SELECT password_hash FROM usuarios_privados WHERE username = ?;",
+            (nombre,),
+        )
+        fila = cur.fetchone()
+        if fila is None:
+            return {"exito": False, "mensaje": "Cuenta SOC no encontrada."}
+        if not _verificar_hash_privado(password_actual, fila["password_hash"]):
+            return {"exito": False, "mensaje": "Contraseña actual incorrecta."}
+
+        nuevo_hash = _hash_contrasena_privada(password_nueva)
+        cur.execute(
+            """
+            UPDATE usuarios_privados
+            SET password_hash = ?, debe_cambiar_password = 0
+            WHERE username = ?;
+            """,
+            (nuevo_hash, nombre),
+        )
+        conexion.commit()
+    return {"exito": True}
+
+
+def soc_debe_cambiar_password(username: str) -> bool:
+    """Consulta flag debe_cambiar_password en BD."""
+    fila = obtener_soc_por_username(username)
+    if not fila:
+        return False
+    return bool(fila.get("debe_cambiar_password"))
+
+
+def obtener_codigo_2fa_pendiente(username: str) -> str | None:
+    """Último OTP no usado (herramienta de tests / soporte)."""
+    nombre = (username or "").strip()
+    if not nombre:
+        return None
+    with obtener_conexion_privada() as conexion:
+        cur = conexion.cursor()
+        cur.execute(
+            """
+            SELECT codigo FROM codigos_2fa
+            WHERE username = ? AND usado = 0
+            ORDER BY id DESC LIMIT 1;
+            """,
+            (nombre,),
+        )
+        fila = cur.fetchone()
+    return fila["codigo"] if fila else None
