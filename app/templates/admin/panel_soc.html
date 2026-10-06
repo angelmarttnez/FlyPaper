@@ -317,6 +317,60 @@
     display: none;
   }
   .banner-demo-mapa.visible { display: block; }
+
+  /* Resúmenes IA (Reportes) */
+  .lista-resumenes-soc { display: flex; flex-direction: column; gap: 12px; }
+  .resumen-item-soc {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px 18px;
+    background: var(--bg-card-soft, var(--bg-input));
+  }
+  .resumen-item-soc.expandido { border-color: color-mix(in srgb, var(--color-accent) 35%, var(--border-color)); }
+  .resumen-item-soc header {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .resumen-item-soc .resumen-fecha { font-weight: 700; color: var(--color-accent); font-size: 15px; }
+  .resumen-item-soc .resumen-meta { font-size: 12px; color: var(--text-muted); }
+  .resumen-preview-soc {
+    font-size: 14px; line-height: 1.6; color: var(--text-soft, var(--text-muted));
+    margin-bottom: 10px;
+  }
+  .resumen-item-soc.expandido .resumen-preview-soc { display: none; }
+  .resumen-completo-soc {
+    font-size: 14px; line-height: 1.65; color: var(--text-main);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: min(70vh, 640px); overflow-y: auto;
+    padding: 14px; margin-bottom: 12px;
+    background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px;
+  }
+  .resumen-acciones-soc { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .resumen-acciones-soc a.btn-descargar-resumen {
+    font-size: 13px; color: var(--color-ok, #3fb950); text-decoration: none; padding: 8px 12px;
+  }
+  .modal-resumen-soc {
+    display: none; position: fixed; inset: 0; z-index: 10050;
+    background: rgba(0, 0, 0, 0.72); align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal-resumen-soc.open { display: flex; }
+  .modal-resumen-soc .modal-caja {
+    background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px;
+    max-width: 760px; width: 100%; max-height: 88vh; display: flex; flex-direction: column;
+    box-shadow: var(--shadow-card);
+  }
+  .modal-resumen-soc .modal-cabecera {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--border-color);
+  }
+  .modal-resumen-soc .modal-cabecera h2 { font-size: 17px; font-weight: 600; }
+  .modal-resumen-soc .modal-cerrar {
+    background: none; border: none; color: var(--text-muted); font-size: 26px; cursor: pointer; line-height: 1;
+  }
+  .modal-resumen-soc .modal-cuerpo {
+    padding: 20px; overflow-y: auto; font-size: 14px; line-height: 1.65;
+    white-space: pre-wrap; color: var(--text-main);
+  }
 </style>
 {% include 'partials/theme_bridge.html' %}
 </head>
@@ -334,6 +388,8 @@
       <button type="button" class="tab-link" data-tab="usuarios">Usuarios (señuelo)</button>
       <button type="button" class="tab-link" data-tab="reportes">Reportes</button>
       <button type="button" class="tab-link" data-tab="mapa">Mapa de Amenazas</button>
+      <a href="{{ url_for('admin_gestion.usuarios_soc_listado') }}" style="display:block;padding:10px 14px;margin-top:8px;font-size:13px;color:var(--text-muted);text-decoration:none;border-radius:8px">Cuentas SOC</a>
+      <a href="{{ url_for('admin_gestion.participantes_ctf_listado') }}" style="display:block;padding:10px 14px;font-size:13px;color:var(--text-muted);text-decoration:none;border-radius:8px">Participantes CTF</a>
       {% endif %}
     </nav>
     <div class="nav-footer">
@@ -433,11 +489,12 @@
           </table>
         </div>
         <div class="sub-panel" data-subpanel="reportes-resumenes">
-          <p class="muted" style="margin-bottom:12px">Resúmenes diarios generados por IA.</p>
-          <table>
-            <thead><tr><th>Fecha</th><th>Eventos</th><th>Vista previa</th><th>Generado</th></tr></thead>
-            <tbody id="tabla-resumenes"><tr><td colspan="4">Cargando…</td></tr></tbody>
-          </table>
+          <p class="muted" style="margin-bottom:12px">
+            Resúmenes diarios generados por IA. Usa <strong>Expandir</strong> para leer el texto completo en la página o <strong>Ventana</strong> para abrirlo a pantalla completa.
+          </p>
+          <div id="lista-resumenes" class="lista-resumenes-soc" aria-live="polite">
+            <p class="muted">Cargando…</p>
+          </div>
         </div>
       </div>
     </section>
@@ -463,6 +520,24 @@
     {% endif %}
   </main>
 
-  <script src="/assets/admin_panel.js"></script>
+  <div id="modal-resumen-soc" class="modal-resumen-soc" aria-hidden="true" role="presentation">
+    <div class="modal-caja" role="dialog" aria-labelledby="modal-resumen-soc-titulo" aria-modal="true">
+      <div class="modal-cabecera">
+        <h2 id="modal-resumen-soc-titulo">Resumen diario</h2>
+        <button type="button" class="modal-cerrar" id="modal-resumen-soc-cerrar" aria-label="Cerrar">×</button>
+      </div>
+      <div class="modal-cuerpo" id="modal-resumen-soc-cuerpo"></div>
+    </div>
+  </div>
+
+  <script>
+    /* Inyectada por Flask desde CARTO_API_KEY (.env); no versionar la clave en JS estático. */
+    window.FLYPAPER_CARTO_API_KEY = {{ carto_api_key|tojson }};
+    console.log('[FlyPaper/CARTO] Inyección HTML (servidor):',
+      window.FLYPAPER_CARTO_API_KEY
+        ? 'CARTO_API_KEY presente en render'
+        : 'CARTO_API_KEY vacía en render — revisa .env y reinicia el servidor');
+  </script>
+  <script src="/assets/admin_panel.js?v=resumenes-expand"></script>
 </body>
 </html>

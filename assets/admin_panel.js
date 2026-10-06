@@ -97,7 +97,7 @@
     if (tab === 'monitor' && !monitorCargado) {
       monitorCargado = true;
       const iframe = document.getElementById('monitor-iframe');
-      if (iframe && !iframe.src) {
+      if (iframe && !iframe.getAttribute('src')) {
         iframe.src = '/admin/embed/monitor';
         /* Al cargar el embed, empuja el tema activo del panel (sin esperar reload). */
         iframe.addEventListener('load', function () {
@@ -365,7 +365,68 @@
   }
 
   /** ——— Reportes ——— */
+  let resumenesSocUiListo = false;
+
+  function initResumenesSocUi() {
+    if (resumenesSocUiListo) return;
+    resumenesSocUiListo = true;
+
+    const overlay = document.getElementById('modal-resumen-soc');
+    const modalCuerpo = document.getElementById('modal-resumen-soc-cuerpo');
+    const modalTitulo = document.getElementById('modal-resumen-soc-titulo');
+    const btnCerrar = document.getElementById('modal-resumen-soc-cerrar');
+
+    function cerrarModalResumen() {
+      if (!overlay) return;
+      overlay.classList.remove('open');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    if (btnCerrar) btnCerrar.addEventListener('click', cerrarModalResumen);
+    if (overlay) {
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) cerrarModalResumen();
+      });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && overlay && overlay.classList.contains('open')) {
+        cerrarModalResumen();
+      }
+    });
+
+    const lista = document.getElementById('lista-resumenes');
+    if (!lista) return;
+
+    lista.addEventListener('click', function (e) {
+      const btnExpandir = e.target.closest('.btn-resumen-expandir');
+      if (btnExpandir) {
+        const articulo = btnExpandir.closest('.resumen-item-soc');
+        const bloque = articulo && articulo.querySelector('.resumen-completo-soc');
+        if (!articulo || !bloque) return;
+        const abierto = !bloque.hidden;
+        bloque.hidden = abierto;
+        articulo.classList.toggle('expandido', !abierto);
+        btnExpandir.textContent = abierto ? 'Expandir texto completo' : 'Contraer';
+        btnExpandir.setAttribute('aria-expanded', abierto ? 'false' : 'true');
+        if (!abierto) bloque.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      const btnModal = e.target.closest('.btn-resumen-modal');
+      if (btnModal && modalCuerpo && modalTitulo && overlay) {
+        const articulo = btnModal.closest('.resumen-item-soc');
+        const bloque = articulo && articulo.querySelector('.resumen-completo-soc');
+        const fecha = (articulo && articulo.dataset.fecha) || '';
+        modalTitulo.textContent = 'Resumen del ' + fecha;
+        modalCuerpo.textContent = bloque ? bloque.textContent : '';
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+      }
+    });
+  }
+
   function initReportesSubtabs() {
+    initResumenesSocUi();
     document.querySelectorAll('[data-subtab]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         const sub = btn.dataset.subtab;
@@ -451,35 +512,71 @@
   }
 
   async function cargarReportesResumenes() {
-    const tbody = document.getElementById('tabla-resumenes');
-    if (!tbody) return;
+    const contenedor = document.getElementById('lista-resumenes');
+    if (!contenedor) return;
+    initResumenesSocUi();
     try {
       const data = await fetchJson('/admin/api/resumenes-panel');
       const resumenes = data.resumenes || extraerData(data, null);
       if (!resumenes.length) {
-        tbody.innerHTML =
-          '<tr><td colspan="4">No hay resúmenes diarios generados</td></tr>';
+        contenedor.innerHTML =
+          '<p class="muted">No hay resúmenes diarios generados todavía (generación automática a las 23:59 o script de laboratorio).</p>';
         return;
       }
-      tbody.innerHTML = resumenes
+      contenedor.innerHTML = resumenes
         .map(function (r) {
+          const fecha = esc(r.fecha);
+          const completo = esc(r.resumen_completo || r.preview || '');
+          const preview = esc(r.preview || '');
+          const generado = esc(String(r.generado_en || '').slice(0, 19));
+          const eventos = esc(r.total_eventos);
+          const chars = esc(r.caracteres != null ? r.caracteres : (r.resumen_completo || '').length);
+          const urlDesc =
+            '/admin/api/resumen-diario/' + encodeURIComponent(r.fecha) + '/descargar';
           return (
-            '<tr><td>' +
-            esc(r.fecha) +
-            '</td><td>' +
-            esc(r.total_eventos) +
-            '</td><td>' +
-            esc(r.preview) +
-            '</td><td class="muted">' +
-            esc(String(r.generado_en || '').slice(0, 19)) +
-            '</td></tr>'
+            '<article class="resumen-item-soc" data-fecha="' +
+            fecha +
+            '">' +
+            '<header><span class="resumen-fecha">' +
+            fecha +
+            '</span><span class="resumen-meta">' +
+            eventos +
+            ' evento(s) · ' +
+            chars +
+            ' caracteres · Generado ' +
+            generado +
+            '</span></header>' +
+            '<p class="resumen-preview-soc">' +
+            preview +
+            '</p>' +
+            '<div class="resumen-completo-soc" hidden>' +
+            completo +
+            '</div>' +
+            '<div class="resumen-acciones-soc">' +
+            '<button type="button" class="btn-soc secondary btn-resumen-expandir" aria-expanded="false">Expandir texto completo</button>' +
+            '<button type="button" class="btn-soc secondary btn-resumen-modal">Ventana</button>' +
+            '<a class="btn-descargar-resumen" href="' +
+            esc(urlDesc) +
+            '" download>Descargar .txt</a>' +
+            '</div></article>'
           );
         })
         .join('');
     } catch (err) {
       mostrarBanner('Error al cargar resúmenes: ' + err.message);
-      tbody.innerHTML = '<tr><td colspan="4">Error al cargar</td></tr>';
+      contenedor.innerHTML = '<p class="muted">Error al cargar resúmenes.</p>';
     }
+  }
+
+  /** URL de teselas CARTO con ?key= (doc oficial; api_key no quita la marca de agua). */
+  function urlTeselasCarto(nombreEstilo) {
+    const clave =
+      typeof window !== 'undefined' && window.FLYPAPER_CARTO_API_KEY
+        ? String(window.FLYPAPER_CARTO_API_KEY).trim()
+        : '';
+    const base = `https://{s}.basemaps.cartocdn.com/${nombreEstilo}/{z}/{x}/{y}{r}.png`;
+    if (!clave) return base;
+    return `${base}?key=${encodeURIComponent(clave)}`;
   }
 
   /** ——— Mapa ——— */
@@ -491,14 +588,19 @@
       minZoom: 2,
       worldCopyJump: true,
     });
-    const capaOscura = L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19,
-      }
-    );
+    const urlCapaCarto = urlTeselasCarto('dark_all');
+    // Depuración temporal: comprueba en consola que la clave llega desde Flask (.env CARTO_API_KEY)
+    console.log('[FlyPaper/CARTO] FLYPAPER_CARTO_API_KEY:', window.FLYPAPER_CARTO_API_KEY
+      ? `definida (${String(window.FLYPAPER_CARTO_API_KEY).trim().length} caracteres)`
+      : 'vacía — reinicia Flask tras editar .env');
+    console.log('[FlyPaper/CARTO] URL teselas (clave enmascarada):',
+      urlCapaCarto.replace(/([?&]key=)[^&]+/, '$1***'));
+
+    const capaOscura = L.tileLayer(urlCapaCarto, {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19,
+    });
     capaOscura.addTo(mapaLeaflet);
     capaMarcadores = L.layerGroup().addTo(mapaLeaflet);
     mapaInicializado = true;
