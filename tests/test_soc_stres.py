@@ -214,6 +214,7 @@ def modulo_firmas(base: str, stats: Estadisticas) -> None:
     print(
         C_DIM
         + "    SQLi / XSS / RCE / LFI / SSRF vía query y /secure/search"
+        + " (desde 06-10-2026 /search ya no es honeypot SQLi; usar /secure/search)"
         + C_RESET
     )
 
@@ -557,6 +558,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Consola Windows (cp1252): evitar UnicodeEncodeError en flechas Unicode.
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     args = parse_args()
     base = args.base.rstrip("/")
     stats = Estadisticas()
