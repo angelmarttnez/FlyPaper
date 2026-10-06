@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8" /><title>Nómina {{ nomina.id }}</title></head>
+<body style="font-family:system-ui;max-width:720px;margin:2rem auto;">
+  <p><a href="{{ url_for('ctf_idor.reto_01') }}">← Volver</a></p>
+  <h1>Nómina #{{ nomina.id }}</h1>
+  <p><strong>{{ nomina.empleado }}</strong> — {{ nomina.puesto }}</p>
+  <p>Importe / detalle: <code>{{ nomina.importe }}</code></p>
+  {% if flag %}<p style="color:green;">Flag: <code>{{ flag }}</code></p>{% endif %}
+  <p><small>Tu ID asignado era {{ mi_id }} (el endpoint no lo enforced).</small></p>
+</body>
+</html>
