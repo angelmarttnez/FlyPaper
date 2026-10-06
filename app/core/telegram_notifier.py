@@ -156,6 +156,41 @@ def notificar_nuevo_registro(username, ip, timestamp):
     enviar_notificacion_telegram(mensaje, message_thread_id=TELEGRAM_TOPIC_LOGINS)
 
 
+def notificar_recuperacion_password_soc(username, password_temporal, ip):
+    """
+    Envía contraseña temporal al topic Logins tras solicitud en /admin/login.
+
+    Returns:
+        bool: True si Telegram aceptó el mensaje.
+    """
+    usuario_seguro = html.escape(str(username or ""))
+    clave_segura = html.escape(str(password_temporal or ""))
+    ip_segura = html.escape(str(ip or ""))
+
+    mensaje = (
+        "🔁 <b>Recuperación de contraseña SOC</b>\n\n"
+        f"👤 Cuenta: <code>{usuario_seguro}</code>\n"
+        f"🔑 Contraseña temporal: <b><code>{clave_segura}</code></b>\n"
+        f"🌐 IP solicitud: <code>{ip_segura}</code>\n\n"
+        "Accede en <code>/admin/login</code>, completa 2FA y "
+        "cambia usuario/contraseña si el sistema lo exige.\n"
+        "<i>Si no has sido tú, revoca el acceso y revisa cuentas SOC.</i>"
+    )
+    return enviar_notificacion_telegram(
+        mensaje,
+        message_thread_id=TELEGRAM_TOPIC_LOGINS,
+    )
+
+
+def telegram_logins_configurado() -> bool:
+    """True si bot, chat y topic Logins están listos para enviar recuperaciones."""
+    return bool(
+        TELEGRAM_BOT_TOKEN
+        and TELEGRAM_CHAT_ID
+        and TELEGRAM_TOPIC_LOGINS is not None
+    )
+
+
 def enviar_codigo_2fa(username, codigo, ip):
     """Envía el código OTP de verificación en dos pasos al topic de logins."""
     usuario_seguro = html.escape(str(username or ""))

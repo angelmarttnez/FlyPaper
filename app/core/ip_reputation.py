@@ -150,6 +150,29 @@ def redis_esta_disponible(forzar: bool = False) -> bool:
     return bool(_redis_disponible_cache)
 
 
+def vaciar_claves_flypaper_redis() -> int:
+    """
+    Borra todas las claves con prefijo flypaper: (bloqueos, rate, CTF, caché IP).
+
+    Returns:
+        int: número de claves eliminadas (0 si Redis no está disponible).
+    """
+    if not redis_esta_disponible(forzar=True):
+        return 0
+    cliente = obtener_cliente_redis()
+    if cliente is None:
+        return 0
+    eliminadas = 0
+    patron = f"{_PREFIX}*"
+    try:
+        for clave in cliente.scan_iter(match=patron):
+            cliente.delete(clave)
+            eliminadas += 1
+    except Exception as exc:
+        logger.warning("No se pudo vaciar Redis (%s): %s", patron, exc)
+    return eliminadas
+
+
 def inicializar_ip_cache() -> None:
     """
     Inicializa el perímetro Redis (alias histórico de inicializar_ip_cache).
@@ -690,6 +713,11 @@ def ruta_exenta_rate_limit(ruta: str) -> bool:
         return True
     # Polling de la consola WAF del alumno (sin saturar el rate-limit).
     if (ruta or "").startswith("/api/ctf"):
+        return True
+    # SuperLab NexusCorp (reto encadenado — mismo criterio que academia /objetivos).
+    if (ruta or "").startswith("/web-nexuscorp"):
+        return True
+    if (ruta or "").startswith("/tools/"):
         return True
     return False
 

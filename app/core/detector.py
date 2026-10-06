@@ -610,6 +610,23 @@ def _search_get_query_es_limpia(ruta: Optional[str], payload_norm: str) -> bool:
     return bool(_PATRON_QUERY_SEARCH_LIMPIA.match(query))
 
 
+def _ruta_superlab_exenta_waf(ruta_norm: str) -> bool:
+    """SuperLab NexusCorp + herramientas /tools: sin interferencia del WAF perimetral."""
+    return ruta_norm.startswith("/web-nexuscorp") or ruta_norm.startswith("/tools/")
+
+
+def _ruta_academia_labs_exenta_waf(ruta_norm: str) -> bool:
+    """Labs XSS, Path Traversal e IDOR: WAF pedagógico desactivado (como SQLi 01–03)."""
+    for prefijo in (
+        "/objetivos/xss",
+        "/objetivos/pathtraversal",
+        "/objetivos/idor",
+    ):
+        if ruta_norm.startswith(prefijo):
+            return True
+    return False
+
+
 def _ruta_academia_sqli_exenta_waf(ruta_norm: str) -> bool:
     """
     Labs SQLi 01–03: WAF perimetral no interfiere (telemetría educativa sí).
@@ -644,7 +661,18 @@ def _es_trafico_legitimo_prioritario(
 
     # Academia CTF SQLi 01–03: labs deliberadamente vulnerables — WAF no interfiere.
     # Reto 04 queda fuera a propósito (entrenamiento anti-WAF + riesgo Redis).
+    if _ruta_superlab_exenta_waf(ruta_norm):
+        return True
+
+    if _ruta_academia_labs_exenta_waf(ruta_norm):
+        return True
+
     if _ruta_academia_sqli_exenta_waf(ruta_norm):
+        return True
+
+    metodo_up = (metodo or "GET").upper()
+    # Buscador real /search?q= — términos pueden incluir SELECT, comillas, etc.
+    if ruta_norm == "/search" and metodo_up == "GET":
         return True
 
     if _contiene_patrones_ataque(texto_completo, ruta):
@@ -656,8 +684,6 @@ def _es_trafico_legitimo_prioritario(
             and (metodo or "GET").upper() == "GET"
         ):
             return False
-
-    metodo_up = (metodo or "GET").upper()
 
     if metodo_up in ("OPTIONS", "HEAD"):
         return True
@@ -675,8 +701,6 @@ def _es_trafico_legitimo_prioritario(
         return True
     if metodo_up == "GET" and _PATRON_RUTA_BLOG_POST.match(ruta_norm):
         return True
-    if ruta_norm == "/search" and metodo_up == "GET":
-        return _search_get_query_es_limpia(ruta, payload_norm)
     # Panel SOC real: no marcar como ruta prohibida en GET autenticado.
     if ruta_norm.startswith("/admin") and metodo_up == "GET":
         return True
