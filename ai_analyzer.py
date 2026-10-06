@@ -13,8 +13,10 @@ from groq import Groq
 
 from app.database import obtener_eventos
 
-# Modelo Groq usado en todas las llamadas al analizador.
-MODELO_GROQ = "llama-3.1-8b-instant"
+# Modelo Groq (plan developer). llama-3.1-8b-instant fue retirado; ver deprecations en GroqDocs.
+# Override opcional: GROQ_MODEL en .env (p. ej. openai/gpt-oss-120b para más calidad).
+def _modelo_groq():
+    return (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-20b").strip() or "openai/gpt-oss-20b"
 
 # Respuesta por defecto si falla el análisis de un payload individual.
 ANALISIS_PAYLOAD_DEFECTO = {
@@ -158,7 +160,7 @@ explícitamente como 'Sin incidentes de seguridad relevantes detectados'."""
 def _invocar_modelo_groq(cliente, prompt, max_tokens):
     """Envía un prompt al modelo Groq y devuelve el texto de la respuesta."""
     response = cliente.chat.completions.create(
-        model=MODELO_GROQ,
+        model=_modelo_groq(),
         messages=[{"role": "user", "content": prompt}],
         max_tokens=max_tokens,
         temperature=0.2,
@@ -304,7 +306,8 @@ Datos del día:
 
     try:
         cliente = _obtener_cliente_groq()
-        texto = _invocar_modelo_groq(cliente, prompt, max_tokens=800)
+        # gpt-oss consume tokens en razonamiento interno; margen alto para el texto final.
+        texto = _invocar_modelo_groq(cliente, prompt, max_tokens=2000)
         return texto or "El modelo no devolvió contenido para el resumen diario."
 
     except ValueError as exc:
