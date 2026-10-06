@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8">
+<title>{{ detalle.username }} — Participante CTF</title>
+<style>
+  body { font-family: var(--font-ui); background: var(--bg-base); color: var(--text-main); padding: 32px; max-width: 960px; }
+  a { color: var(--color-accent); }
+  h1 { font-size: 22px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 20px 0; }
+  .stat { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; }
+  .stat small { color: var(--text-muted); display: block; }
+  section { margin-top: 28px; }
+  ul { font-size: 14px; line-height: 1.6; }
+  form { margin-top: 16px; padding: 16px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
+  button { padding: 8px 14px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-base); color: var(--text-main); }
+  button.danger { border-color: var(--color-err); color: var(--color-err); }
+</style>
+</head>
+<body class="theme-aware">
+  <a href="{{ url_for('admin_gestion.participantes_ctf_listado') }}">← Listado participantes</a>
+  <h1>{{ detalle.username }}</h1>
+  <div class="grid">
+    <div class="stat"><small>Puntos ranking</small><strong>{{ detalle.puntos_totales }}</strong></div>
+    <div class="stat"><small>Flags capturadas</small><strong>{{ detalle.flags_capturadas }}</strong></div>
+    <div class="stat"><small>Registro</small>{{ detalle.fecha_registro or '—' }}</div>
+    <div class="stat"><small>Último login</small>{{ detalle.ultimo_login or '—' }}</div>
+  </div>
+
+  <section>
+    <h2>Por categoría (Academia)</h2>
+    <ul>
+      {% for cat in detalle.categorias %}
+      <li><strong>{{ cat.label }}</strong>: {{ cat.resueltos }}/{{ cat.total }} retos — {{ cat.puntos }} pts</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section>
+    <h2>Flags en flypaper.db</h2>
+    <ul>
+      {% for f in detalle.flags_detalle %}
+      <li>{{ f.reto_nombre }} ({{ f.puntos }} pts) — {{ f.fecha }}</li>
+      {% else %}
+      <li>Sin flags registradas.</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if detalle.superlab %}
+  <section>
+    <h2>SuperLab</h2>
+    <p>Fase {{ detalle.superlab.fase_actual }} — flags locales: {{ detalle.superlab.flags_capturadas }}</p>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>Acciones</h2>
+    <form method="post" action="{{ url_for('admin_gestion.participantes_ctf_reset', username=detalle.username) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token_soc() }}">
+      <p>Resetear progreso (mantiene la cuenta). Escribe <code>RESETEAR</code> para confirmar.</p>
+      <input type="text" name="confirmacion" placeholder="RESETEAR" required>
+      <button type="submit">Resetear progreso CTF</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_gestion.participantes_ctf_eliminar', usuario_id=detalle.id) }}" style="margin-top:12px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token_soc() }}">
+      <p class="danger">Eliminar cuenta (irreversible). Escribe ELIMINAR en ambos campos.</p>
+      <input type="text" name="confirmacion_1" placeholder="ELIMINAR" required>
+      <input type="text" name="confirmacion_2" placeholder="ELIMINAR" required style="margin-left:8px">
+      <button type="submit" class="danger">Eliminar participante</button>
+    </form>
+  </section>
+</body>
+</html>

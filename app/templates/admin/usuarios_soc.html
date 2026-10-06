@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8">
+<title>Cuentas SOC — FlyPaper Admin</title>
+<style>
+  body { font-family: var(--font-ui); background: var(--bg-base); color: var(--text-main); min-height: 100vh; padding: 32px; }
+  a.back { color: var(--color-accent); text-decoration: none; font-size: 14px; }
+  h1 { font-size: 22px; margin: 16px 0 8px; }
+  .muted { color: var(--text-muted); font-size: 14px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; margin-top: 20px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
+  th { color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: color-mix(in srgb, var(--color-accent) 20%, transparent); }
+  .warn { background: color-mix(in srgb, #d29922 25%, transparent); color: #d29922; }
+  form.inline { display: inline; }
+  button, .btn { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-base); color: var(--text-main); cursor: pointer; font-size: 13px; }
+  button.danger { border-color: var(--color-err); color: var(--color-err); }
+  .flash { margin: 16px 0; padding: 12px; border-radius: 8px; font-size: 14px; }
+  .flash.ok { background: color-mix(in srgb, #3fb950 20%, transparent); }
+  .flash.err { background: color-mix(in srgb, var(--color-err) 15%, transparent); color: var(--color-err); }
+  .flash.secret { background: color-mix(in srgb, var(--color-accent) 15%, transparent); font-family: monospace; word-break: break-all; }
+  .crear { padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .crear label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+  input, select { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-base); color: var(--text-main); }
+</style>
+</head>
+<body class="theme-aware">
+  <a class="back" href="{{ url_for('mostrar_panel_admin') }}">← Volver al panel SOC</a>
+  <h1>Cuentas SOC (flypaper_priv.db)</h1>
+  <p class="muted">Administración real del panel. Distinto de usuarios señuelo del honeypot.</p>
+
+  {% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+  {% if ok %}<div class="flash ok">{{ ok }}</div>{% endif %}
+  {% if password_mostrada_una_vez %}
+  <div class="flash secret">
+    Contraseña temporal (solo se muestra una vez){% if cuenta_creada %} para {{ cuenta_creada }}{% elif cuenta_reset %} — reset {{ cuenta_reset }}{% endif %}:
+    <strong>{{ password_mostrada_una_vez }}</strong>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="crear">
+      <form method="post" action="{{ url_for('admin_gestion.usuarios_soc_crear') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token_soc() }}">
+        <label>Usuario</label>
+        <input name="username" required minlength="3" placeholder="nuevo.analyst">
+        <label style="margin-top:8px">Rol</label>
+        <select name="rol">
+          {% for r in roles %}
+          <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" style="margin-top:12px">Crear cuenta (temporal auto)</button>
+      </form>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Rol</th>
+          <th>Creado</th>
+          <th>Último login</th>
+          <th>Password</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cuentas %}
+        <tr>
+          <td>{{ c.username }}{% if c.username == usuario_actual %} (tú){% endif %}</td>
+          <td><span class="badge">{{ c.rol }}</span></td>
+          <td>{{ c.fecha_creacion or '—' }}</td>
+          <td>{{ c.ultimo_login or '—' }}</td>
+          <td>{% if c.debe_cambiar_password %}<span class="badge warn">Pendiente cambio</span>{% else %}OK{% endif %}</td>
+          <td>
+            <form class="inline" method="post" action="{{ url_for('admin_gestion.usuarios_soc_reset', username=c.username) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token_soc() }}">
+              <button type="submit">Reset pass</button>
+            </form>
+            <form class="inline" method="post" action="{{ url_for('admin_gestion.usuarios_soc_eliminar', username=c.username) }}" onsubmit="return confirm('¿Eliminar cuenta SOC {{ c.username }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token_soc() }}">
+              <input type="hidden" name="confirmacion" value="" id="conf-{{ loop.index }}">
+              <button type="button" class="danger" onclick="var v=prompt('Escribe el usuario exacto para confirmar:'); if(v==='{{ c.username }}'){ document.getElementById('conf-{{ loop.index }}').value=v; this.form.submit(); }">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No hay cuentas SOC.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

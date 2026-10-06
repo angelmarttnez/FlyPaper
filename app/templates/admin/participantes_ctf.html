@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8">
+<title>Participantes CTF — Admin</title>
+<style>
+  body { font-family: var(--font-ui); background: var(--bg-base); color: var(--text-main); padding: 32px; }
+  a { color: var(--color-accent); }
+  h1 { font-size: 22px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); text-align: left; }
+  th { color: var(--text-muted); font-size: 12px; text-transform: uppercase; }
+</style>
+</head>
+<body class="theme-aware">
+  <a href="{{ url_for('mostrar_panel_admin') }}">← Panel SOC</a>
+  <h1>Participantes CTF (flypaper_users.db)</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Registro</th>
+        <th>Puntos</th>
+        <th>Flags</th>
+        <th>Último lab</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in participantes %}
+      <tr>
+        <td>{{ p.username }}</td>
+        <td>{{ p.fecha_registro or '—' }}</td>
+        <td>{{ p.puntos_totales }}</td>
+        <td>{{ p.flags_capturadas }}</td>
+        <td>{{ p.ultimo_lab_resuelto or '—' }}</td>
+        <td><a href="{{ url_for('admin_gestion.participantes_ctf_detalle', username=p.username) }}">Detalle</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Sin participantes registrados.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
