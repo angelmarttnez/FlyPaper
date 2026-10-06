@@ -15,39 +15,6 @@
     text-shadow: var(--text-glow);
     transition: background-color 0.3s ease, color 0.3s ease;
   }
-  .navbar {
-    background: var(--bg-card-soft);
-    border-bottom: 1px solid var(--border-color);
-    padding: 16px 40px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: var(--shadow-card);
-    backdrop-filter: blur(var(--glass-blur));
-  }
-  .logo {
-    font-size: 24px;
-    font-weight: 800;
-    color: var(--color-accent);
-    letter-spacing: -0.5px;
-  }
-  .logo::before { content: "✈ "; -webkit-text-fill-color: #6366f1; }
-  .nav-links { display: flex; gap: 8px; list-style: none; }
-  .nav-links a {
-    color: #b4b8c5;
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
-  .nav-links a:hover { background: #1a2138; color: #fff; }
-  .nav-links a.active { background: #1a2138; color: #fff; }
-
   .container { max-width: 1280px; margin: 0 auto; padding: 48px 40px; }
   .page-header { margin-bottom: 40px; }
   .page-header h1 {
@@ -158,7 +125,7 @@
   <main class="container">
     <div class="page-header">
       <h1>Blog</h1>
-      <p>Últimas publicaciones, writeups y notas técnicas</p>
+      <p>Stack FlyPaper, laboratorios CTF, documentación, SOC y seguridad del portal</p>
     </div>
 
     <div class="grid">

@@ -92,6 +92,25 @@
   }
   button:hover { box-shadow: 0 8px 20px rgba(220, 38, 38, 0.35); }
   button:active { transform: translateY(1px); }
+  .btn-recuperar {
+    width: 100%;
+    padding: 11px 14px;
+    margin-top: 10px;
+    background: transparent;
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.45);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .btn-recuperar:hover {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(96, 165, 250, 0.65);
+    color: #e0f2fe;
+    box-shadow: none;
+  }
   .auth-links {
     text-align: center;
     margin-top: 20px;
@@ -167,8 +186,13 @@
     {% if mensaje_error %}
     <div class="error">{{ mensaje_error }}</div>
     {% endif %}
+    {% if mensaje_aviso %}
+    <div class="notice">{{ mensaje_aviso }}</div>
+    {% endif %}
 
+    {% if not mensaje_aviso %}
     <div class="notice">Solo cuentas autorizadas del directorio interno pueden acceder a este portal.</div>
+    {% endif %}
 
     <form method="POST" action="/admin/login">
       <div class="field">
@@ -180,6 +204,13 @@
         <input type="password" id="password" name="password" required autocomplete="current-password" />
       </div>
       <button type="submit">Acceder al panel</button>
+      <button type="submit"
+              class="btn-recuperar"
+              formaction="{{ url_for('admin_recuperar_password_soc') }}"
+              formmethod="post"
+              title="Envía una contraseña temporal al topic Logins de Telegram">
+        ¿Olvidaste la contraseña? Enviar a Telegram (Logins)
+      </button>
     </form>
 
     <p class="auth-links">

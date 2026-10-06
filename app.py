@@ -22,13 +22,15 @@ import io
 import ipaddress
 import json
 import logging
+import os
 import random
 import re
+import secrets
 import threading
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -87,6 +89,8 @@ from app.database import (
     obtener_ultimas_ips_conexion,
     verificar_usuario_privado,
     verificar_admin_panel_privado,
+    obtener_soc_por_username,
+    resetear_password_soc,
     generar_codigo_2fa,
     verificar_codigo_2fa,
     limpiar_codigos_2fa_expirados,
@@ -181,6 +185,7 @@ from app.core.ip_reputation import (
     TIPO_ATAQUE_BOT_WAF,
     obtener_mapa_bots_perimetro,
 )
+from app.rosco import seleccionar_rosco_aleatorio
 
 # Intervalo entre ejecuciones del hilo de fondo (limpieza + anomalías IA, 30 minutos).
 INTERVALO_LIMPIEZA_COMENTARIOS_SEG = 30 * 60
@@ -606,7 +611,7 @@ def _validar_exportacion_actividad_publica():
 
 
 def _respuesta_analisis_ia(registro_id, tipo_ataque, payload, ruta, fuente):
-    """Construye la respuesta JSON del análisis Claude (eventos o peticiones)."""
+    """Construye la respuesta JSON del análisis IA (eventos o peticiones)."""
     if _payload_evento_vacio(payload):
         return jsonify({"error": "Este registro no tiene payload para analizar"}), 400
 
@@ -973,7 +978,17 @@ aplicacion.wsgi_app = ProxyFix(
     x_port=1,
 )
 # Clave para firmar cookies de sesión (login honeypot y otras sesiones).
-aplicacion.secret_key = 'flypaper_secreto_2026'
+# Firma de cookies de sesión. En VM/producción definir SECRET_KEY (o FLASK_SECRET_KEY) en .env.
+_SECRET_KEY_DEFECTO_LAB = "flypaper_secreto_2026"
+aplicacion.secret_key = (
+    (os.environ.get("SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY") or "").strip()
+    or _SECRET_KEY_DEFECTO_LAB
+)
+if aplicacion.secret_key == _SECRET_KEY_DEFECTO_LAB:
+    logging.warning(
+        "[FlyPaper] SECRET_KEY por defecto de laboratorio. "
+        "En despliegue define SECRET_KEY en .env (cadena larga aleatoria)."
+    )
 
 # Blindaje SOC por defecto; las rutas CTF se relajan en process_response.
 aplicacion.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -989,7 +1004,16 @@ aplicacion.config["PERMANENT_SESSION_LIFETIME"] = SESION_PUBLICA_INACTIVIDAD
 aplicacion.config["SESSION_REFRESH_EACH_REQUEST"] = True
 
 # Prefijos de Excepción Pedagógica (CTF / labs SQLi).
-_PREFIJOS_EXCEPCION_PEDAGOGICA = ("/objetivos/sqli/", "/api/ctf/")
+_PREFIJOS_EXCEPCION_PEDAGOGICA = (
+    "/objetivos/sqli/",
+    "/objetivos/xss/",
+    "/objetivos/pathtraversal/",
+    "/objetivos/idor/",
+    "/api/ctf/",
+    "/web-nexuscorp",
+    "/web-nexuscorp-2.0",
+    "/tools/",
+)
 
 
 def _ruta_es_excepcion_pedagogica(ruta):
@@ -1043,9 +1067,23 @@ def _aplicar_politica_cookie_sesion(respuesta, ruta):
     return respuesta
 
 
-def _inyectar_cabeceras_blindaje_soc(respuesta):
-    """Blindaje SOC: cabeceras anti-clickjacking y anti-MIME-sniffing."""
-    respuesta.headers["X-Frame-Options"] = "DENY"
+def _ruta_es_embed_monitor(ruta):
+    """True si es el dashboard embebido en el panel SOC (iframe)."""
+    return bool(ruta) and ruta.startswith("/admin/embed/")
+
+
+def _inyectar_cabeceras_blindaje_soc(respuesta, ruta=None):
+    """
+    Blindaje SOC: anti-clickjacking + nosniff.
+
+    El embed del monitor (/admin/embed/*) debe poder cargarse en iframe
+    same-origin del panel SOC → SAMEORIGIN (no DENY).
+    """
+    ruta = ruta if ruta is not None else (request.path or "")
+    if _ruta_es_embed_monitor(ruta):
+        respuesta.headers["X-Frame-Options"] = "SAMEORIGIN"
+    else:
+        respuesta.headers["X-Frame-Options"] = "DENY"
     respuesta.headers["X-Content-Type-Options"] = "nosniff"
     return respuesta
 
@@ -1088,10 +1126,37 @@ inicializar_ip_cache()
 
 # Academia SQLi: labs aislados en data/ctf/ + sync de flags.
 from app.ctf_sqli import ctf_api, ctf_sqli, inicializar_labs_sqli  # noqa: E402
+from app.ctf_idor import ctf_idor, inicializar_lab_idor  # noqa: E402
+from app.ctf_pathtraversal import ctf_pathtraversal, inicializar_lab_pathtraversal  # noqa: E402
+from app.ctf_xss import ctf_xss, inicializar_lab_xss  # noqa: E402
 
 inicializar_labs_sqli()
+inicializar_lab_xss()
+inicializar_lab_pathtraversal()
+inicializar_lab_idor()
 aplicacion.register_blueprint(ctf_sqli)
 aplicacion.register_blueprint(ctf_api)
+aplicacion.register_blueprint(ctf_xss)
+aplicacion.register_blueprint(ctf_pathtraversal)
+aplicacion.register_blueprint(ctf_idor)
+
+from app.admin_gestion import admin_gestion  # noqa: E402
+
+aplicacion.register_blueprint(admin_gestion)
+
+from app.superlab import (  # noqa: E402
+    inicializar_superlab,
+    superlab_legacy,
+    superlab_nexus,
+    superlab_staging,
+    superlab_tools,
+)
+
+inicializar_superlab()
+aplicacion.register_blueprint(superlab_nexus)
+aplicacion.register_blueprint(superlab_legacy)
+aplicacion.register_blueprint(superlab_staging)
+aplicacion.register_blueprint(superlab_tools)
 
 
 def cargar_cache_ips_bloqueadas():
@@ -1441,6 +1506,20 @@ def _plantilla_publica(nombre, nav_activo=None, **kwargs):
     return render_template(nombre, **ctx)
 
 
+from app.documentacion_writeups import (  # noqa: E402
+    registrar_rutas_writeups_documentacion,
+    ruta_writeup_documentacion,
+)
+
+registrar_rutas_writeups_documentacion(aplicacion, _plantilla_publica, limiter)
+
+
+@aplicacion.context_processor
+def _inyectar_urls_writeups_academia():
+    """URLs de writeups sin depender de ``url_for`` en plantillas del portal."""
+    return {"url_writeup_academia": ruta_writeup_documentacion}
+
+
 def _payload_registro_vacio(payload):
     """True si no hay formulario, JSON, query string ni cuerpo útil para clasificar."""
     if payload is None:
@@ -1596,7 +1675,12 @@ def debe_excluirse_del_registro(ruta_solicitada):
         or ruta_solicitada.startswith("/static")
         or ruta_solicitada.startswith("/assets")
         or ruta_solicitada.startswith("/objetivos/sqli")
+        or ruta_solicitada.startswith("/objetivos/xss")
+        or ruta_solicitada.startswith("/objetivos/pathtraversal")
+        or ruta_solicitada.startswith("/objetivos/idor")
         or ruta_solicitada.startswith("/api/ctf")
+        or ruta_solicitada.startswith("/web-nexuscorp")
+        or ruta_solicitada.startswith("/tools/")
     )
 
 
@@ -1604,10 +1688,8 @@ def omitir_registro_automatico_honeypot(ruta_solicitada, metodo):
     """
     Evita doble registro cuando una vista ya guarda el evento con reglas propias.
 
-    POST /search, POST /secure/search y POST /secure/blog/.../comentar registran manualmente.
+    POST /secure/search y POST /secure/blog/.../comentar registran manualmente.
     """
-    if ruta_solicitada == "/search" and metodo == "POST":
-        return True
     if ruta_solicitada == "/secure/search" and metodo == "POST":
         return True
     if metodo == "POST" and re.match(r"^/secure/blog/\d+/comentar$", ruta_solicitada or ""):
@@ -1749,31 +1831,6 @@ def _autoban_si_corresponde(ip, tipo_ataque, motivo="Bloqueo automático zona /s
     return respuesta_expulsion_visitante()
 
 
-def _ejecutar_busqueda_vulnerable(query):
-    """
-    Ejecuta la consulta SQLi deliberadamente vulnerable sobre `posts`.
-
-    Returns:
-        tuple: (resultados, error_sql)
-    """
-    resultados = []
-    error_sql = None
-    sql = (
-        f"SELECT id, titulo, contenido, fecha FROM posts "
-        f"WHERE titulo LIKE '%{query}%' OR contenido LIKE '%{query}%'"
-    )
-    try:
-        with obtener_conexion() as conexion:
-            cursor = conexion.cursor()
-            cursor.execute(sql)
-            columnas = [desc[0] for desc in cursor.description] if cursor.description else []
-            for fila in cursor.fetchall():
-                resultados.append(dict(zip(columnas, fila)))
-    except Exception as exc:
-        error_sql = str(exc)
-    return resultados, error_sql
-
-
 def _ejecutar_busqueda_autoban_vulnerable(query):
     """
     Consulta SQLi deliberadamente vulnerable sobre ab_posts (flypaper_autoban.db).
@@ -1822,7 +1879,15 @@ def ruta_exenta_de_bloqueo_ip(ruta):
         return True
     if ruta.startswith("/assets/"):
         return True
-    if ruta in ("/acceso/reintentar", "/login", "/register", "/admin/login", "/expulsado", "/verify-ip"):
+    if ruta in (
+        "/acceso/reintentar",
+        "/login",
+        "/register",
+        "/admin/login",
+        "/admin/login/recuperar",
+        "/expulsado",
+        "/verify-ip",
+    ):
         return True
     return False
 
@@ -2002,6 +2067,14 @@ def requiere_acceso_soc(funcion_vista):
     def envoltorio(*args, **kwargs):
         if not acceso_soc_autorizado():
             return redirect(url_for("mostrar_admin_login"))
+        if session.get("soc_debe_cambiar_password"):
+            fin = request.endpoint or ""
+            if fin not in (
+                "admin_gestion.cambiar_password_soc_get",
+                "admin_gestion.cambiar_password_soc_post",
+                "admin_soc_logout",
+            ):
+                return redirect(url_for("admin_gestion.cambiar_password_soc_get"))
         return funcion_vista(*args, **kwargs)
 
     return envoltorio
@@ -2075,6 +2148,14 @@ def _redirigir_si_no_es_soc():
     """Protege rutas del panel unificado /admin (admin o analyst)."""
     if not acceso_soc_autorizado():
         return redirect(url_for("mostrar_admin_login"))
+    if session.get("soc_debe_cambiar_password"):
+        fin = request.endpoint or ""
+        if fin not in (
+            "admin_gestion.cambiar_password_soc_get",
+            "admin_gestion.cambiar_password_soc_post",
+            "admin_soc_logout",
+        ):
+            return redirect(url_for("admin_gestion.cambiar_password_soc_get"))
     return None
 
 
@@ -2085,12 +2166,13 @@ def aplicar_blindaje_selectivo_headers(respuesta):
 
     - Excepción Pedagógica (/objetivos/sqli/*, /api/ctf/*): sin cabeceras rígidas
       que rompan dinámicas de ataque en labs.
-    - Blindaje SOC (resto, incl. /admin/*): X-Frame-Options + nosniff.
+    - Embed monitor (/admin/embed/*): X-Frame-Options SAMEORIGIN (iframe SOC).
+    - Blindaje SOC (resto, incl. /admin/*): X-Frame-Options DENY + nosniff.
     """
     ruta = request.path or ""
     if _ruta_es_excepcion_pedagogica(ruta):
         return respuesta
-    return _inyectar_cabeceras_blindaje_soc(respuesta)
+    return _inyectar_cabeceras_blindaje_soc(respuesta, ruta)
 
 
 # Flask guarda la cookie de sesión DESPUÉS de after_request; ajustamos flags aquí.
@@ -2267,6 +2349,17 @@ def registrar_evento_honeypot(respuesta):
     return respuesta
 
 
+@aplicacion.get("/robots.txt")
+def servir_robots_txt():
+    """
+    robots.txt del honeypot; pista fase 0 SuperLab (directorio legacy oculto).
+    """
+    cuerpo = "User-agent: *\nDisallow: /web-nexuscorp-2.0\n"
+    respuesta = make_response(cuerpo)
+    respuesta.mimetype = "text/plain; charset=utf-8"
+    return respuesta
+
+
 @aplicacion.get("/")
 def mostrar_landing():
     """
@@ -2395,23 +2488,33 @@ def _completar_sesion_tras_2fa(username, rol, redirige):
     ip_peticion = obtener_ip_cliente()
     _limpiar_sesion_2fa()
 
+    from app.admin_gestion.routes import marcar_sesion_password_pendiente
+
     if rol == ROL_PRIV_MONITOR:
         session["analyst"] = True
+        session["usuario"] = username
+        marcar_sesion_password_pendiente(username)
         _notificar_en_hilo(
             notificar_login_monitor,
             username,
             ip_peticion,
             marca_ahora(),
         )
-        return redirect(redirige or url_for("mostrar_panel_admin"))
+        destino = redirige or url_for("mostrar_panel_admin")
+        if session.get("soc_debe_cambiar_password"):
+            return redirect(url_for("admin_gestion.cambiar_password_soc_get"))
+        return redirect(destino)
 
     _iniciar_sesion_admin_panel(username)
+    marcar_sesion_password_pendiente(username)
     _notificar_en_hilo(
         notificar_login_admin,
         username,
         ip_peticion,
         marca_ahora(),
     )
+    if session.get("soc_debe_cambiar_password"):
+        return redirect(url_for("admin_gestion.cambiar_password_soc_get"))
     return redirect(redirige or "/admin")
 
 
@@ -2423,13 +2526,39 @@ def mostrar_admin_login():
     Solo valida cuentas admin_panel en flypaper_priv.db (POST dedicado).
     """
     mensaje_error = None
+    mensaje_aviso = None
     if request.args.get("error") == "admin_portal":
         mensaje_error = "Credenciales no válidas para el portal de administración."
     elif request.args.get("error") == "1":
         mensaje_error = "Credenciales no válidas para el portal de administración."
+    elif request.args.get("recuperar") == "1":
+        mensaje_aviso = (
+            "Si el usuario SOC existe, la contraseña temporal se ha enviado al topic "
+            "«Logins» de Telegram. Revisa el grupo y vuelve a entrar con 2FA."
+        )
+    elif request.args.get("recuperar") == "sin_telegram":
+        mensaje_error = (
+            "Recuperación no disponible: configura TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID "
+            "y TELEGRAM_TOPIC_LOGINS en el servidor."
+        )
+    elif request.args.get("recuperar") == "fallo_telegram":
+        mensaje_error = (
+            "No se pudo entregar el mensaje en Telegram. Contacta a otro administrador SOC."
+        )
+    elif request.args.get("recuperar") == "usuario":
+        mensaje_error = "Indica tu usuario SOC en el campo «Usuario» antes de recuperar."
+    elif request.args.get("recuperar") == "desactivado":
+        mensaje_error = (
+            "La recuperación por Telegram está desactivada en este servidor "
+            "(FLYPAPER_ALLOW_SOC_RECOVERY=0)."
+        )
 
     respuesta = make_response(
-        render_template("admin/login.html", mensaje_error=mensaje_error)
+        render_template(
+            "admin/login.html",
+            mensaje_error=mensaje_error,
+            mensaje_aviso=mensaje_aviso,
+        )
     )
     respuesta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     respuesta.headers["Pragma"] = "no-cache"
@@ -2455,6 +2584,60 @@ def procesar_admin_login():
         return _iniciar_flujo_2fa_privilegiado(cuenta_priv)
 
     return redirect(url_for("mostrar_admin_login", error="admin_portal"))
+
+
+@aplicacion.post("/admin/login/recuperar")
+@limiter.limit("3 per hour")
+def admin_recuperar_password_soc():
+    """
+    Genera contraseña temporal y la envía al topic Telegram Logins (sin mostrarla en web).
+
+    Orden seguro: primero notificar por Telegram; solo si llega, resetear en BD.
+    Así se evita dejar la cuenta bloqueada si Telegram falla tras el UPDATE.
+    Desactivar en VM pública con FLYPAPER_ALLOW_SOC_RECOVERY=0.
+    Respuesta genérica para no facilitar enumeración de cuentas.
+    """
+    from app.core.telegram_notifier import (
+        notificar_recuperacion_password_soc,
+        telegram_logins_configurado,
+    )
+
+    if (os.environ.get("FLYPAPER_ALLOW_SOC_RECOVERY") or "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        return redirect(url_for("mostrar_admin_login", recuperar="desactivado"))
+
+    username = (request.form.get("username") or "").strip()
+    if not username:
+        return redirect(url_for("mostrar_admin_login", recuperar="usuario"))
+
+    if not telegram_logins_configurado():
+        return redirect(url_for("mostrar_admin_login", recuperar="sin_telegram"))
+
+    ip_peticion = obtener_ip_cliente()
+    cuenta = obtener_soc_por_username(username)
+    roles_soc = (ROL_PRIV_ADMIN_PANEL, ROL_PRIV_MONITOR)
+
+    if cuenta and cuenta.get("rol") in roles_soc:
+        temp = secrets.token_urlsafe(12)
+        if len(temp) < 12:
+            temp = temp + "Xy9!"
+        enviado = notificar_recuperacion_password_soc(username, temp, ip_peticion)
+        if not enviado:
+            return redirect(url_for("mostrar_admin_login", recuperar="fallo_telegram"))
+        resultado = resetear_password_soc(username, temp)
+        if not resultado.get("exito"):
+            logging.error(
+                "Recuperación SOC: Telegram OK pero reset BD falló para %s: %s",
+                username,
+                resultado.get("mensaje"),
+            )
+            return redirect(url_for("mostrar_admin_login", recuperar="fallo_telegram"))
+
+    return redirect(url_for("mostrar_admin_login", recuperar="1"))
 
 
 @aplicacion.get("/admin/verificar-2fa")
@@ -2638,11 +2821,14 @@ def mostrar_panel_admin():
         session.get("logueado") is True
         and session.get("rol") == ROL_USUARIO_ADMIN_BD
     )
+    # Clave CARTO para teselas Leaflet (solo panel autenticado; ver CARTO_API_KEY en .env)
+    carto_api_key = os.getenv("CARTO_API_KEY", "").strip()
     return render_template(
         "admin/panel_soc.html",
         usuario=usuario,
         rol_etiqueta=rol_etiqueta,
         es_admin=es_admin,
+        carto_api_key=carto_api_key,
     )
 
 
@@ -2653,6 +2839,7 @@ def admin_soc_logout():
     session.pop("logueado", None)
     session.pop("usuario", None)
     session.pop("rol", None)
+    session.pop("soc_debe_cambiar_password", None)
     return redirect(url_for("mostrar_admin_login"))
 
 
@@ -3096,73 +3283,38 @@ def simular_wp_admin():
 @limiter.limit("30 per minute")
 def mostrar_busqueda():
     """
-    Búsqueda interna (requiere usuario autenticado en el portal público).
+    Buscador del portal (GET ?q=): blog, labs CTF y documentación.
 
-    La consulta vulnerable se envía por POST al mismo endpoint.
+    Consultas parametrizadas; ver ``app/buscador_portal.py``.
     """
+    from app.buscador_portal import buscar_portal
+
     mensaje_acceso = None
     if request.args.get("error") == "acceso_denegado":
         mensaje_acceso = "No tienes permisos para acceder a esa sección"
+    termino = request.args.get("q", "")
+    resultado_busqueda = buscar_portal(termino)
     return _plantilla_publica(
         "search.html",
         nav_activo="search",
         mensaje_acceso=mensaje_acceso,
+        q=resultado_busqueda["q"],
+        grupos_blog=resultado_busqueda["blog"],
+        grupos_labs=resultado_busqueda["laboratorios"],
+        grupos_docs=resultado_busqueda["documentacion"],
+        total_resultados=resultado_busqueda["total"],
+        busqueda_realizada=resultado_busqueda["busqueda_realizada"],
     )
 
 
 @aplicacion.post("/search")
 @limiter.limit("30 per minute")
-def procesar_busqueda():
-    """
-    Búsqueda vulnerable a SQLi (concatenación directa sin sanitizar).
-
-    - Éxito: muestra filas de `posts` en search.html.
-    - Error SQLite: muestra el mensaje de error (error-based SQLi).
-    - Siempre registra el evento con severidad según el tipo detectado (p. ej. Crítica en SQLi).
-    """
-    query = request.form.get("query", "")
-    resultados, error_sql = _ejecutar_busqueda_vulnerable(query)
-
-    payload_registro = {"query": query}
-    veredicto = _veredicto_waf(
-        ruta="/search",
-        payload=str(payload_registro),
-        metodo="POST",
-    )
-    tipo_ataque = veredicto["tipo_ataque"]
-    gravedad = veredicto["gravedad"]
-    guardar_evento(
-        ip=obtener_ip_cliente(),
-        ruta="/search",
-        metodo="POST",
-        payload=payload_registro,
-        user_agent=request.headers.get("User-Agent", ""),
-        tipo_ataque=tipo_ataque,
-        headers=dict(request.headers),
-        gravedad=gravedad,
-        ambito="publico",
-        firma_coincidente=veredicto["firma_coincidente"],
-    )
-
-    # POST /search omite after_request; notificar aquí si es ataque crítico.
-    if gravedad == GRAVEDAD_CRITICA and tipo_ataque != TIPO_TRAFICO_NORMAL:
-        _encolar_notificacion_ataque_critico(
-            obtener_ip_cliente(),
-            tipo_ataque,
-            "/search",
-            payload_registro,
-            marca_ahora(),
-        )
-
-    return _plantilla_publica(
-        "search.html",
-        nav_activo="search",
-        query=query,
-        resultados=resultados,
-        error_sql=error_sql,
-        total_resultados=len(resultados),
-        mensaje_acceso=None,
-    )
+def procesar_busqueda_legacy_redirect():
+    """Compatibilidad: redirige POST antiguo al buscador GET ?q=."""
+    termino = (request.form.get("query") or request.form.get("q") or "").strip()
+    if not termino:
+        return redirect("/search")
+    return redirect(f"/search?q={quote_plus(termino)}")
 
 
 # ——— Rutas señuelo Auto-Ban (/secure/*, sin login) ———
@@ -3392,7 +3544,8 @@ def pagina_objetivos():
     """
     Dashboard Academia CTF: ruta SQLi con progreso y challenge cards.
     """
-    from app.ctf_sqli.lab_db import estado_retos_para_usuario, progreso_sqli_usuario
+    from app.ctf_academia import listar_categorias_academia, progreso_global_academia
+    from app.ctf_sqli.lab_db import progreso_sqli_usuario
 
     usuario_id = session.get("usuario") or ""
     flags = obtener_flags_con_estado_por_usuario(usuario_id)
@@ -3401,8 +3554,13 @@ def pagina_objetivos():
     ranking = obtener_ranking_ctf(limite=20)
     completados_por_reto = obtener_completados_por_reto()
     puntos_usuario_actual = obtener_puntos_usuario(usuario_id)
-    retos_sqli = estado_retos_para_usuario(usuario_id)
     progreso_sqli = progreso_sqli_usuario(usuario_id)
+    categorias_academia = listar_categorias_academia(usuario_id)
+    progreso_academia = progreso_global_academia(usuario_id)
+
+    from app.superlab.estado_ui import estado_superlab_para_usuario
+
+    superlab = estado_superlab_para_usuario(usuario_id or None)
 
     return _plantilla_publica(
         "objetivos.html",
@@ -3414,8 +3572,10 @@ def pagina_objetivos():
         completados_por_reto=completados_por_reto,
         puntos_usuario_actual=puntos_usuario_actual,
         reto_sqli_titulo=RETO_CTF_SQLI,
-        retos_sqli=retos_sqli,
         progreso_sqli=progreso_sqli,
+        categorias_academia=categorias_academia,
+        progreso_academia=progreso_academia,
+        superlab=superlab,
     )
 
 
@@ -3530,79 +3690,34 @@ def objetivos_reset_progreso():
     )
 
 
-CLAVE_DIVERSION_CARTA_SECRETA = "diversion_carta_secreta"
 CLAVE_DIVERSION_CARTA_GANADOR = "diversion_carta_ganador"
 
 
-CARTA_MIN = 1
-CARTA_MAX = 6
-
-
-def _generar_numero_carta_secreta():
-    """Número aleatorio del 1 al 6 para el minijuego de cartas."""
-    return random.randint(CARTA_MIN, CARTA_MAX)
-
-
-@aplicacion.route("/diversion/carta", methods=["GET", "POST"])
+@aplicacion.route("/diversion/carta", methods=["GET"])
 @limiter.limit("60 per minute")
 def diversion_carta_juego():
     """
-    Minijuego de adivinanza: el visitante debe acertar una carta secreta (1-6).
+    Rosco Pasapalabra (SecOps / ASIR).
 
-    GET: inicia o reinicia la partida con una carta nueva en sesión.
-    POST: valida el intento; acierto → /diversion/carta/ganador; fallo → nueva carta.
+    Parsea ``preguntas_rosco.md``, elige una pregunta aleatoria por letra
+    y entrega el payload JSON a la plantilla para mecánicas 100 % client-side.
     """
-    if request.method == "GET":
-        session[CLAVE_DIVERSION_CARTA_SECRETA] = _generar_numero_carta_secreta()
-        session.pop(CLAVE_DIVERSION_CARTA_GANADOR, None)
-        session.modified = True
-        return _plantilla_publica(
-            "diversion/carta/juego.html",
-            nav_activo="diversion",
-            mensaje_error=None,
-        )
-
-    mensaje_error = None
-    carta_revelada = None
-    intento_raw = (request.form.get("carta") or "").strip()
-
-    secreto = session.get(CLAVE_DIVERSION_CARTA_SECRETA)
-    if secreto is None:
-        secreto = _generar_numero_carta_secreta()
-        session[CLAVE_DIVERSION_CARTA_SECRETA] = secreto
-
-    try:
-        intento = int(intento_raw)
-        if intento < CARTA_MIN or intento > CARTA_MAX:
-            raise ValueError("fuera de rango")
-    except ValueError:
-        carta_revelada = secreto
-        mensaje_error = f"Fallo, vuelve a intentarlo. La carta era {carta_revelada}."
-    else:
-        if intento == secreto:
-            session[CLAVE_DIVERSION_CARTA_GANADOR] = True
-            session.pop(CLAVE_DIVERSION_CARTA_SECRETA, None)
-            session.modified = True
-            return redirect(url_for("diversion_carta_ganador"))
-        carta_revelada = secreto
-        mensaje_error = f"Fallo, vuelve a intentarlo. La carta era {carta_revelada}."
-
-    session[CLAVE_DIVERSION_CARTA_SECRETA] = _generar_numero_carta_secreta()
+    session.pop(CLAVE_DIVERSION_CARTA_GANADOR, None)
     session.modified = True
+    rosco = seleccionar_rosco_aleatorio()
     return _plantilla_publica(
-        "diversion/carta/juego.html",
+        "diversion/carta.html",
         nav_activo="diversion",
-        mensaje_error=mensaje_error,
+        rosco_preguntas=rosco,
+        rosco_segundos=150,
     )
 
 
 @aplicacion.get("/diversion/carta/ganador")
 @limiter.limit("60 per minute")
 def diversion_carta_ganador():
-    """Pantalla de victoria tras acertar la carta secreta."""
-    if not session.get(CLAVE_DIVERSION_CARTA_GANADOR):
-        return redirect(url_for("diversion_carta_juego"))
-    return render_template("diversion/carta/ganador.html")
+    """Compatibilidad: el resumen vive en el propio rosco; redirige al juego."""
+    return redirect(url_for("diversion_carta_juego"))
 
 
 @aplicacion.get("/documentacion")
@@ -3611,7 +3726,13 @@ def pagina_documentacion():
     """
     Documentación técnica de seguridad (requiere sesión activa en el portal público).
     """
-    return _plantilla_publica("Documentacion.html", nav_activo="documentacion")
+    from app.documentacion_writeups import listar_writeups_documentacion
+
+    return _plantilla_publica(
+        "Documentacion.html",
+        nav_activo="documentacion",
+        writeups_academia=listar_writeups_documentacion(),
+    )
 
 
 @aplicacion.get("/blog")
@@ -4163,7 +4284,7 @@ def _normalizar_fecha_resumen(fecha_param):
 
 def _obtener_resumen_diario_con_cache(fecha, regenerar=False):
     """
-    Devuelve el resumen diario de Claude para una fecha, con caché en memoria y BD.
+    Devuelve el resumen diario de IA (Groq) para una fecha, con caché en memoria y BD.
     """
     total = contar_eventos_en_fecha(fecha)
     if total == 0:
@@ -4199,7 +4320,7 @@ def _obtener_resumen_diario_con_cache(fecha, regenerar=False):
 @api_soc_segura
 def monitor_api_analizar_registro(registro_id):
     """
-    Analiza con Claude un evento (`eventos`) o una petición (`registro_peticiones`).
+    Analiza con IA (Groq) un evento (`eventos`) o una petición (`registro_peticiones`).
 
     Query: ?fuente=evento (defecto) | peticion
     """
@@ -4434,7 +4555,7 @@ def admin_api_resumenes_log():
 @api_soc_segura
 def monitor_api_resumen_diario():
     """
-    Resumen ejecutivo en prosa de los ataques de un día (Claude).
+    Resumen ejecutivo en prosa de los ataques de un día (Groq).
 
     Query: fecha=YYYY-MM-DD, regenerar=1 para forzar nueva generación.
     """

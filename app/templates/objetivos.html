@@ -22,41 +22,6 @@
   }
 </script>
 <style>
-  .navbar {
-    background: var(--bg-card-soft);
-    border-bottom: 1px solid var(--border-color);
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 9990;
-    backdrop-filter: blur(var(--glass-blur));
-    transition: background-color 0.3s ease, border-color 0.3s ease;
-    isolation: isolate;
-  }
-  .navbar .logo {
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--color-accent);
-    letter-spacing: -0.5px;
-  }
-  .nav-links { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
-  .nav-links a {
-    color: var(--text-muted);
-    text-decoration: none;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
-  .nav-links a:hover,
-  .nav-links a.active {
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-    color: var(--color-accent);
-  }
   .progress-fill {
     height: 100%;
     border-radius: 999px;
@@ -91,11 +56,24 @@
     color: var(--color-accent);
   }
   .academia-cta {
+    background: #20e399;
+    color: #0f172a;
+    font-weight: 700;
+    text-decoration: none;
+    line-height: 1.25;
+    min-height: 2.75rem;
+    transition: filter 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+  }
+  .academia-cta:hover {
+    filter: brightness(1.06);
+    background: #1bc886;
+    color: #0f172a;
+  }
+  html[data-theme="lcd"] .academia-cta,
+  html[data-theme="hacker"] .academia-cta {
     background: var(--color-accent);
     color: var(--color-accent-fg);
-    transition: filter 0.2s ease, background-color 0.3s ease, color 0.3s ease;
   }
-  .academia-cta:hover { filter: brightness(1.08); }
   .pts-chip {
     background: color-mix(in srgb, var(--text-muted) 14%, transparent);
     color: var(--text-soft);
@@ -103,43 +81,39 @@
   .progress-track {
     background: color-mix(in srgb, var(--text-muted) 22%, transparent);
   }
-  /* Navbar en página de academia: alinear con tema */
-  body.academia-theme .navbar {
-    background: var(--bg-card-soft);
-    border-bottom: 1px solid var(--border-color);
-    backdrop-filter: blur(var(--glass-blur));
-    color: var(--text-main);
+  .aside-categorias {
+    position: sticky;
+    top: 6.5rem;
+    align-self: start;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
-  body.academia-theme .navbar .logo,
-  body.academia-theme .navbar .nav-links a {
-    color: var(--text-main);
+  a.nav-cat-link {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
   }
-  body.academia-theme .navbar .nav-links a.active,
-  body.academia-theme .navbar .nav-links a:hover {
-    color: var(--color-accent);
-  }
-  body.academia-theme .nav-sesion {
-    border-left-color: var(--border-color);
-  }
-  body.academia-theme .nav-sesion-label { color: var(--text-muted); }
-  body.academia-theme .nav-sesion-label strong { color: var(--text-main); }
-  body.academia-theme .nav-sesion-login {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
-    border: 1px solid var(--color-accent);
-  }
-  body.academia-theme .nav-sesion-login:hover {
-    filter: brightness(1.08);
-    background: var(--color-accent);
-  }
-  body.academia-theme .nav-sesion-logout {
-    color: var(--text-muted);
-    border-color: var(--border-color);
-  }
-  body.academia-theme .nav-sesion-logout:hover {
-    color: var(--color-accent);
+  a.nav-cat-link:hover {
     border-color: var(--border-accent);
-    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    color: var(--color-accent);
+  }
+  a.nav-cat-link.nav-cat-active {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border: 1px solid var(--border-accent);
+    color: var(--color-accent);
+  }
+  .academia-cta-outline {
+    border: 1px solid var(--border-accent);
+    color: var(--color-accent);
+    background: transparent;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .academia-cta-outline:hover {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
 </style>
 {% include 'partials/theme_bridge.html' %}
@@ -152,23 +126,24 @@
     <p class="theme-accent text-xs tracking-[0.2em] uppercase font-semibold mb-2">Cyber Range · Academia</p>
     <h1 class="text-3xl sm:text-4xl font-bold tracking-tight">Objetivos de formación</h1>
     <p class="theme-muted mt-2 max-w-2xl text-sm sm:text-base">
-      Ruta práctica de SQL Injection. Completa los laboratorios, responde el cuestionario SOC y entrega la flag.
+      Academia unificada: SQLi, XSS, Path Traversal, IDOR y SuperLab. Completa labs y entrega flags.
     </p>
 
     <div class="theme-panel mt-6 rounded-2xl border p-5 sm:p-6 transition-all duration-300">
       <div class="flex flex-wrap items-end justify-between gap-3 mb-3">
         <div>
-          <div class="theme-muted text-sm">Progreso en SQLi</div>
+          <div class="theme-muted text-sm">Progreso global (labs activos)</div>
           <div class="text-xl font-semibold">
-            {{ progreso_sqli.completados }} de {{ progreso_sqli.total }} completados
+            {{ progreso_academia.completados }} de {{ progreso_academia.total }} completados
           </div>
+          <div class="theme-muted text-xs mt-1">SQLi: {{ progreso_sqli.completados }}/{{ progreso_sqli.total }}</div>
         </div>
         <div class="theme-muted text-sm">
           Puntos CTF:
           <span class="theme-accent font-semibold">{{ puntos_usuario_actual or 0 }}</span>
         </div>
       </div>
-      {% set pct = (100 * progreso_sqli.completados / progreso_sqli.total) if progreso_sqli.total else 0 %}
+      {% set pct = (100 * progreso_academia.completados / progreso_academia.total) if progreso_academia.total else 0 %}
       <div class="progress-track h-2.5 w-full rounded-full overflow-hidden">
         <div class="progress-fill" style="width: {{ pct }}%"></div>
       </div>
@@ -176,34 +151,23 @@
   </header>
 
   <div class="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6 lg:gap-8">
-    <aside class="space-y-2">
+    <aside class="aside-categorias space-y-2" id="nav-categorias-academia" aria-label="Navegación por categoría">
       <p class="theme-muted text-xs uppercase tracking-wider mb-3 px-1">Categorías</p>
 
-      <div class="nav-cat-active flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-300">
-        <span class="text-lg">💉</span>
-        <span>SQL Injection</span>
+      {% for cat in categorias_academia %}
+      <div class="theme-panel border rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-300">
+        <a href="{{ cat.url_entrada }}"
+           class="nav-cat-link {% if loop.first %}nav-cat-active{% endif %}"
+           data-cat-slug="{{ cat.slug }}"
+           data-ancla="{{ cat.ancla_seccion }}">
+          <span class="text-lg" aria-hidden="true">{{ cat.icono }}</span>
+          <span>{{ cat.nombre }}</span>
+        </a>
       </div>
-
-      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm">
+      {% endfor %}
+      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm opacity-60">
         <span>🔒</span>
-        <div>
-          <div>XSS</div>
-          <div class="text-[11px] theme-muted">Próximamente</div>
-        </div>
-      </div>
-      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm">
-        <span>🔒</span>
-        <div>
-          <div>LFI / Path Traversal</div>
-          <div class="text-[11px] theme-muted">Próximamente</div>
-        </div>
-      </div>
-      <div class="cat-locked theme-panel flex items-center gap-3 rounded-xl border px-4 py-3 text-sm">
-        <span>🔒</span>
-        <div>
-          <div>RCE</div>
-          <div class="text-[11px] theme-muted">Próximamente</div>
-        </div>
+        <div><div>RCE</div><div class="text-[11px] theme-muted">Próximamente</div></div>
       </div>
 
       {% if ranking %}
@@ -222,56 +186,144 @@
     </aside>
 
     <section>
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Desafíos SQL Injection</h2>
-        <span class="theme-muted text-xs">Labs aislados · data/ctf/sqli_XX.db</span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-        {% for reto in retos_sqli %}
-        <article class="card-challenge theme-surface p-5 sm:p-6 flex flex-col min-h-[240px] transition-all duration-300">
+      {% if superlab %}
+      <div class="mb-8">
+        <h2 class="text-lg font-semibold mb-4">Cadena narrativa</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+        <article class="card-challenge theme-surface p-5 sm:p-6 flex flex-col min-h-[240px] transition-all duration-300 md:col-span-2">
           <div class="flex items-start justify-between gap-3 mb-3">
             <div>
-              <div class="theme-accent text-xs font-mono mb-1">SQLi-{{ reto.codigo }}</div>
-              <h3 class="text-lg font-bold leading-snug">{{ reto.titulo }}</h3>
-              <p class="theme-muted text-sm mt-1">{{ reto.subtitulo }}</p>
+              <div class="theme-accent text-xs font-mono mb-1">SuperLab-{{ superlab.codigo }}</div>
+              <h3 class="text-lg font-bold leading-snug">{{ superlab.titulo }}</h3>
+              <p class="theme-muted text-sm mt-1">{{ superlab.subtitulo }}</p>
             </div>
-            {% if reto.resuelto %}
-            <span class="badge-estado-resuelto inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 6.5L4.5 9L10 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-              RESUELTO
-            </span>
+            {% if superlab.resuelto %}
+            <span class="badge-estado-resuelto inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">RESUELTO</span>
             {% else %}
             <span class="badge-estado-pendiente text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Pendiente</span>
             {% endif %}
           </div>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <span class="badge-dif-dificil text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full">{{ superlab.dificultad }}</span>
+            <span class="pts-chip text-[11px] font-mono px-2.5 py-1 rounded-full">{{ superlab.puntos }} pts (solo flag final)</span>
+            <span class="pts-chip text-[11px] font-mono px-2.5 py-1 rounded-full">
+              Checkpoints {{ superlab.checkpoints_superados }}/{{ superlab.checkpoints_total }}
+            </span>
+          </div>
+          <p class="theme-muted text-sm flex-1 mb-4">{{ superlab.descripcion }}</p>
+          <p class="theme-muted text-xs mb-4">
+            Flags intermedias = checkpoints sin puntos. Progreso visible en el panel NexusCorp al completar la cadena.
+          </p>
+          <div class="flex flex-col sm:flex-row flex-wrap gap-3 mt-auto w-full">
+            <a href="{{ superlab.url_entrada }}"
+               class="academia-cta w-full sm:w-auto sm:min-w-[220px] py-2.5 px-4 rounded-lg flex items-center justify-center text-sm">
+              Entrar al SuperLab
+            </a>
+            <a href="{{ url_writeup_academia('superlab') }}"
+               class="academia-cta-outline inline-flex items-center justify-center rounded-xl font-bold text-sm px-4 py-2.5 w-fit sm:w-auto"
+               title="Guía paso a paso en Documentación">
+              Writeup
+            </a>
+          </div>
+        </article>
+        </div>
+      </div>
+      {% endif %}
 
-          <div class="flex flex-wrap gap-2 mb-4">
-            <span class="badge-dif-{{ reto.dificultad_clase }} text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full">{{ reto.dificultad }}</span>
-            <span class="pts-chip text-[11px] font-mono px-2.5 py-1 rounded-full">{{ reto.puntos }} pts</span>
-            {% if not reto.activo %}
-            <span class="pts-chip text-[11px] px-2.5 py-1 rounded-full">🔒 Próximamente</span>
+      {% for cat in categorias_academia %}
+      <div class="mb-10 scroll-mt-28" id="{{ cat.ancla_seccion }}">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold">{{ cat.nombre }}</h2>
+          <span class="theme-muted text-xs">{{ cat.slug }}</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+        {% for reto in cat.retos %}
+        <article class="card-challenge theme-surface p-5 sm:p-6 flex flex-col min-h-[220px] transition-all duration-300">
+          <div class="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <div class="theme-accent text-xs font-mono mb-1">{{ reto.categoria_label|default(cat.nombre) }}-{{ reto.codigo }}</div>
+              <h3 class="text-lg font-bold leading-snug">{{ reto.titulo }}</h3>
+              <p class="theme-muted text-sm mt-1">{{ reto.subtitulo }}</p>
+            </div>
+            {% if reto.resuelto %}
+            <span class="badge-estado-resuelto text-xs font-bold px-2.5 py-1 rounded-full">RESUELTO</span>
+            {% else %}
+            <span class="badge-estado-pendiente text-xs font-semibold px-2.5 py-1 rounded-full">Pendiente</span>
             {% endif %}
           </div>
-
-          <p class="theme-muted text-sm flex-1 mb-5 line-clamp-3">{{ reto.descripcion }}</p>
-
+          <div class="flex flex-wrap gap-2 mb-4">
+            <span class="badge-dif-{{ reto.dificultad_clase }} text-[11px] font-bold uppercase px-2.5 py-1 rounded-full">{{ reto.dificultad }}</span>
+            <span class="pts-chip text-[11px] font-mono px-2.5 py-1 rounded-full">{{ reto.puntos }} pts</span>
+          </div>
+          <p class="theme-muted text-sm flex-1 mb-5">{{ reto.descripcion }}</p>
           {% if reto.activo %}
-          <a href="{{ url_for('ctf_sqli.ver_reto', reto_id=reto.id) }}"
-             class="academia-cta inline-flex items-center justify-center rounded-xl font-bold text-sm px-4 py-2.5">
-            Iniciar Laboratorio
-          </a>
+            {% set ns_lab = namespace(url=cat.url_entrada) %}
+            {% if cat.slug == 'sqli' %}
+              {% set ns_lab.url = url_for('ctf_sqli.ver_reto', reto_id=reto.id) %}
+            {% elif cat.slug == 'xss' %}
+              {% set ns_lab.url = url_for('ctf_xss.reto_01') %}
+            {% elif cat.slug == 'pathtraversal' %}
+              {% set ns_lab.url = url_for('ctf_pathtraversal.reto_01') if reto.id == 1 else url_for('ctf_pathtraversal.reto_02') %}
+            {% elif cat.slug == 'idor' %}
+              {% set ns_lab.url = url_for('ctf_idor.reto_01') %}
+            {% endif %}
+            <a href="{{ ns_lab.url }}"
+               class="academia-cta w-full py-2.5 px-4 rounded-lg flex items-center justify-center text-sm mt-auto">
+              Entrar al laboratorio
+            </a>
           {% else %}
-          <button type="button" disabled
-                  class="pts-chip inline-flex items-center justify-center rounded-xl font-semibold text-sm px-4 py-2.5 cursor-not-allowed">
-            Bloqueado
-          </button>
+            <span class="theme-muted text-xs mt-auto py-2.5 px-4 rounded-lg border border-dashed w-full text-center"
+                  aria-disabled="true">Próximamente</span>
           {% endif %}
         </article>
         {% endfor %}
+        </div>
       </div>
+      {% endfor %}
     </section>
   </div>
 </main>
+<script>
+(function () {
+  var nav = document.getElementById('nav-categorias-academia');
+  if (!nav || !window.IntersectionObserver) return;
+
+  var links = nav.querySelectorAll('a[data-ancla]');
+  var secciones = [];
+  links.forEach(function (a) {
+    var id = a.getAttribute('data-ancla');
+    var el = document.getElementById(id);
+    if (el) secciones.push({ link: a, el: el });
+  });
+
+  function marcarActivo(activo) {
+    links.forEach(function (a) {
+      a.classList.toggle('nav-cat-active', a === activo);
+    });
+  }
+
+  var visibles = new Map();
+  var observer = new IntersectionObserver(
+    function (entries) {
+      entries.forEach(function (entry) {
+        visibles.set(entry.target, entry.intersectionRatio);
+      });
+      var mejor = null;
+      var mejorRatio = 0;
+      secciones.forEach(function (par) {
+        var r = visibles.get(par.el) || 0;
+        if (r > mejorRatio) {
+          mejorRatio = r;
+          mejor = par.link;
+        }
+      });
+      if (mejor && mejorRatio > 0.1) marcarActivo(mejor);
+    },
+    { root: null, rootMargin: '-20% 0px -55% 0px', threshold: [0, 0.1, 0.25, 0.5] }
+  );
+
+  secciones.forEach(function (par) { observer.observe(par.el); });
+})();
+</script>
 </body>
 </html>

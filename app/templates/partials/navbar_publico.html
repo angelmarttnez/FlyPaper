@@ -1,92 +1,170 @@
-{# Barra superior compartida: /search, /blog, /objetivos, /documentacion. Requiere sesion_logueado y sesion_etiqueta. #}
+{# Barra superior del portal: navegación unificada entre secciones públicas. #}
 <style>
+  .navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+    flex-wrap: wrap;
+    padding: 12px 20px;
+    min-height: 56px;
+  }
+  .navbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 0 0 auto;
+  }
+  .navbar .logo-link {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--color-accent, #6366f1);
+    letter-spacing: -0.5px;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .navbar .logo-link:hover {
+    filter: brightness(1.08);
+    text-decoration: none;
+  }
   .navbar-right {
     display: flex;
     align-items: center;
-    gap: 20px;
-    flex-wrap: wrap;
+    gap: 12px 16px;
+    flex: 1 1 auto;
     justify-content: flex-end;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .nav-links li { list-style: none; margin: 0; }
+  .nav-links a {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted, #b4b8c5);
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+  }
+  .nav-links a:hover,
+  .nav-links a.active {
+    background: color-mix(in srgb, var(--color-accent, #6366f1) 12%, transparent);
+    color: var(--color-accent, #6366f1);
+    border-color: color-mix(in srgb, var(--color-accent, #6366f1) 25%, transparent);
+    text-decoration: none;
+  }
+  /* SuperLab: entrada narrativa aparte del resto del portal */
+  .nav-links a.nav-link-superlab {
+    margin-left: 4px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, #f59e0b 55%, var(--border-color, #3d4663));
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, #f59e0b 16%, transparent),
+      color-mix(in srgb, #8b5cf6 12%, transparent)
+    );
+    color: var(--text-main, #e8eef5);
+    font-weight: 700;
+    gap: 6px;
+  }
+  .nav-links a.nav-link-superlab::before {
+    content: "◆";
+    font-size: 9px;
+    color: #fbbf24;
+  }
+  .nav-links a.nav-link-superlab:hover,
+  .nav-links a.nav-link-superlab.active {
+    border-color: #fbbf24;
+    color: #fde68a;
+    background: color-mix(in srgb, #f59e0b 22%, transparent);
   }
   .nav-sesion {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding-left: 16px;
-    border-left: 1px solid rgba(120, 160, 255, 0.15);
+    gap: 10px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border-color, rgba(120, 160, 255, 0.15));
+    flex-shrink: 0;
   }
   .nav-sesion-label {
-    font-size: 13px;
-    color: #8b91a7;
+    font-size: 12px;
+    color: var(--text-muted, #8b91a7);
     white-space: nowrap;
   }
   .nav-sesion-label strong {
-    color: #e4e6eb;
+    color: var(--text-main, #e4e6eb);
     font-weight: 600;
   }
   .nav-sesion-btn {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     text-decoration: none;
-    padding: 7px 14px;
+    padding: 7px 12px;
     border-radius: 8px;
     transition: opacity 0.2s, background 0.2s;
     white-space: nowrap;
   }
   .nav-sesion-login {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: #fff;
+    background: var(--color-accent, #6366f1);
+    color: var(--color-accent-fg, #fff);
+    border: 1px solid transparent;
   }
-  .nav-sesion-login:hover { opacity: 0.92; }
+  .nav-sesion-login:hover { opacity: 0.92; text-decoration: none; }
   .nav-sesion-logout {
     background: transparent;
-    color: #b4b8c5;
-    border: 1px solid #3d4663;
+    color: var(--text-muted, #b4b8c5);
+    border: 1px solid var(--border-color, #3d4663);
   }
   .nav-sesion-logout:hover {
-    color: #fff;
-    border-color: #6366f1;
-    background: rgba(99, 102, 241, 0.12);
+    color: var(--color-accent, #6366f1);
+    border-color: var(--border-accent, #6366f1);
+    text-decoration: none;
   }
-  body.nav-tema-ctf .nav-sesion {
-    border-left-color: rgba(0, 255, 140, 0.15);
-  }
-  body.nav-tema-ctf .nav-sesion-label { color: #7a9b8a; }
-  body.nav-tema-ctf .nav-sesion-label strong { color: #c5e8d4; }
-  body.nav-tema-ctf .nav-sesion-login {
-    background: transparent;
-    border: 1px solid #00ff8c;
-    color: #00ff8c;
-  }
-  body.nav-tema-ctf .nav-sesion-login:hover { background: rgba(0, 255, 140, 0.1); }
-  body.nav-tema-ctf .nav-sesion-logout {
-    border-color: #1a3a2a;
-    color: #8aa89a;
-  }
-  body.nav-tema-ctf .nav-sesion-logout:hover {
-    color: #00ff8c;
-    border-color: #00ff8c;
-  }
-  .navbar-right .theme-switcher {
-    margin-left: 4px;
+  .navbar-right .theme-switcher { flex-shrink: 0; }
+  @media (max-width: 720px) {
+    .navbar { padding: 10px 14px; }
+    .nav-sesion-label { display: none; }
+    .nav-links a { padding: 7px 10px; font-size: 12px; }
   }
 </style>
-<nav class="navbar">
-  <div class="logo">FlyPaper</div>
+<nav class="navbar" aria-label="Navegación principal FlyPaper">
+  <div class="navbar-left">
+    <a href="/" class="logo-link" title="Inicio FlyPaper">FlyPaper</a>
+  </div>
   <div class="navbar-right">
     <ul class="nav-links">
-      <li><a href="/blog"{% if nav_activo == 'blog' %} class="active"{% endif %}>Blog</a></li>
-      <li><a href="/documentacion"{% if nav_activo == 'documentacion' %} class="active"{% endif %}>Documentación</a></li>
-      <li><a href="/objetivos"{% if nav_activo == 'objetivos' %} class="active"{% endif %}>Objetivos CTF</a></li>
       <li><a href="/search"{% if nav_activo == 'search' %} class="active"{% endif %}>Buscar</a></li>
+      <li><a href="/objetivos"{% if nav_activo == 'objetivos' %} class="active"{% endif %}>Objetivos CTF</a></li>
+      <li><a href="/documentacion"{% if nav_activo == 'documentacion' %} class="active"{% endif %}>Documentación</a></li>
+      <li><a href="/blog"{% if nav_activo == 'blog' %} class="active"{% endif %}>Blog</a></li>
       <li><a href="/diversion/carta"{% if nav_activo == 'diversion' %} class="active"{% endif %}>Aburrido</a></li>
+      <li>
+        <a href="/web-nexuscorp/"{% if nav_activo == 'superlab' %} class="active nav-link-superlab"{% else %} class="nav-link-superlab"{% endif %}
+           title="Cadena narrativa NexusCorp (SuperLab)">NexusCorp</a>
+      </li>
     </ul>
     {% include 'partials/theme_switcher.html' %}
     <div class="nav-sesion" aria-label="Estado de sesión">
       <span class="nav-sesion-label">Sesión: <strong>{{ sesion_etiqueta }}</strong></span>
       {% if sesion_logueado %}
-      <a href="/logout" class="nav-sesion-btn nav-sesion-logout" rel="nofollow">Cerrar sesión</a>
+      <a href="/logout" class="nav-sesion-btn nav-sesion-logout" rel="nofollow">Salir</a>
       {% else %}
-      <a href="/login" class="nav-sesion-btn nav-sesion-login">Iniciar sesión</a>
+      <a href="/login" class="nav-sesion-btn nav-sesion-login">Entrar</a>
       {% endif %}
     </div>
   </div>

@@ -36,7 +36,7 @@
   }
 
   body.theme-aware .logo,
-  body.theme-aware .navbar .logo,
+  body.theme-aware .navbar .logo-link,
   body.theme-aware > header .brand,
   body.theme-aware aside .brand {
     color: var(--color-accent) !important;
@@ -52,6 +52,17 @@
   body.theme-aware .nav-links a.active {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
     color: var(--color-accent) !important;
+  }
+  body.theme-aware .nav-links a.nav-link-superlab,
+  body.theme-aware .nav-links a.nav-link-superlab:hover,
+  body.theme-aware .nav-links a.nav-link-superlab.active {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, #f59e0b 16%, transparent),
+      color-mix(in srgb, #8b5cf6 12%, transparent)
+    ) !important;
+    color: #fde68a !important;
+    border: 1px solid color-mix(in srgb, #fbbf24 55%, var(--border-color)) !important;
   }
 
   body.theme-aware .card,
@@ -172,8 +183,34 @@
     color: var(--color-accent) !important;
   }
 
-  body.theme-aware a:not(.nav-links a):not(.btn-logout):not(.btn-read):not(.nav-sesion-btn):not(.nav-footer a) {
+  body.theme-aware a:not(.nav-links a):not(.btn-logout):not(.btn-read):not(.nav-sesion-btn):not(.nav-footer a):not(.academia-cta):not(.academia-cta-outline):not(.btn-primary):not(.btn-outline):not(.feature-link):not(.writeup-card):not(.lab-pill) {
     color: var(--color-accent);
+  }
+
+  /* CTAs de tarjetas CTF: texto legible sobre fondo accent (evita verde sobre verde) */
+  body.theme-aware a.academia-cta,
+  body.academia-theme a.academia-cta {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-decoration: none !important;
+    background: var(--color-accent) !important;
+    color: var(--color-accent-fg) !important;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 85%, #000) !important;
+  }
+  body.theme-aware a.academia-cta:hover,
+  body.academia-theme a.academia-cta:hover {
+    filter: brightness(1.06);
+    color: var(--color-accent-fg) !important;
+  }
+  body.theme-aware a.academia-cta-outline,
+  body.academia-theme a.academia-cta-outline {
+    color: var(--color-accent) !important;
+    text-decoration: none !important;
+  }
+  body.theme-aware a.btn-primary {
+    color: var(--color-accent-fg) !important;
+    background: var(--color-accent) !important;
   }
 
   /* Badges / alertas: usan tokens --alert-* (WCAG AA) */
