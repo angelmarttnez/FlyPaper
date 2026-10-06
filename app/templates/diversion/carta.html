@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FlyPaper — Rosco Pasapalabra (SecOps)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body.theme-aware {
+    font-family: var(--font-ui);
+    background: var(--bg-base);
+    color: var(--text-main);
+    min-height: 100vh;
+  }
+  main.rosco-main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px 64px;
+  }
+  .rosco-hero {
+    text-align: center;
+    margin-bottom: 18px;
+  }
+  .rosco-hero h1 {
+    font-size: clamp(1.4rem, 3vw, 1.9rem);
+    font-weight: 800;
+    color: var(--text-main);
+    letter-spacing: -0.02em;
+  }
+  .rosco-hero p {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  .rosco-timer {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-main);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    box-shadow: var(--shadow-card);
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .rosco-timer.is-low {
+    color: var(--color-err);
+    border-color: color-mix(in srgb, var(--color-err) 45%, var(--border-color));
+  }
+
+  .rosco-stage {
+    position: relative;
+    width: min(92vw, 560px);
+    height: min(92vw, 560px);
+    margin: 12px auto 20px;
+  }
+
+  .rosco-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px dashed color-mix(in srgb, var(--border-color) 80%, transparent);
+    pointer-events: none;
+  }
+
+  .rosco-node {
+    position: absolute;
+    width: 42px;
+    height: 42px;
+    margin-left: -21px;
+    margin-top: -21px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 14px;
+    border: 2px solid var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, var(--bg-card));
+    color: var(--color-accent);
+    box-shadow: var(--shadow-card);
+    transition: transform 0.2s ease, background 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    z-index: 2;
+    user-select: none;
+  }
+  .rosco-node.is-pending {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .rosco-node.is-active {
+    background: #eab308;
+    border-color: #ca8a04;
+    color: #1a1400;
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px color-mix(in srgb, #eab308 35%, transparent);
+    animation: rosco-pulse 1s ease-in-out infinite;
+    z-index: 5;
+  }
+  .rosco-node.is-ok {
+    background: color-mix(in srgb, var(--color-ok) 22%, var(--bg-card));
+    border-color: var(--color-ok);
+    color: var(--color-ok);
+  }
+  .rosco-node.is-fail {
+    background: color-mix(in srgb, var(--color-err) 22%, var(--bg-card));
+    border-color: var(--color-err);
+    color: var(--color-err);
+  }
+  @keyframes rosco-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, #eab308 30%, transparent); }
+    50% { box-shadow: 0 0 0 8px color-mix(in srgb, #eab308 12%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rosco-node.is-active { animation: none; }
+  }
+
+  .rosco-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(72%, 320px);
+    z-index: 4;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-card, 16px);
+    padding: 18px 16px 16px;
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    text-align: center;
+  }
+  .rosco-letter-big {
+    font-size: 2.4rem;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--color-accent);
+    letter-spacing: -0.04em;
+  }
+  .rosco-badge {
+    display: inline-block;
+    margin: 8px 0 10px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-accent-fg);
+    background: var(--color-accent);
+  }
+  .rosco-badge.is-contiene {
+    background: var(--color-accent-2, var(--color-accent));
+  }
+  .rosco-pregunta {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    min-height: 3.6em;
+    margin-bottom: 12px;
+    font-weight: 550;
+  }
+  .rosco-input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-input);
+    color: var(--text-main);
+    font-size: 15px;
+    font-weight: 600;
+    outline: none;
+    margin-bottom: 10px;
+  }
+  .rosco-input:focus {
+    border-color: var(--border-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  }
+  .rosco-input:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .rosco-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .rosco-actions button {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 8px;
+    font-size: 13px;
+    font-weight: 750;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+  }
+  .rosco-btn-enviar {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+    border-color: var(--color-accent) !important;
+  }
+  .rosco-btn-pasa {
+    background: var(--bg-input);
+    color: var(--text-main);
+  }
+  .rosco-actions button:hover:not(:disabled) { transform: translateY(-1px); }
+  .rosco-actions button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .rosco-stats {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .rosco-stats strong { color: var(--text-main); }
+
+  .rosco-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: color-mix(in srgb, var(--bg-base) 55%, transparent);
+    backdrop-filter: blur(8px);
+  }
+  .rosco-modal.is-open { display: flex; }
+  .rosco-modal-card {
+    width: min(420px, 100%);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-card, 16px);
+    padding: 24px;
+    box-shadow: var(--shadow-card);
+    text-align: center;
+  }
+  .rosco-modal-card h2 {
+    color: var(--text-main);
+    font-size: 1.35rem;
+    margin-bottom: 8px;
+  }
+  .rosco-modal-card p { color: var(--text-muted); margin-bottom: 8px; }
+  .rosco-modal-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin: 16px 0 20px;
+  }
+  .rosco-modal-grid div {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 6px;
+  }
+  .rosco-modal-grid span {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .rosco-modal-grid strong {
+    font-size: 1.4rem;
+    color: var(--text-main);
+  }
+  .rosco-modal-card .rosco-btn-enviar {
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    padding: 12px;
+    font-weight: 750;
+    cursor: pointer;
+  }
+
+  @media (max-width: 520px) {
+    .rosco-node { width: 34px; height: 34px; margin-left: -17px; margin-top: -17px; font-size: 12px; }
+    .rosco-center { width: min(78%, 280px); padding: 14px 12px; }
+    .rosco-letter-big { font-size: 1.9rem; }
+    .rosco-pregunta { font-size: 12px; }
+  }
+</style>
+{% include 'partials/theme_bridge.html' %}
+</head>
+<body class="theme-aware">
+{% set nav_activo = 'diversion' %}
+{% include 'partials/navbar_publico.html' %}
+
+<main class="rosco-main fade-in-blur">
+  <header class="rosco-hero">
+    <h1>El Rosco de FlyPaper</h1>
+    <p>SecOps · SOC · ASIR — 27 letras · una pregunta aleatoria por letra</p>
+    <div class="rosco-timer" id="rosco-timer" aria-live="polite">⏱ <span id="rosco-timer-val">2:30</span></div>
+  </header>
+
+  <div class="rosco-stage glass-card" id="rosco-stage" aria-label="Rosco de letras">
+    <div class="rosco-ring" aria-hidden="true"></div>
+    <div id="rosco-nodes"></div>
+
+    <div class="rosco-center" id="rosco-center">
+      <div class="rosco-letter-big" id="rosco-letra">—</div>
+      <div class="rosco-badge" id="rosco-badge">LISTO</div>
+      <p class="rosco-pregunta" id="rosco-pregunta">Cargando rosco…</p>
+      <label class="visually-hidden" for="rosco-input" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Respuesta</label>
+      <input type="text" id="rosco-input" class="rosco-input" autocomplete="off" spellcheck="false" placeholder="Escribe tu respuesta…" />
+      <div class="rosco-actions">
+        <button type="button" class="rosco-btn-enviar" id="rosco-enviar">Enviar</button>
+        <button type="button" class="rosco-btn-pasa" id="rosco-pasa">Pasapalabra</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="rosco-stats">
+    <span>Aciertos: <strong id="stat-ok">0</strong></span>
+    <span>Errores: <strong id="stat-fail">0</strong></span>
+    <span>Pendientes: <strong id="stat-pend">0</strong></span>
+  </div>
+</main>
+
+<div class="rosco-modal" id="rosco-modal" role="dialog" aria-modal="true" aria-labelledby="rosco-modal-title">
+  <div class="rosco-modal-card glass-card fade-in-blur">
+    <h2 id="rosco-modal-title">Fin del rosco</h2>
+    <p id="rosco-modal-msg">Has completado la partida.</p>
+    <div class="rosco-modal-grid">
+      <div><span>Aciertos</span><strong id="modal-ok">0</strong></div>
+      <div><span>Errores</span><strong id="modal-fail">0</strong></div>
+      <div><span>Tiempo</span><strong id="modal-time">—</strong></div>
+    </div>
+    <button type="button" class="rosco-btn-enviar" id="rosco-reiniciar">Jugar de nuevo</button>
+  </div>
+</div>
+
+<script id="rosco-data" type="application/json">{{ rosco_preguntas | tojson }}</script>
+<script>
+(function () {
+  var SEGUNDOS_TOTAL = {{ rosco_segundos | int }};
+  var dataEl = document.getElementById('rosco-data');
+  var preguntas = [];
+  try { preguntas = JSON.parse(dataEl.textContent || '[]'); } catch (e) { preguntas = []; }
+
+  var nodesRoot = document.getElementById('rosco-nodes');
+  var stage = document.getElementById('rosco-stage');
+  var elLetra = document.getElementById('rosco-letra');
+  var elBadge = document.getElementById('rosco-badge');
+  var elPregunta = document.getElementById('rosco-pregunta');
+  var elInput = document.getElementById('rosco-input');
+  var btnEnviar = document.getElementById('rosco-enviar');
+  var btnPasa = document.getElementById('rosco-pasa');
+  var elTimer = document.getElementById('rosco-timer');
+  var elTimerVal = document.getElementById('rosco-timer-val');
+  var modal = document.getElementById('rosco-modal');
+
+  var estado = {}; // letra -> pending|ok|fail
+  var cola = [];
+  var indice = 0;
+  var aciertos = 0;
+  var errores = 0;
+  var terminado = false;
+  var segundos = SEGUNDOS_TOTAL;
+  var timerId = null;
+  var mapaNodos = {};
+
+  function normalizarRespuesta(texto) {
+    return String(texto || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function fmtTiempo(s) {
+    var m = Math.floor(s / 60);
+    var r = s % 60;
+    return m + ':' + String(r).padStart(2, '0');
+  }
+
+  function posicionarNodos() {
+    var n = preguntas.length;
+    if (!n) return;
+    var rect = stage.getBoundingClientRect();
+    var cx = rect.width / 2;
+    var cy = rect.height / 2;
+    var radio = Math.min(cx, cy) * 0.82;
+    nodesRoot.innerHTML = '';
+    mapaNodos = {};
+    for (var i = 0; i < n; i++) {
+      var ang = (Math.PI * 2 * i) / n - Math.PI / 2;
+      var x = cx + radio * Math.cos(ang);
+      var y = cy + radio * Math.sin(ang);
+      var letra = preguntas[i].letra;
+      var node = document.createElement('div');
+      node.className = 'rosco-node is-pending';
+      node.dataset.letra = letra;
+      node.textContent = letra;
+      node.style.left = x + 'px';
+      node.style.top = y + 'px';
+      nodesRoot.appendChild(node);
+      mapaNodos[letra] = node;
+      estado[letra] = 'pending';
+    }
+  }
+
+  function actualizarNodos() {
+    Object.keys(mapaNodos).forEach(function (letra) {
+      var node = mapaNodos[letra];
+      node.classList.remove('is-pending', 'is-active', 'is-ok', 'is-fail');
+      var st = estado[letra];
+      if (st === 'ok') node.classList.add('is-ok');
+      else if (st === 'fail') node.classList.add('is-fail');
+      else if (cola[indice] && cola[indice].letra === letra) node.classList.add('is-active');
+      else node.classList.add('is-pending');
+    });
+  }
+
+  function actualizarStats() {
+    var pend = cola.length;
+    document.getElementById('stat-ok').textContent = String(aciertos);
+    document.getElementById('stat-fail').textContent = String(errores);
+    document.getElementById('stat-pend').textContent = String(pend);
+  }
+
+  function mostrarActual() {
+    if (!cola.length) {
+      finPartida('¡Rosco completado!');
+      return;
+    }
+    if (indice >= cola.length) indice = 0;
+    var item = cola[indice];
+    elLetra.textContent = item.letra;
+    elBadge.textContent = item.etiqueta || (item.tipo === 'contiene' ? 'CONTIENE LA ' + item.letra : 'EMPIEZA POR ' + item.letra);
+    elBadge.classList.toggle('is-contiene', item.tipo === 'contiene');
+    elPregunta.textContent = item.pregunta;
+    elInput.value = '';
+    elInput.disabled = terminado;
+    btnEnviar.disabled = terminado;
+    btnPasa.disabled = terminado;
+    actualizarNodos();
+    actualizarStats();
+    if (!terminado) {
+      elInput.focus();
+    }
+  }
+
+  function avanzar() {
+    if (!cola.length) {
+      finPartida('¡Rosco completado!');
+      return;
+    }
+    if (indice >= cola.length) indice = 0;
+    mostrarActual();
+  }
+
+  function enviar() {
+    if (terminado || !cola.length) return;
+    var item = cola[indice];
+    var intento = normalizarRespuesta(elInput.value);
+    var correcta = normalizarRespuesta(item.respuesta);
+    if (!intento) {
+      elInput.focus();
+      return;
+    }
+    if (intento === correcta) {
+      estado[item.letra] = 'ok';
+      aciertos += 1;
+      cola.splice(indice, 1);
+      if (indice >= cola.length) indice = 0;
+    } else {
+      estado[item.letra] = 'fail';
+      errores += 1;
+      cola.splice(indice, 1);
+      if (indice >= cola.length) indice = 0;
+    }
+    avanzar();
+  }
+
+  function pasapalabra() {
+    if (terminado || cola.length <= 1) {
+      if (cola.length === 1) enviar();
+      return;
+    }
+    var item = cola.splice(indice, 1)[0];
+    cola.push(item);
+    // Tras sacar el actual, el siguiente ocupa la misma posición de índice.
+    if (indice >= cola.length) indice = 0;
+    mostrarActual();
+  }
+
+  function finPartida(mensaje) {
+    if (terminado) return;
+    terminado = true;
+    if (timerId) clearInterval(timerId);
+    elInput.disabled = true;
+    btnEnviar.disabled = true;
+    btnPasa.disabled = true;
+    actualizarNodos();
+    actualizarStats();
+    document.getElementById('rosco-modal-msg').textContent = mensaje;
+    document.getElementById('modal-ok').textContent = String(aciertos);
+    document.getElementById('modal-fail').textContent = String(errores);
+    document.getElementById('modal-time').textContent = fmtTiempo(Math.max(0, SEGUNDOS_TOTAL - segundos));
+    modal.classList.add('is-open');
+  }
+
+  function tick() {
+    if (terminado) return;
+    segundos -= 1;
+    elTimerVal.textContent = fmtTiempo(Math.max(0, segundos));
+    elTimer.classList.toggle('is-low', segundos <= 30);
+    if (segundos <= 0) {
+      finPartida('Se acabó el tiempo');
+    }
+  }
+
+  function iniciar() {
+    if (!preguntas.length) {
+      elPregunta.textContent = 'No hay preguntas disponibles. Revisa preguntas_rosco.md';
+      elInput.disabled = true;
+      btnEnviar.disabled = true;
+      btnPasa.disabled = true;
+      return;
+    }
+    cola = preguntas.slice();
+    indice = 0;
+    aciertos = 0;
+    errores = 0;
+    terminado = false;
+    segundos = SEGUNDOS_TOTAL;
+    elTimerVal.textContent = fmtTiempo(segundos);
+    posicionarNodos();
+    mostrarActual();
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(tick, 1000);
+  }
+
+  btnEnviar.addEventListener('click', enviar);
+  btnPasa.addEventListener('click', pasapalabra);
+  elInput.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      enviar();
+    }
+  });
+  document.getElementById('rosco-reiniciar').addEventListener('click', function () {
+    window.location.reload();
+  });
+  window.addEventListener('resize', function () {
+    posicionarNodos();
+    actualizarNodos();
+  });
+
+  iniciar();
+})();
+</script>
+</body>
+</html>
