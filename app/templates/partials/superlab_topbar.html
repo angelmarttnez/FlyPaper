@@ -1,0 +1,36 @@
+{# Barra interna SuperLab: solo vuelta al portal NexusCorp (no FlyPaper). #}
+<style>
+  .superlab-topbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(8, 12, 20, 0.88);
+    font-family: system-ui, "Segoe UI", sans-serif;
+  }
+  .superlab-back-nexus {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(94, 184, 255, 0.35);
+    color: #b8d4f0;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .superlab-back-nexus:hover {
+    background: rgba(94, 184, 255, 0.1);
+    border-color: #5eb8ff;
+    color: #fff;
+    text-decoration: none;
+  }
+</style>
+<div class="superlab-topbar-inner">
+  <a href="{{ url_for('superlab_nexus.nexuscorp_home') }}" class="superlab-back-nexus" title="Portal principal NexusCorp">
+    ← Inicio NexusCorp
+  </a>
+</div>

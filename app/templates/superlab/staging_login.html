@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NexusCorp Staging — Acceso</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #1a2332;
+    color: #e8eef5;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+  }
+  .card {
+    background: #243047;
+    border: 1px solid #3d4f6f;
+    border-radius: 8px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 400px;
+  }
+  .badge {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #ffb347;
+    margin-bottom: 0.5rem;
+  }
+  label { display: block; font-size: 13px; margin-top: 0.75rem; }
+  input {
+    width: 100%;
+    padding: 0.5rem;
+    margin-top: 0.25rem;
+    border: 1px solid #4a5d7a;
+    border-radius: 4px;
+    background: #1a2332;
+    color: #fff;
+  }
+  button {
+    margin-top: 1rem;
+    width: 100%;
+    padding: 0.55rem;
+    background: #3d7ea6;
+    border: none;
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .error { color: #ff8a8a; font-size: 14px; margin-top: 0.75rem; }
+  .flag {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(63, 185, 80, 0.15);
+    border: 1px solid #3fb950;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  .ok { margin-top: 1rem; font-size: 14px; }
+  a { color: #7ec8ff; }
+</style>
+</head>
+<body>
+{% include 'partials/superlab_topbar.html' %}
+<div class="card">
+  <div class="badge">Entorno staging</div>
+  <h1 style="font-size:1.15rem;margin:0 0 1rem;">Intranet NexusCorp · pre-producción</h1>
+
+  {% if flag_fase3 and empleado %}
+  <p class="ok">Sesión iniciada como <strong>{{ empleado.nombre }}</strong> ({{ empleado.usuario }}).</p>
+  <div class="flag">{{ flag_fase3 }}</div>
+  <p class="ok" style="margin-top:1rem;">
+    <a href="{{ mensajes_url }}">Ir a mensajes internos →</a>
+  </p>
+  {% else %}
+  <form method="post">
+    <label for="usuario">Usuario</label>
+    <input id="usuario" name="usuario" type="text" autocomplete="username" required />
+
+    <label for="password">Contraseña</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" />
+
+    <button type="submit">Entrar</button>
+  </form>
+  {% if error %}
+  <p class="error">{{ error }}</p>
+  {% endif %}
+  {% endif %}
+</div>
+</body>
+</html>

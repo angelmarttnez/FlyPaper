@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NexusCorp — Innovación y confianza</title>
+<style>
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    margin: 0;
+    background: var(--fp-bg, #0f1419);
+    color: var(--fp-text, #e8eef5);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 1.25rem 2rem;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  header .nexuscorp-titles {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  header span.logo {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #5eb8ff;
+  }
+  main {
+    flex: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem;
+  }
+  h1 { font-size: 1.75rem; margin-bottom: 0.75rem; }
+  p { line-height: 1.6; opacity: 0.9; }
+  footer {
+    padding: 1.5rem 2rem;
+    font-size: 0.85rem;
+    opacity: 0.65;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="nexuscorp-titles">
+      <span class="logo">NexusCorp</span>
+      <span>Soluciones empresariales</span>
+    </div>
+    {% include 'partials/superlab_exit_flypaper.html' %}
+  </header>
+  <main>
+    <h1>Bienvenido al portal NexusCorp</h1>
+    <p>
+      Somos un proveedor ficticio de servicios cloud y consultoría para el ejercicio
+      SuperLab de FlyPaper. Este portal representa la web corporativa actual tras
+      la modernización del stack interno.
+    </p>
+    <p>
+      Para empleados: accede al portal SSO corporativo con tu usuario y contraseña provisional.
+    </p>
+    <p style="margin-top:1rem;">
+      <a href="{{ url_for('superlab_nexus.nexuscorp_login') }}" style="color:#5eb8ff;">Iniciar sesión corporativa →</a>
+    </p>
+  </main>
+  <footer>
+    © NexusCorp · Todos los derechos reservados
+    <!-- Migración pendiente: revisar sistema legacy en /web-nexuscorp-2.0 -->
+  </footer>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8" />
+<title>Writeup SuperLab NexusCorp</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: var(--fp-bg, #0f1419);
+    color: var(--fp-text, #e8eef5);
+    margin: 0;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 2rem 1.25rem; }
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: ui-monospace, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+    background: rgba(0,0,0,0.25);
+    padding: 1.25rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  a { color: #7ec8ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p><a href="{{ url_for('superlab_nexus.panel_superlab') }}">← Volver al panel</a></p>
+  <h1>Writeup — SuperLab NexusCorp</h1>
+  <pre>{{ contenido_md }}</pre>
+</div>
+</body>
+</html>

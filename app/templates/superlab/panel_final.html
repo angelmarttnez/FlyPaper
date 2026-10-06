@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+{% include 'partials/theme_head.html' %}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SuperLab NexusCorp — Cadena completada</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: var(--fp-bg, #0f1419);
+    color: var(--fp-text, #e8eef5);
+    margin: 0;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .sub { opacity: 0.75; margin-bottom: 2rem; }
+  .timeline { border-left: 2px solid #3d7ea6; padding-left: 1.25rem; margin-bottom: 2rem; }
+  .step { position: relative; margin-bottom: 1.25rem; }
+  .step::before {
+    content: "✓";
+    position: absolute;
+    left: -1.65rem;
+    top: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    background: #3fb950;
+    color: #000;
+    border-radius: 50%;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+  }
+  .step h3 { margin: 0 0 0.35rem; font-size: 1rem; }
+  .step p { margin: 0; font-size: 0.9rem; opacity: 0.85; }
+  .flags { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+  .flags h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+  .flag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 13px;
+  }
+  .flag-row code {
+    font-family: ui-monospace, monospace;
+    background: rgba(63, 185, 80, 0.12);
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+  }
+  .chip {
+    font-size: 11px;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+  }
+  .chip.puntos { background: rgba(255, 193, 7, 0.2); color: #ffd866; }
+  form.conclusion textarea {
+    width: 100%;
+    min-height: 90px;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid #4a5d7a;
+    background: #1a2332;
+    color: inherit;
+    font-family: inherit;
+  }
+  .actions { margin-top: 1.5rem; display: flex; flex-wrap: gap: 0.75rem; }
+  .actions a, .actions button {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 14px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary { background: #3d7ea6; color: #fff; }
+  .btn-outline { background: transparent; border: 1px solid #4a5d7a; color: inherit; }
+</style>
+</head>
+<body>
+{% include 'partials/superlab_topbar.html' %}
+<div class="wrap">
+  <h1>Cadena NexusCorp completada</h1>
+  <p class="sub">Has cerrado las 6 etapas del SuperLab. Revisa qué falló en cada capa defensiva.</p>
+
+  <section class="timeline" aria-label="Timeline del reto">
+    {% for paso in pasos %}
+    <article class="step">
+      <h3>{{ loop.index }}. {{ paso.titulo }}</h3>
+      <p>{{ paso.evitacion }}</p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="flags">
+    <h2>Flags capturadas</h2>
+    {% for cp in estado.checkpoints %}
+    <div class="flag-row">
+      <span class="chip">Checkpoint {{ cp.orden }}/5</span>
+      <span>{{ cp.etiqueta }}</span>
+      {% if cp.superado %}
+      <code>{{ cp.flag }}</code>
+      {% if cp.puntua %}<span class="chip puntos">+300 pts ranking</span>{% endif %}
+      {% else %}
+      <span class="chip">pendiente</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <p style="font-size:12px;opacity:0.7;margin-top:0.75rem;">
+      Las flags 1–4 son checkpoints (0 pts). Solo <code>{{ flag_final }}</code> puntúa en /objetivos.
+    </p>
+  </section>
+
+  <form class="conclusion" method="post" action="{{ url_for('superlab_nexus.panel_superlab_conclusion') }}">
+    <label for="conclusion"><strong>Conclusión del reto (opcional)</strong></label>
+    <textarea id="conclusion" name="conclusion" placeholder="¿Qué aprendiste? ¿Qué control implementarías primero?">{{ conclusion or '' }}</textarea>
+    <button type="submit" class="btn-primary" style="margin-top:0.5rem;">Guardar conclusión</button>
+  </form>
+
+  <div class="actions">
+    <a class="btn-primary" href="{{ url_writeup_academia('superlab') }}?from={{ url_for('superlab_nexus.panel_superlab') | urlencode }}">Ver writeup oficial</a>
+    <a class="btn-outline" href="/objetivos">Volver a Academia CTF</a>
+    <a class="btn-outline" href="{{ url_for('superlab_nexus.nexuscorp_home') }}">Portal NexusCorp</a>
+  </div>
+</div>
+</body>
+</html>

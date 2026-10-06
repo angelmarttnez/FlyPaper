@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Staging — Mensajes</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #eef2f7; margin: 0; color: #222; }
+  header { background: #243047; color: #fff; padding: 1rem 1.5rem; }
+  main { max-width: 720px; margin: 0 auto; padding: 1.5rem; }
+  .msg {
+    display: block;
+    background: #fff;
+    border: 1px solid #ccd4e0;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    color: inherit;
+    text-decoration: none;
+  }
+  .msg:hover { border-color: #3d7ea6; }
+  .msg strong { display: block; margin-bottom: 0.25rem; }
+  .meta { font-size: 12px; color: #667; }
+  .preview { font-size: 14px; color: #444; margin-top: 0.35rem; }
+</style>
+</head>
+<body>
+{% include 'partials/superlab_topbar.html' %}
+<header>
+  <div>Mensajes internos · staging</div>
+  <small>Sesión: {{ usuario }}</small>
+</header>
+<main>
+  <h1 style="font-size:1.1rem;">Bandeja de entrada</h1>
+  {% for m in mensajes %}
+  <a class="msg" href="{{ url_for('superlab_staging.staging_mensaje_detalle', mensaje_id=m.id) }}">
+    <strong>{{ m.asunto }}</strong>
+    <span class="meta">{{ m.remitente }} · {{ m.fecha }}</span>
+    <div class="preview">{{ m.preview }}</div>
+  </a>
+  {% endfor %}
+</main>
+</body>
+</html>

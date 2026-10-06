@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>{{ asunto }}</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #eef2f7; margin: 0; padding: 1.5rem; color: #222; }
+  .card { max-width: 720px; margin: 0 auto; background: #fff; border: 1px solid #ccd4e0; border-radius: 8px; padding: 1.25rem; }
+  pre { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.5; }
+  .flag { margin-top: 1rem; padding: 0.75rem; background: #e8ffe8; border: 1px solid #6a6; font-family: monospace; }
+  a { color: #3d7ea6; }
+</style>
+</head>
+<body>
+{% include 'partials/superlab_topbar.html' %}
+<div class="card">
+  <p><a href="{{ volver_url }}">← Volver</a></p>
+  <h1 style="font-size:1.15rem;">{{ asunto }}</h1>
+  <p class="meta" style="font-size:13px;color:#667;">De: {{ remitente }}</p>
+  <pre>{{ cuerpo }}</pre>
+  {% if flag_fase4 %}
+  <div class="flag">{{ flag_fase4 }}</div>
+  {% endif %}
+</div>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>NexusCorp Legacy — Panel</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2rem; background: #f4f4f4; }
+  .flag { margin-top: 1.5rem; padding: 1rem; background: #e8ffe8; border: 1px solid #6a6; font-family: monospace; }
+</style>
+</head>
+<body>
+{% include 'partials/superlab_topbar.html' %}
+  <h1>Panel legacy (placeholder)</h1>
+  <p>Sesión: <strong>{{ usuario_legacy }}</strong></p>
+  <p>Has superado la fase 1. Flag capturada:</p>
+  <div class="flag">{{ flag_fase1 }}</div>
+  <p style="margin-top:1.5rem;">
+    Prueba el listado de empleados en
+    <a href="{{ url_for('superlab_legacy.legacy_api_empleados') }}">/web-nexuscorp-2.0/api/empleados</a>.
+  </p>
+  <p style="margin-top:1rem;">
+    Herramienta externa de reconocimiento:
+    <a href="{{ url_for('superlab_tools.herramienta_fuzzer') }}">/tools/fuzzer</a>
+  </p>
+</body>
+</html>
