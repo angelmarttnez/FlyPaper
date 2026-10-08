@@ -12,8 +12,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FLYPAPER_DATA_DIR=/app/data \
     PYTHONPATH=/app
 
-RUN groupadd -r flypaper \
-    && useradd -r -g flypaper -d /app -s /usr/sbin/nologin flypaper
+# UID fijo para que el volumen ./data sea predecible en el host.
+RUN groupadd -r -g 10001 flypaper \
+    && useradd -r -u 10001 -g flypaper -d /app -s /usr/sbin/nologin flypaper
 
 WORKDIR /app
 
@@ -25,10 +26,13 @@ RUN pip install --upgrade pip \
 COPY . .
 
 RUN mkdir -p /app/data /app/data/ctf \
+    && chmod +x /app/docker-entrypoint.sh \
     && chown -R flypaper:flypaper /app
 
-USER flypaper
+# Arranca como root solo para chown del volumen; el entrypoint baja a flypaper.
+USER root
 
 EXPOSE 5000
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "wsgi:aplicacion"]

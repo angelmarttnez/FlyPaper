@@ -6,6 +6,7 @@
 # Persistencia:
 #   - ./data → /app/data (SQLite unificadas: flypaper*.db, ctf/, etc.)
 #   - volumen redis_data → perímetro NGWAF (bloqueos, rate-limit, riesgo)
+# El entrypoint hace chown de /app/data a flypaper (uid 10001); no hace falta chmod 777.
 #
 # Código en imagen: /app/app.py + paquete /app/app/{core,ctf_sqli,templates,static}
 #
