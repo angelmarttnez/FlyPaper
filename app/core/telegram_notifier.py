@@ -15,10 +15,17 @@ import os
 import urllib.error
 import urllib.request
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
-# override=True: el .env tiene prioridad sobre variables del sistema (evita IDs obsoletos).
-load_dotenv(override=True)
+# Carga .env sin pisar variables ya definidas (p. ej. REDIS_URL=redis://redis:6379/0
+# que inyecta docker-compose). Si override=True global, el REDIS_URL del .env
+# (127.0.0.1) rompe el perímetro NGWAF dentro del contenedor → fail-open sin 429.
+load_dotenv(override=False)
+
+# Solo TELEGRAM_* del fichero .env pisan el entorno (IDs/topics locales frescos).
+for _clave, _valor in (dotenv_values() or {}).items():
+    if _clave and _clave.startswith("TELEGRAM_") and _valor is not None:
+        os.environ[_clave] = str(_valor).strip()
 
 logger = logging.getLogger(__name__)
 
